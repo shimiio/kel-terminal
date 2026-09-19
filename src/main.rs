@@ -39,7 +39,7 @@ fn main() {
     let mut parser = Parser::new();
     let mut handler = TerminalHandler {
         writer: session.writer.clone(),
-        cursor_col: 0,
+        grid: terminal::Grid::new(24, 80),
     };
 
     let mut buf = [0u8; 1024];
@@ -51,5 +51,6 @@ fn main() {
         }
     }
 
+    println!("{}", handler.grid.render());
     println!("[main] reader loop finished cleanly");
 }
