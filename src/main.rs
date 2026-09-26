@@ -24,6 +24,15 @@ fn main() {
         thread::sleep(Duration::from_millis(500));
         {
             let mut w = command_writer.lock().unwrap();
+            w.write_all(
+                b"cd C:\\Users\\Public\\Main\\workplace\\major-projects\\pare-app && dir\r\n",
+            )
+            .unwrap();
+            w.flush().unwrap();
+        }
+        thread::sleep(Duration::from_millis(500));
+        {
+            let mut w = command_writer.lock().unwrap();
             w.write_all(b"exit\r\n").unwrap();
             w.flush().unwrap();
         }

@@ -51,6 +51,8 @@ impl Grid {
         self.cursor_col = 0;
         if self.cursor_row + 1 < self.rows {
             self.cursor_row += 1;
+        } else {
+            self.scroll_up();
         }
     }
 
@@ -86,6 +88,11 @@ impl Grid {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn scroll_up(&mut self) {
+        self.cells.remove(0);
+        self.cells.push(vec![Cell::default(); self.cols])
     }
 }
 
