@@ -3,7 +3,7 @@ mod pty;
 mod terminal;
 
 use grid::Grid;
-use std::io::{Read, Write};
+use std::io::{Read, Write, stdin};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -40,12 +40,13 @@ fn main() -> anyhow::Result<()> {
     writer.write_all(b"\x1b[1;1R")?; // answer the cursor request
     writer.flush()?;
 
-    // input mock
-    thread::sleep(Duration::from_secs(1));
-    writer.write_all(b"echo hi\r\n")?;
+    // real input
+    let mut line = String::new();
+    stdin().read_line(&mut line)?;
+    writer.write_all(line.as_bytes())?;
     writer.flush()?;
 
-    while let Ok(chunk) = rx.recv_timeout(Duration::from_secs(2)) {
+    while let Ok(chunk) = rx.recv_timeout(Duration::from_secs(1)) {
         parser.advance(&mut performer, &chunk);
     }
 
