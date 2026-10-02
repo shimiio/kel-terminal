@@ -1,65 +1,55 @@
+mod grid;
 mod pty;
 mod terminal;
 
+use grid::Grid;
+use std::io::{Read, Write};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use terminal::Terminal;
 use vte::Parser;
 
-use pty::spawn_shell;
-use terminal::TerminalHandler;
-
-fn main() {
-    let session = spawn_shell();
-    let mut reader = session.reader;
-    let master = session.master;
-
-    let command_writer = session.writer.clone();
-    thread::spawn(move || {
-        thread::sleep(Duration::from_millis(500));
-        {
-            let mut w = command_writer.lock().unwrap();
-            w.write_all(b"echo hello from kel\r\n").unwrap();
-            w.flush().unwrap();
-        }
-        thread::sleep(Duration::from_millis(500));
-        {
-            let mut w = command_writer.lock().unwrap();
-            w.write_all(
-                b"cd C:\\Users\\Public\\Main\\workplace\\major-projects\\pare-app && dir\r\n",
-            )
-            .unwrap();
-            w.flush().unwrap();
-        }
-        thread::sleep(Duration::from_millis(500));
-        {
-            let mut w = command_writer.lock().unwrap();
-            w.write_all(b"exit\r\n").unwrap();
-            w.flush().unwrap();
-        }
-    });
-
-    let mut child = session.child;
-    thread::spawn(move || {
-        let status = child.wait().unwrap();
-        drop(master);
-        println!("\n[supervisor] shell exited, status: {:?}", status);
-    });
+fn main() -> anyhow::Result<()> {
+    let (master, mut child) = pty::spawn_shell()?;
+    let mut reader = master.try_clone_reader()?;
+    let mut writer = master.take_writer()?;
 
     let mut parser = Parser::new();
-    let mut handler = TerminalHandler {
-        writer: session.writer.clone(),
-        grid: terminal::Grid::new(24, 80),
+    let mut performer = Terminal {
+        grid: Grid::new(24, 80),
     };
 
-    let mut buf = [0u8; 1024];
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => parser.advance(&mut handler, &buf[..n]),
-            Err(_) => break,
+    // get output
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if tx.send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+            }
         }
+    });
+
+    // flush
+    writer.write_all(b"\x1b[1;1R")?; // answer the cursor request
+    writer.flush()?;
+
+    // input mock
+    thread::sleep(Duration::from_secs(1));
+    writer.write_all(b"echo hi\r\n")?;
+    writer.flush()?;
+
+    while let Ok(chunk) = rx.recv_timeout(Duration::from_secs(2)) {
+        parser.advance(&mut performer, &chunk);
     }
 
-    println!("{}", handler.grid.render());
-    println!("[main] reader loop finished cleanly");
+    child.kill()?;
+    println!("{}", performer.grid.render());
+    Ok(())
 }
