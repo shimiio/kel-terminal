@@ -1,5 +1,16 @@
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cell {
+    pub ch: char,
+}
+
+impl Default for Cell {
+    fn default() -> Self {
+        Cell { ch: ' ' }
+    }
+}
+
 pub struct Grid {
-    cells: Vec<Vec<char>>,
+    cells: Vec<Vec<Cell>>,
     rows: usize,
     cols: usize,
     cursor_row: usize,
@@ -9,7 +20,7 @@ pub struct Grid {
 impl Grid {
     pub fn new(rows: usize, cols: usize) -> Self {
         Grid {
-            cells: vec![vec![' '; cols]; rows],
+            cells: vec![vec![Cell::default(); cols]; rows],
             rows,
             cols,
             cursor_col: 0,
@@ -20,7 +31,7 @@ impl Grid {
     pub fn newline(&mut self) {
         if self.cursor_row + 1 >= self.rows {
             self.cells.remove(0);
-            self.cells.push(vec![' '; self.cols]);
+            self.cells.push(vec![Cell::default(); self.cols]);
         } else {
             self.cursor_row += 1;
         }
@@ -31,7 +42,7 @@ impl Grid {
             self.cursor_col = 0;
             self.newline();
         }
-        self.cells[self.cursor_row][self.cursor_col] = c;
+        self.cells[self.cursor_row][self.cursor_col] = Cell { ch: c };
         self.cursor_col += 1;
     }
 
@@ -48,7 +59,13 @@ impl Grid {
         let lines: Vec<String> = self
             .cells
             .iter()
-            .map(|row| row.iter().collect::<String>().trim_end().to_string())
+            .map(|row| {
+                row.iter()
+                    .map(|cell| cell.ch)
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
             .collect();
         let last = lines.iter().rposition(|l| !l.is_empty()).unwrap_or(0);
         lines[..=last].join("\n")
