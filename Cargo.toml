@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 portable-pty = "0.9.0"
+anyhow = "1"
 vte = "0.15.0"
