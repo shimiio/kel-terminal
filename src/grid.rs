@@ -45,10 +45,12 @@ impl Grid {
     }
 
     pub fn render(&self) -> String {
-        self.cells
+        let lines: Vec<String> = self
+            .cells
             .iter()
-            .map(|row| row.iter().collect::<String>())
-            .collect::<Vec<_>>()
-            .join("\n")
+            .map(|row| row.iter().collect::<String>().trim_end().to_string())
+            .collect();
+        let last = lines.iter().rposition(|l| !l.is_empty()).unwrap_or(0);
+        lines[..=last].join("\n")
     }
 }
