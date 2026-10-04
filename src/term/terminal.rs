@@ -1,4 +1,4 @@
-use crate::grid::Grid;
+use super::Grid;
 use vte::Perform;
 
 pub struct Terminal {
