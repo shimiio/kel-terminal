@@ -17,13 +17,13 @@ impl Renderer {
     }
 
     pub fn draw(&mut self) {
-        let size = self.window.inner_size();
+        let size = self.window.inner_size(); // window size in pixels
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
         };
-        self.surface.resize(w, h).unwrap();
-        let mut buffer = self.surface.buffer_mut().unwrap();
-        buffer.fill(0);
-        buffer.present().unwrap();
+        self.surface.resize(w, h).unwrap(); // make the pixel buffer match the window
+        let mut buffer = self.surface.buffer_mut().unwrap(); // get the pixel array
+        buffer.fill(0); // set every pixel to black
+        buffer.present().unwrap(); // show it on screen
     }
 }

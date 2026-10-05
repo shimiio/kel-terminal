@@ -1,29 +1,147 @@
+use crate::pty;
 use crate::renderer::Renderer;
+use crate::term::{Grid, Terminal};
+use portable_pty::{Child, MasterPty};
+use std::io::{Read, Write};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use vte::Parser;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
-use winit::event_loop::ActiveEventLoop;
+use winit::event::{ElementState, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
-#[derive(Default)]
-pub struct App {
-    renderer: Option<Renderer>,
+/// Custom events sent from other threads to wake up the event loop.
+#[derive(Debug)]
+pub enum UserEvent {
+    /// The reader thread parsed new shell output into the grid.
+    PtyOutput,
+    /// The shell closed its output (e.g. the user typed `exit`).
+    PtyExited,
 }
 
-impl ApplicationHandler for App {
+pub struct App {
+    window: Option<Rc<Window>>,
+    renderer: Option<Renderer>,
+    terminal: Arc<Mutex<Terminal>>,
+    writer: Box<dyn Write + Send>,
+    // Never read, but dropping them would close the pty and kill the shell.
+    _master: Box<dyn MasterPty + Send>,
+    _child: Box<dyn Child + Send + Sync>,
+}
+
+impl App {
+    pub fn new(proxy: EventLoopProxy<UserEvent>) -> anyhow::Result<Self> {
+        let (master, child) = pty::spawn_shell()?;
+        let reader = master.try_clone_reader()?;
+        let mut writer = master.take_writer()?;
+
+        // answer the ConPTY cursor position handshake
+        writer.write_all(b"\x1b[1;1R")?;
+        writer.flush()?;
+
+        let terminal = Arc::new(Mutex::new(Terminal {
+            grid: Grid::new(24, 80),
+        }));
+        spawn_reader(reader, terminal.clone(), proxy);
+
+        Ok(App {
+            window: None,
+            renderer: None,
+            terminal,
+            writer,
+            _master: master,
+            _child: child,
+        })
+    }
+
+    fn send_to_shell(&mut self, bytes: &[u8]) {
+        // If the shell is gone, the reader thread will report PtyExited.
+        let _ = self.writer.write_all(bytes);
+        let _ = self.writer.flush();
+    }
+}
+
+/// Reads shell output on a background thread, feeds it to the parser,
+/// then wakes the event loop so it can redraw.
+fn spawn_reader(
+    mut reader: Box<dyn Read + Send>,
+    terminal: Arc<Mutex<Terminal>>,
+    proxy: EventLoopProxy<UserEvent>,
+) {
+    thread::spawn(move || {
+        let mut parser = Parser::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    parser.advance(&mut *terminal.lock().unwrap(), &buf[..n]);
+                    // Err means the event loop has already shut down.
+                    if proxy.send_event(UserEvent::PtyOutput).is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+        let _ = proxy.send_event(UserEvent::PtyExited);
+    });
+}
+
+/// Translates a key press into the bytes a terminal would send to the shell.
+fn key_to_bytes(key: &Key, text: Option<&str>) -> Option<Vec<u8>> {
+    let bytes: &[u8] = match key {
+        Key::Named(NamedKey::Enter) => b"\r",
+        Key::Named(NamedKey::Backspace) => b"\x7f",
+        Key::Named(NamedKey::Tab) => b"\t",
+        Key::Named(NamedKey::Escape) => b"\x1b",
+        Key::Named(NamedKey::ArrowUp) => b"\x1b[A",
+        Key::Named(NamedKey::ArrowDown) => b"\x1b[B",
+        Key::Named(NamedKey::ArrowRight) => b"\x1b[C",
+        Key::Named(NamedKey::ArrowLeft) => b"\x1b[D",
+        _ => return text.map(|t| t.as_bytes().to_vec()),
+    };
+    Some(bytes.to_vec())
+}
+
+impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let attrs = Window::default_attributes().with_title("Kel");
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
-        self.renderer = Some(Renderer::new(window).unwrap());
+        self.renderer = Some(Renderer::new(window.clone()).unwrap());
+        self.window = Some(window);
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        match event {
+            UserEvent::PtyOutput => {
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+            UserEvent::PtyExited => event_loop.exit(),
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                if let Some(bytes) = key_to_bytes(&event.logical_key, event.text.as_deref()) {
+                    self.send_to_shell(&bytes);
+                }
+            }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.draw();
                 }
+                // TEMPORARY
+                // console that launched the app, to prove pty → grid → redraw works.
+                let terminal = self.terminal.lock().unwrap();
+                print!("\x1b[2J\x1b[H{}", terminal.grid.render());
+                let _ = std::io::stdout().flush();
             }
             _ => {}
         }
