@@ -9,11 +9,15 @@ impl Default for Cell {
     }
 }
 
+const TAB_WIDTH: usize = 8;
+
 pub struct Grid {
     cells: Vec<Vec<Cell>>,
     rows: usize,
     cols: usize,
     cursor_row: usize,
+    // Can be equal to `cols` after printing in the last column: the wrap only
+    // happens when the next char is printed ("pending wrap").
     cursor_col: usize,
 }
 
@@ -26,6 +30,23 @@ impl Grid {
             cursor_col: 0,
             cursor_row: 0,
         }
+    }
+
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub fn cols(&self) -> usize {
+        self.cols
+    }
+
+    pub fn cell(&self, row: usize, col: usize) -> Cell {
+        self.cells[row][col]
+    }
+
+    /// Cursor position as (row, col), clamped to the visible grid.
+    pub fn cursor(&self) -> (usize, usize) {
+        (self.cursor_row, self.cursor_col.min(self.cols - 1))
     }
 
     pub fn newline(&mut self) {
@@ -50,9 +71,109 @@ impl Grid {
         self.cursor_col = 0;
     }
 
+    /// `\x08`: move one column left, without erasing anything.
+    pub fn backspace(&mut self) {
+        self.cursor_col = self.cursor_col.min(self.cols - 1).saturating_sub(1);
+    }
+
+    /// `\t`: jump to the next tab stop (every 8 columns).
+    pub fn tab(&mut self) {
+        let next = (self.cursor_col / TAB_WIDTH + 1) * TAB_WIDTH;
+        self.cursor_col = next.min(self.cols - 1);
+    }
+
+    /// Moves to a 1-based (row, col), like `CSI row;col H`.
     pub fn move_cursor(&mut self, row: usize, col: usize) {
         self.cursor_row = row.saturating_sub(1).min(self.rows - 1);
         self.cursor_col = col.saturating_sub(1).min(self.cols - 1);
+    }
+
+    pub fn move_up(&mut self, n: usize) {
+        self.cursor_row = self.cursor_row.saturating_sub(n);
+    }
+
+    pub fn move_down(&mut self, n: usize) {
+        self.cursor_row = (self.cursor_row + n).min(self.rows - 1);
+    }
+
+    pub fn move_forward(&mut self, n: usize) {
+        self.cursor_col = (self.cursor_col + n).min(self.cols - 1);
+    }
+
+    pub fn move_back(&mut self, n: usize) {
+        self.cursor_col = self.cursor_col.min(self.cols - 1).saturating_sub(n);
+    }
+
+    /// Moves to a 1-based column on the current row, like `CSI col G`.
+    pub fn set_col(&mut self, col: usize) {
+        self.cursor_col = col.saturating_sub(1).min(self.cols - 1);
+    }
+
+    /// Moves to a 1-based row, keeping the column, like `CSI row d`.
+    pub fn set_row(&mut self, row: usize) {
+        self.cursor_row = row.saturating_sub(1).min(self.rows - 1);
+    }
+
+    /// `CSI n K`. 0: cursor to end of line, 1: start of line to cursor, 2: whole line.
+    pub fn erase_in_line(&mut self, mode: u16) {
+        let col = self.cursor_col.min(self.cols);
+        let line = &mut self.cells[self.cursor_row];
+        let range = match mode {
+            0 => col..self.cols,
+            1 => 0..(col + 1).min(self.cols),
+            2 => 0..self.cols,
+            _ => return,
+        };
+        line[range].fill(Cell::default());
+    }
+
+    /// `CSI n J`. 0: cursor to end of screen, 1: start of screen to cursor, 2/3: everything.
+    pub fn erase_in_display(&mut self, mode: u16) {
+        match mode {
+            0 => {
+                self.erase_in_line(0);
+                for row in &mut self.cells[self.cursor_row + 1..] {
+                    row.fill(Cell::default());
+                }
+            }
+            1 => {
+                self.erase_in_line(1);
+                for row in &mut self.cells[..self.cursor_row] {
+                    row.fill(Cell::default());
+                }
+            }
+            2 | 3 => {
+                for row in &mut self.cells {
+                    row.fill(Cell::default());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `CSI n X`: blank out n chars starting at the cursor, without moving anything.
+    pub fn erase_chars(&mut self, n: usize) {
+        let start = self.cursor_col.min(self.cols - 1);
+        let end = (start + n).min(self.cols);
+        self.cells[self.cursor_row][start..end].fill(Cell::default());
+    }
+
+    /// `CSI n P`: delete n chars at the cursor, shifting the rest of the line left.
+    pub fn delete_chars(&mut self, n: usize) {
+        let start = self.cursor_col.min(self.cols - 1);
+        let n = n.min(self.cols - start);
+        let line = &mut self.cells[self.cursor_row];
+        line[start..].rotate_left(n);
+        line[self.cols - n..].fill(Cell::default());
+    }
+
+    /// `CSI n @`: insert n blanks at the cursor, shifting the rest of the line right.
+    pub fn insert_blanks(&mut self, n: usize) {
+        let start = self.cursor_col.min(self.cols - 1);
+        let n = n.min(self.cols - start);
+        let line = &mut self.cells[self.cursor_row];
+        line[start..].rotate_right(n);
+        line[start..start + n].fill(Cell::default());
     }
 
     pub fn render(&self) -> String {
