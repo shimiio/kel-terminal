@@ -1,6 +1,6 @@
 use crate::pty;
 use crate::renderer::Renderer;
-use crate::term::{Grid, Terminal};
+use crate::term::Terminal;
 use portable_pty::{Child, MasterPty};
 use std::io::{Read, Write};
 use std::rc::Rc;
@@ -8,17 +8,21 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use vte::Parser;
 use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
+
+const ROWS: usize = 24;
+const COLS: usize = 80;
 
 /// Custom events sent from other threads to wake up the event loop.
 #[derive(Debug)]
 pub enum UserEvent {
     /// The reader thread parsed new shell output into the grid.
     PtyOutput,
-    /// The shell closed its output (e.g. the user typed `exit`).
+    /// The shell closed its output.
     PtyExited,
 }
 
@@ -42,9 +46,7 @@ impl App {
         writer.write_all(b"\x1b[1;1R")?;
         writer.flush()?;
 
-        let terminal = Arc::new(Mutex::new(Terminal {
-            grid: Grid::new(24, 80),
-        }));
+        let terminal = Arc::new(Mutex::new(Terminal::new(ROWS, COLS)));
         spawn_reader(reader, terminal.clone(), proxy);
 
         Ok(App {
@@ -110,7 +112,14 @@ impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let attrs = Window::default_attributes().with_title("Kel");
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
-        self.renderer = Some(Renderer::new(window.clone()).unwrap());
+        let renderer = Renderer::new(window.clone()).unwrap();
+        // Make the window exactly as big as the grid.
+        let (cell_w, cell_h) = renderer.cell_size();
+        let _ = window.request_inner_size(PhysicalSize::new(
+            (COLS * cell_w) as u32,
+            (ROWS * cell_h) as u32,
+        ));
+        self.renderer = Some(renderer);
         self.window = Some(window);
     }
 
@@ -135,13 +144,8 @@ impl ApplicationHandler<UserEvent> for App {
             }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
-                    renderer.draw();
+                    renderer.draw(&self.terminal.lock().unwrap().grid);
                 }
-                // TEMPORARY
-                // console that launched the app, to prove pty → grid → redraw works.
-                let terminal = self.terminal.lock().unwrap();
-                print!("\x1b[2J\x1b[H{}", terminal.grid.render());
-                let _ = std::io::stdout().flush();
             }
             _ => {}
         }
