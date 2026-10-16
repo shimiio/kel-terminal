@@ -1,33 +1,22 @@
 use crate::term::Grid;
-use fontdue::{Font, FontSettings, Metrics};
-use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
 
-const FONT_PATH: &str = "C:\\Windows\\Fonts\\consola.ttf";
-const FONT_SIZE: f32 = 22.0; // in logical pixels, scaled by the monitor's DPI
-
 const BACKGROUND: u32 = 0x1e1e1e;
-const FOREGROUND: u32 = 0xd4d4d4;
+const FOREGROUND: u32 = 0xd4; // text brightness, 0-255
+const CURSOR: u32 = 0x808080;
 
-/// A rasterized character: its placement info and an alpha value (0-255) per pixel.
-struct Glyph {
-    metrics: Metrics,
-    coverage: Vec<u8>,
-}
+// Fixed cell size; FONT_SIZE is picked so a Consolas letter fits in a cell.
+const CELL_WIDTH: usize = 10;
+const CELL_HEIGHT: usize = 20;
+const FONT_SIZE: f32 = 18.0;
 
 pub struct Renderer {
     window: Rc<Window>,
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
-    font: Font,
-    font_px: f32,
-    cell_width: usize,
-    cell_height: usize,
-    /// Distance from the top of a cell down to the text baseline.
-    ascent: usize,
-    // Rasterizing is slow, so each char is rasterized once and reused.
-    glyphs: HashMap<char, Glyph>,
+    font: fontdue::Font,
+    ascent: i32,
 }
 
 impl Renderer {
@@ -37,138 +26,109 @@ impl Renderer {
         let surface = softbuffer::Surface::new(&context, window.clone())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let font = Font::from_bytes(std::fs::read(FONT_PATH)?, FontSettings::default())
+        let font_bytes = std::fs::read("C:\\Windows\\Fonts\\consola.ttf")?;
+        let font = fontdue::Font::from_bytes(font_bytes, fontdue::FontSettings::default())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let font_px = FONT_SIZE * window.scale_factor() as f32;
-        let line = font
-            .horizontal_line_metrics(font_px)
-            .ok_or_else(|| anyhow::anyhow!("font has no horizontal metrics"))?;
-        // Monospace font: every char is as wide as 'M'.
-        let cell_width = font.metrics('M', font_px).advance_width.ceil() as usize;
-        let cell_height = line.new_line_size.ceil() as usize;
+        let ascent = font
+            .horizontal_line_metrics(FONT_SIZE)
+            .ok_or_else(|| anyhow::anyhow!("font has no line metrics"))?
+            .ascent
+            .round() as i32;
 
         Ok(Renderer {
             window,
             surface,
             font,
-            font_px,
-            cell_width,
-            cell_height,
-            ascent: line.ascent.ceil() as usize,
-            glyphs: HashMap::new(),
+            ascent,
         })
     }
 
-    /// Size of one grid cell in physical pixels, as (width, height).
     pub fn cell_size(&self) -> (usize, usize) {
-        (self.cell_width, self.cell_height)
+        (CELL_WIDTH, CELL_HEIGHT)
     }
 
     pub fn draw(&mut self, grid: &Grid) {
-        let size = self.window.inner_size(); // window size in pixels
+        let size = self.window.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
         };
-        self.surface.resize(w, h).unwrap(); // make the pixel buffer match the window
-        let mut buffer = self.surface.buffer_mut().unwrap(); // get the pixel array
+        self.surface.resize(w, h).unwrap();
+        let mut buffer = self.surface.buffer_mut().unwrap();
         buffer.fill(BACKGROUND);
-
-        let mut canvas = Canvas {
-            pixels: &mut buffer,
-            width: size.width as usize,
-            height: size.height as usize,
-        };
+        let width = size.width as usize;
 
         let (cursor_row, cursor_col) = grid.cursor();
+
         for row in 0..grid.rows() {
+            let y = row * CELL_HEIGHT;
             for col in 0..grid.cols() {
-                let x = col * self.cell_width;
-                let y = row * self.cell_height;
+                let x = col * CELL_WIDTH;
 
-                // DEBUG chess grid
-                if (row + col) % 2 == 0 {
-                    canvas.fill_rect(x, y, self.cell_width, self.cell_height, 0x2a2a2a);
+                if (row, col) == (cursor_row, cursor_col) {
+                    fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, CURSOR);
                 }
-                canvas.fill_rect(x, y + self.ascent, self.cell_width, 1, 0x4a4a4a);
-
-                let is_cursor = (row, col) == (cursor_row, cursor_col);
-
-                // Block cursor: fill the cell, then draw its char in the inverted color.
-                let fg = if is_cursor {
-                    canvas.fill_rect(x, y, self.cell_width, self.cell_height, FOREGROUND);
-                    BACKGROUND
-                } else {
-                    FOREGROUND
-                };
 
                 let ch = grid.cell(row, col).ch;
-                if ch == ' ' {
-                    continue;
+                if ch != ' ' {
+                    draw_char(&mut buffer, width, &self.font, self.ascent, ch, x, y);
                 }
-                let glyph = self
-                    .glyphs
-                    .entry(ch)
-                    .or_insert_with(|| rasterize(&self.font, ch, self.font_px));
-                canvas.draw_glyph(glyph, x, y + self.ascent, fg);
             }
         }
 
-        buffer.present().unwrap(); // show it on screen
+        buffer.present().unwrap();
     }
 }
 
-fn rasterize(font: &Font, ch: char, px: f32) -> Glyph {
-    let (metrics, coverage) = font.rasterize(ch, px);
-    Glyph { metrics, coverage }
+fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: usize, color: u32) {
+    for py in y..y + h {
+        for px in x..x + w {
+            pixels[py * width + px] = color;
+        }
+    }
 }
 
-/// The pixel buffer plus its size, with helpers that clip at the edges.
-struct Canvas<'a> {
-    pixels: &'a mut [u32],
+fn mix(bg: u32, fg: u32, a: u32) -> u32 {
+    return (fg * a + bg * (255 - a)) / 255;
+}
+
+/// Draws `ch` in the cell whose top-left corner is at (x, y).
+fn draw_char(
+    pixels: &mut [u32],
     width: usize,
-    height: usize,
-}
+    font: &fontdue::Font,
+    ascent: i32,
+    ch: char,
+    x: usize,
+    y: usize,
+) {
+    let (metrics, coverage) = font.rasterize(ch, FONT_SIZE);
 
-impl Canvas<'_> {
-    fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, color: u32) {
-        for py in y..(y + h).min(self.height) {
-            let start = py * self.width;
-            self.pixels[start + x.min(self.width)..start + (x + w).min(self.width)].fill(color);
-        }
-    }
+    // Letters sit on the baseline, `ascent` pixels below the top of the cell.
+    // ymin is how far the letter's bottom is below the baseline (negative for 'g', 'p'...).
+    let top = y as i32 + ascent - (metrics.height as i32 + metrics.ymin);
+    let left = x as i32 + metrics.xmin;
 
-    /// Draws `glyph` with its baseline at `baseline_y`, starting at column `x`.
-    fn draw_glyph(&mut self, glyph: &Glyph, x: usize, baseline_y: usize, color: u32) {
-        let m = &glyph.metrics;
-        // ymin is how far the bitmap's bottom sits below the baseline (negative for 'g', 'p'...).
-        let top = baseline_y as i32 - (m.height as i32 + m.ymin);
-        let left = x as i32 + m.xmin;
-
-        for gy in 0..m.height {
-            for gx in 0..m.width {
-                let alpha = glyph.coverage[gy * m.width + gx];
-                if alpha == 0 {
+    for gy in 0..metrics.height {
+        for gx in 0..metrics.width {
+            let value = coverage[gy * metrics.width + gx];
+            if value > 0 {
+                let window_x = left + gx as i32;
+                let window_y = top + gy as i32;
+                if window_x < 0 || window_y < 0 {
                     continue;
                 }
-                let (px, py) = (left + gx as i32, top + gy as i32);
-                if px < 0 || py < 0 || px as usize >= self.width || py as usize >= self.height {
+                let i = window_y as usize * width + window_x as usize;
+                if i >= pixels.len() {
                     continue;
                 }
-                let i = py as usize * self.width + px as usize;
-                self.pixels[i] = blend(self.pixels[i], color, alpha);
+
+                let bg = pixels[i] & 0xff;
+
+                let v = mix(bg, FOREGROUND, value as u32);
+                let gray = (v << 16) | (v << 8) | v;
+
+                pixels[i] = gray;
             }
         }
     }
-}
-
-/// Mixes `fg` over `bg`: alpha 0 keeps `bg`, 255 gives `fg`.
-/// Colors are 0x00RRGGBB, so each channel is blended separately.
-fn blend(bg: u32, fg: u32, alpha: u8) -> u32 {
-    let a = alpha as u32;
-    let channel = |shift: u32| {
-        let b = (bg >> shift) & 0xff;
-        let f = (fg >> shift) & 0xff;
-        ((f * a + b * (255 - a)) / 255) << shift
-    };
-    channel(16) | channel(8) | channel(0)
 }
