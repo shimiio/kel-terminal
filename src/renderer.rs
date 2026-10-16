@@ -6,6 +6,7 @@ use winit::window::Window;
 const BACKGROUND: u32 = 0x1e1e1e;
 const FOREGROUND: u32 = 0xd4; // text brightness, 0-255
 const CURSOR: u32 = 0x808080;
+const CURSOR_HEIGHT: usize = 4;
 
 // Fixed cell size; FONT_SIZE is picked so a Consolas letter fits in a cell.
 const CELL_WIDTH: usize = 10;
@@ -65,7 +66,15 @@ impl Renderer {
                 let x = col * CELL_WIDTH;
 
                 if (row, col) == (cursor_row, cursor_col) {
-                    fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, CURSOR);
+                    fill_rect(
+                        &mut buffer,
+                        width,
+                        x,
+                        y + CELL_HEIGHT - CURSOR_HEIGHT,
+                        CELL_WIDTH,
+                        CURSOR_HEIGHT,
+                        CURSOR,
+                    );
                 }
 
                 let ch = grid.cell(row, col).ch;
@@ -122,7 +131,7 @@ fn draw_char(
                     continue;
                 }
 
-                let bg = pixels[i] & 0xff;
+                let bg = pixels[i] & 0xd4;
 
                 let v = mix(bg, FOREGROUND, value as u32);
                 let gray = (v << 16) | (v << 8) | v;
