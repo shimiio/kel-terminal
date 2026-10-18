@@ -32,6 +32,26 @@ impl Grid {
         }
     }
 
+    pub fn resize(&mut self, rows: usize, cols: usize) {
+        // If the cursor would end up below the new last row, drop lines from the top,
+        // so the line you're typing on stays visible.
+        if self.cursor_row >= rows {
+            let extra = self.cursor_row + 1 - rows;
+            self.cells.drain(0..extra);
+            self.cursor_row -= extra;
+        }
+
+        // Make every line `cols` long, then make the grid `rows` lines tall.
+        for line in &mut self.cells {
+            line.resize(cols, Cell::default());
+        }
+        self.cells.resize(rows, vec![Cell::default(); cols]);
+
+        self.rows = rows;
+        self.cols = cols;
+        self.cursor_col = self.cursor_col.min(cols);
+    }
+
     pub fn rows(&self) -> usize {
         self.rows
     }

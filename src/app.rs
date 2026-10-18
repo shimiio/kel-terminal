@@ -1,7 +1,7 @@
 use crate::pty;
 use crate::renderer::Renderer;
 use crate::term::Terminal;
-use portable_pty::{Child, MasterPty};
+use portable_pty::{Child, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -31,14 +31,13 @@ pub struct App {
     renderer: Option<Renderer>,
     terminal: Arc<Mutex<Terminal>>,
     writer: Box<dyn Write + Send>,
-    // Never read, but dropping them would close the pty and kill the shell.
-    _master: Box<dyn MasterPty + Send>,
+    master: Box<dyn MasterPty + Send>,
     _child: Box<dyn Child + Send + Sync>,
 }
 
 impl App {
     pub fn new(proxy: EventLoopProxy<UserEvent>) -> anyhow::Result<Self> {
-        let (master, child) = pty::spawn_shell()?;
+        let (master, child) = pty::spawn_shell(ROWS as u16, COLS as u16)?;
         let reader = master.try_clone_reader()?;
         let mut writer = master.take_writer()?;
 
@@ -54,7 +53,7 @@ impl App {
             renderer: None,
             terminal,
             writer,
-            _master: master,
+            master,
             _child: child,
         })
     }
@@ -140,6 +139,22 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 if let Some(bytes) = key_to_bytes(&event.logical_key, event.text.as_deref()) {
                     self.send_to_shell(&bytes);
+                }
+            }
+            WindowEvent::Resized(size) => {
+                if let Some(renderer) = &self.renderer {
+                    let (cell_w, cell_h) = renderer.cell_size();
+                    let cols = size.width as usize / cell_w;
+                    let rows = size.height as usize / cell_h;
+                    if rows > 0 && cols > 0 {
+                        self.terminal.lock().unwrap().grid.resize(rows, cols);
+                        let _ = self.master.resize(PtySize {
+                            rows: rows as u16,
+                            cols: cols as u16,
+                            pixel_width: 0,
+                            pixel_height: 0,
+                        });
+                    }
                 }
             }
             WindowEvent::RedrawRequested => {

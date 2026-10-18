@@ -1,9 +1,12 @@
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
-pub fn spawn_shell() -> anyhow::Result<(Box<dyn MasterPty + Send>, Box<dyn Child + Send + Sync>)> {
+pub fn spawn_shell(
+    rows: u16,
+    cols: u16,
+) -> anyhow::Result<(Box<dyn MasterPty + Send>, Box<dyn Child + Send + Sync>)> {
     let pair = native_pty_system().openpty(PtySize {
-        rows: 24,
-        cols: 80,
+        rows,
+        cols,
         pixel_width: 0,
         pixel_height: 0,
     })?;
