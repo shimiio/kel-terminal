@@ -1,5 +1,12 @@
 use super::Grid;
+use super::grid::DEFAULT_FG;
 use vte::Perform;
+
+/// The 16 basic colors: 0-7 normal (codes 30-37), 8-15 bright (codes 90-97).
+const PALETTE: [u32; 16] = [
+    0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00, 0x0037da, 0x881798, 0x3a96dd, 0xcccccc, 0x767676,
+    0xe74856, 0x16c60c, 0xf9f1a5, 0x3b78ff, 0xb4009e, 0x61d6d6, 0xf2f2f2,
+];
 
 pub struct Terminal {
     pub grid: Grid,
@@ -9,6 +16,29 @@ impl Terminal {
     pub fn new(rows: usize, cols: usize) -> Self {
         Terminal {
             grid: Grid::new(rows, cols),
+        }
+    }
+
+    fn set_colors(&mut self, params: &vte::Params) {
+        let mut iter = params.iter();
+        while let Some(param) = iter.next() {
+            let code = param.first().copied().unwrap_or(0);
+            match code {
+                0 | 39 => self.grid.fg = DEFAULT_FG,
+                30..=37 => self.grid.fg = PALETTE[(code - 30) as usize],
+                90..=97 => self.grid.fg = PALETTE[(code - 90 + 8) as usize],
+                38 => {
+                    // `38;5;n`: color number n. Take the next two params ourselves.
+                    let kind = iter.next().and_then(|p| p.first().copied());
+                    let n = iter.next().and_then(|p| p.first().copied());
+                    match (kind, n) {
+                        (Some(5), Some(n)) if n < 16 => self.grid.fg = PALETTE[n as usize],
+                        _ => break, // other extended formats: not supported yet
+                    }
+                }
+                48 => break,
+                _ => {}
+            }
         }
     }
 }
@@ -65,6 +95,7 @@ impl Perform for Terminal {
             'X' => self.grid.erase_chars(n),
             'P' => self.grid.delete_chars(n),
             '@' => self.grid.insert_blanks(n),
+            'm' => self.set_colors(params),
             _ => {}
         }
     }
@@ -183,5 +214,18 @@ mod tests {
     #[test]
     fn private_sequences_are_ignored() {
         assert_eq!(feed("a\x1b[?25lb").grid.render(), "ab");
+    }
+
+    #[test]
+    fn colors_apply_until_reset() {
+        let t = feed("\x1b[31mE\x1b[0mx");
+        assert_eq!(t.grid.cell(0, 0).fg, PALETTE[1]); // E is red
+        assert_eq!(t.grid.cell(0, 1).fg, DEFAULT_FG); // x is default again
+    }
+
+    #[test]
+    fn extended_color_number() {
+        let t = feed("\x1b[38;5;9mhello");
+        assert_eq!(t.grid.cell(0, 0).fg, PALETTE[9]);
     }
 }

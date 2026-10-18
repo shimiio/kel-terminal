@@ -4,7 +4,6 @@ use std::rc::Rc;
 use winit::window::Window;
 
 const BACKGROUND: u32 = 0x1e1e1e;
-const FOREGROUND: u32 = 0xd4; // text brightness, 0-255
 const CURSOR: u32 = 0x808080;
 const CURSOR_HEIGHT: usize = 4;
 
@@ -77,9 +76,18 @@ impl Renderer {
                     );
                 }
 
-                let ch = grid.cell(row, col).ch;
-                if ch != ' ' {
-                    draw_char(&mut buffer, width, &self.font, self.ascent, ch, x, y);
+                let cell = grid.cell(row, col);
+                if cell.ch != ' ' {
+                    draw_char(
+                        &mut buffer,
+                        width,
+                        &self.font,
+                        self.ascent,
+                        cell.ch,
+                        cell.fg,
+                        x,
+                        y,
+                    );
                 }
             }
         }
@@ -97,7 +105,15 @@ fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: 
 }
 
 fn mix(bg: u32, fg: u32, a: u32) -> u32 {
-    return (fg * a + bg * (255 - a)) / 255;
+    (fg * a + bg * (255 - a)) / 255
+}
+
+/// Blends color `fg` over color `bg`, channel by channel. `a` is 0-255.
+fn blend(bg: u32, fg: u32, a: u32) -> u32 {
+    let r = mix((bg >> 16) & 0xff, (fg >> 16) & 0xff, a);
+    let g = mix((bg >> 8) & 0xff, (fg >> 8) & 0xff, a);
+    let b = mix(bg & 0xff, fg & 0xff, a);
+    (r << 16) | (g << 8) | b
 }
 
 /// Draws `ch` in the cell whose top-left corner is at (x, y).
@@ -107,6 +123,7 @@ fn draw_char(
     font: &fontdue::Font,
     ascent: i32,
     ch: char,
+    color: u32,
     x: usize,
     y: usize,
 ) {
@@ -131,12 +148,7 @@ fn draw_char(
                     continue;
                 }
 
-                let bg = pixels[i] & 0xd4;
-
-                let v = mix(bg, FOREGROUND, value as u32);
-                let gray = (v << 16) | (v << 8) | v;
-
-                pixels[i] = gray;
+                pixels[i] = blend(pixels[i], color, value as u32);
             }
         }
     }

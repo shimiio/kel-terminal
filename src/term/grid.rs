@@ -1,15 +1,20 @@
+pub const DEFAULT_FG: u32 = 0xd4d4d4;
+const TAB_WIDTH: usize = 8;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cell {
     pub ch: char,
+    pub fg: u32,
 }
 
 impl Default for Cell {
     fn default() -> Self {
-        Cell { ch: ' ' }
+        Cell {
+            ch: ' ',
+            fg: DEFAULT_FG,
+        }
     }
 }
-
-const TAB_WIDTH: usize = 8;
 
 pub struct Grid {
     cells: Vec<Vec<Cell>>,
@@ -19,6 +24,7 @@ pub struct Grid {
     // Can be equal to `cols` after printing in the last column: the wrap only
     // happens when the next char is printed ("pending wrap").
     cursor_col: usize,
+    pub fg: u32,
 }
 
 impl Grid {
@@ -29,6 +35,7 @@ impl Grid {
             cols,
             cursor_col: 0,
             cursor_row: 0,
+            fg: DEFAULT_FG,
         }
     }
 
@@ -83,7 +90,7 @@ impl Grid {
             self.cursor_col = 0;
             self.newline();
         }
-        self.cells[self.cursor_row][self.cursor_col] = Cell { ch: c };
+        self.cells[self.cursor_row][self.cursor_col] = Cell { ch: c, fg: self.fg };
         self.cursor_col += 1;
     }
 
