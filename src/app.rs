@@ -11,7 +11,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 const ROWS: usize = 24;
@@ -30,6 +30,7 @@ pub struct App {
     window: Option<Rc<Window>>,
     renderer: Option<Renderer>,
     terminal: Arc<Mutex<Terminal>>,
+    modifiers: ModifiersState,
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
     _child: Box<dyn Child + Send + Sync>,
@@ -53,6 +54,7 @@ impl App {
             renderer: None,
             terminal,
             writer,
+            modifiers: ModifiersState::empty(),
             master,
             _child: child,
         })
@@ -136,7 +138,14 @@ impl ApplicationHandler<UserEvent> for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                if self.modifiers.control_key()
+                    && event.physical_key == PhysicalKey::Code(KeyCode::KeyC)
+                {
+                    self.send_to_shell(&[0x03]);
+                    return;
+                }
                 if let Some(bytes) = key_to_bytes(&event.logical_key, event.text.as_deref()) {
                     self.send_to_shell(&bytes);
                 }
