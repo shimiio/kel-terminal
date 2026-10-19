@@ -98,8 +98,13 @@ fn key_to_bytes(key: &Key, text: Option<&str>) -> Option<Vec<u8>> {
     let bytes: &[u8] = match key {
         Key::Named(NamedKey::Enter) => b"\r",
         Key::Named(NamedKey::Backspace) => b"\x7f",
+        Key::Named(NamedKey::Delete) => b"\x1b[3~",
         Key::Named(NamedKey::Tab) => b"\t",
         Key::Named(NamedKey::Escape) => b"\x1b",
+        Key::Named(NamedKey::Home) => b"\x1b[H",
+        Key::Named(NamedKey::End) => b"\x1b[F",
+        Key::Named(NamedKey::PageUp) => b"\x1b[5",
+        Key::Named(NamedKey::PageDown) => b"\x1b[6~",
         Key::Named(NamedKey::ArrowUp) => b"\x1b[A",
         Key::Named(NamedKey::ArrowDown) => b"\x1b[B",
         Key::Named(NamedKey::ArrowRight) => b"\x1b[C",
