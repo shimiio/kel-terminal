@@ -1,4 +1,5 @@
 use super::Grid;
+use super::grid::DEFAULT_BG;
 use super::grid::DEFAULT_FG;
 use vte::Perform;
 
@@ -24,7 +25,13 @@ impl Terminal {
         while let Some(param) = iter.next() {
             let code = param.first().copied().unwrap_or(0);
             match code {
-                0 | 39 => self.grid.fg = DEFAULT_FG,
+                0 => {
+                    self.grid.fg = DEFAULT_FG;
+                    self.grid.bg = DEFAULT_BG;
+                }
+
+                // text color
+                39 => self.grid.fg = DEFAULT_FG,
                 30..=37 => self.grid.fg = PALETTE[(code - 30) as usize],
                 90..=97 => self.grid.fg = PALETTE[(code - 90 + 8) as usize],
                 38 => {
@@ -36,7 +43,20 @@ impl Terminal {
                         _ => break, // other extended formats: not supported yet
                     }
                 }
-                48 => break,
+
+                // background color: same as above, but 4x / 10x / 49 / 48
+                40..=47 => self.grid.bg = PALETTE[(code - 40) as usize],
+                100..=107 => self.grid.bg = PALETTE[(code - 100 + 8) as usize],
+                49 => self.grid.bg = DEFAULT_BG,
+                48 => {
+                    let kind = iter.next().and_then(|p| p.first().copied());
+                    let n = iter.next().and_then(|p| p.first().copied());
+                    match (kind, n) {
+                        (Some(5), Some(n)) if n < 16 => self.grid.bg = PALETTE[n as usize],
+                        _ => break,
+                    }
+                }
+
                 _ => {}
             }
         }
@@ -227,5 +247,12 @@ mod tests {
     fn extended_color_number() {
         let t = feed("\x1b[38;5;9mhello");
         assert_eq!(t.grid.cell(0, 0).fg, PALETTE[9]);
+    }
+
+    #[test]
+    fn background_applies_until_reset() {
+        let t = feed("\x1b[41mE\x1b[0mx");
+        assert_eq!(t.grid.cell(0, 0).bg, PALETTE[1]);
+        assert_eq!(t.grid.cell(0, 1).bg, DEFAULT_BG);
     }
 }

@@ -78,6 +78,7 @@ impl Renderer {
 
                 let cell = grid.cell(row, col);
                 if cell.ch != ' ' {
+                    fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, cell.bg);
                     draw_char(
                         &mut buffer,
                         width,
