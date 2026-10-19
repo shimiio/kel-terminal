@@ -255,4 +255,18 @@ mod tests {
         assert_eq!(t.grid.cell(0, 0).bg, PALETTE[1]);
         assert_eq!(t.grid.cell(0, 1).bg, DEFAULT_BG);
     }
+
+    #[test]
+    fn lines_scrolled_off_are_kept() {
+        let t = feed("1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7");
+        assert_eq!(t.grid.scrollback().len(), 2);
+        assert_eq!(t.grid.scrollback()[0][0].ch, '1'); // oldest line starts with '1'
+        assert_eq!(t.grid.render(), "3\n4\n5\n6\n7"); // the screen shows the rest
+    }
+
+    #[test]
+    fn erase_scrollback() {
+        let t = feed("1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\x1b[3J");
+        assert_eq!(t.grid.scrollback().len(), 0);
+    }
 }

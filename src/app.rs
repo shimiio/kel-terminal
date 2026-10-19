@@ -1,5 +1,5 @@
 use crate::pty;
-use crate::renderer::Renderer;
+use crate::renderer::{CELL_HEIGHT, CELL_WIDTH, Renderer};
 use crate::term::Terminal;
 use portable_pty::{Child, MasterPty, PtySize};
 use std::io::{Read, Write};
@@ -9,7 +9,7 @@ use std::thread;
 use vte::Parser;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, WindowEvent};
+use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
@@ -116,15 +116,12 @@ fn key_to_bytes(key: &Key, text: Option<&str>) -> Option<Vec<u8>> {
 
 impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let attrs = Window::default_attributes().with_title("Kel");
+        let size = PhysicalSize::new((COLS * CELL_WIDTH) as u32, (ROWS * CELL_HEIGHT) as u32);
+        let attrs = Window::default_attributes()
+            .with_title("Kel")
+            .with_inner_size(size);
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
         let renderer = Renderer::new(window.clone()).unwrap();
-        // Make the window exactly as big as the grid.
-        let (cell_w, cell_h) = renderer.cell_size();
-        let _ = window.request_inner_size(PhysicalSize::new(
-            (COLS * cell_w) as u32,
-            (ROWS * cell_h) as u32,
-        ));
         self.renderer = Some(renderer);
         self.window = Some(window);
     }
@@ -155,13 +152,19 @@ impl ApplicationHandler<UserEvent> for App {
                     self.send_to_shell(&bytes);
                 }
             }
-            WindowEvent::Resized(size) => {
-                if let Some(renderer) = &self.renderer {
+            WindowEvent::Resized(_) => {
+                if let (Some(renderer), Some(window)) = (&self.renderer, &self.window) {
+                    let size = window.inner_size();
+
                     let (cell_w, cell_h) = renderer.cell_size();
                     let cols = size.width as usize / cell_w;
                     let rows = size.height as usize / cell_h;
-                    if rows > 0 && cols > 0 {
-                        self.terminal.lock().unwrap().grid.resize(rows, cols);
+
+                    let mut terminal = self.terminal.lock().unwrap();
+                    let changed = (rows, cols) != (terminal.grid.rows(), terminal.grid.cols());
+
+                    if rows > 0 && cols > 0 && changed {
+                        terminal.grid.resize(rows, cols);
                         let _ = self.master.resize(PtySize {
                             rows: rows as u16,
                             cols: cols as u16,
@@ -174,6 +177,16 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.draw(&self.terminal.lock().unwrap().grid);
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                if let MouseScrollDelta::LineDelta(_, y) = delta {
+                    let lines = (y * 3.0) as i32;
+                    let mut terminal = self.terminal.lock().unwrap();
+                    terminal.grid.scroll_view(lines);
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
                 }
             }
             _ => {}

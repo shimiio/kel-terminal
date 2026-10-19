@@ -8,8 +8,8 @@ const CURSOR: u32 = 0x808080;
 const CURSOR_HEIGHT: usize = 4;
 
 // Fixed cell size; FONT_SIZE is picked so a Consolas letter fits in a cell.
-const CELL_WIDTH: usize = 10;
-const CELL_HEIGHT: usize = 20;
+pub const CELL_WIDTH: usize = 10;
+pub const CELL_HEIGHT: usize = 20;
 const FONT_SIZE: f32 = 18.0;
 
 pub struct Renderer {
@@ -64,7 +64,8 @@ impl Renderer {
             for col in 0..grid.cols() {
                 let x = col * CELL_WIDTH;
 
-                if (row, col) == (cursor_row, cursor_col) {
+                // Cursor
+                if grid.scroll_offset() == 0 && (row, col) == (cursor_row, cursor_col) {
                     fill_rect(
                         &mut buffer,
                         width,
@@ -76,7 +77,7 @@ impl Renderer {
                     );
                 }
 
-                let cell = grid.cell(row, col);
+                let cell = grid.visible_cell(row, col);
                 if cell.ch != ' ' {
                     fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, cell.bg);
                     draw_char(

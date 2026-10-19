@@ -1,3 +1,6 @@
+use std::collections::VecDeque;
+
+pub const SCROLLBACK_LIMIT: usize = 10_000;
 pub const DEFAULT_FG: u32 = 0xd4d4d4;
 pub const DEFAULT_BG: u32 = 0x1e1e1e;
 const TAB_WIDTH: usize = 8;
@@ -21,6 +24,8 @@ impl Default for Cell {
 
 pub struct Grid {
     cells: Vec<Vec<Cell>>,
+    scrollback: VecDeque<Vec<Cell>>,
+    scroll_offset: usize,
     rows: usize,
     cols: usize,
     cursor_row: usize,
@@ -35,6 +40,8 @@ impl Grid {
     pub fn new(rows: usize, cols: usize) -> Self {
         Grid {
             cells: vec![vec![Cell::default(); cols]; rows],
+            scrollback: VecDeque::new(),
+            scroll_offset: 0,
             rows,
             cols,
             cursor_col: 0,
@@ -83,7 +90,11 @@ impl Grid {
 
     pub fn newline(&mut self) {
         if self.cursor_row + 1 >= self.rows {
-            self.cells.remove(0);
+            let line = self.cells.remove(0);
+            self.scrollback.push_back(line);
+            if self.scrollback.len() > SCROLLBACK_LIMIT {
+                self.scrollback.pop_front();
+            }
             self.cells.push(vec![Cell::default(); self.cols]);
         } else {
             self.cursor_row += 1;
@@ -101,6 +112,33 @@ impl Grid {
             bg: self.bg,
         };
         self.cursor_col += 1;
+    }
+
+    /// The cell shown at this screen position, taking the scroll offset into account.
+    pub fn visible_cell(&self, row: usize, col: usize) -> Cell {
+        let sb = self.scrollback.len();
+        let index = sb - self.scroll_offset + row;
+        let line = if index < sb {
+            &self.scrollback[index]
+        } else {
+            &self.cells[index - sb]
+        };
+        line.get(col).copied().unwrap_or_default()
+    }
+
+    pub fn scrollback(&self) -> &VecDeque<Vec<Cell>> {
+        &self.scrollback
+    }
+
+    /// Scrolls the view: positive = up (into the past), negative = down.
+    pub fn scroll_view(&mut self, lines: i32) {
+        let max = self.scrollback.len() as i32;
+        let new = (self.scroll_offset as i32 + lines).clamp(0, max);
+        self.scroll_offset = new as usize;
+    }
+
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
     }
 
     pub fn carriage_return(&mut self) {
@@ -178,10 +216,14 @@ impl Grid {
                     row.fill(Cell::default());
                 }
             }
-            2 | 3 => {
+            2 => {
                 for row in &mut self.cells {
                     row.fill(Cell::default());
                 }
+            }
+            3 => {
+                self.scrollback.clear();
+                self.scroll_offset = 0;
             }
             _ => {}
         }
