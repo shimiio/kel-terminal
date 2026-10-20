@@ -141,6 +141,10 @@ impl Grid {
         self.scroll_offset
     }
 
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll_offset = 0
+    }
+
     pub fn carriage_return(&mut self) {
         self.cursor_col = 0;
     }

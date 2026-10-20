@@ -142,6 +142,8 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                self.terminal.lock().unwrap().grid.scroll_to_bottom();
+
                 if self.modifiers.control_key()
                     && event.physical_key == PhysicalKey::Code(KeyCode::KeyC)
                 {
