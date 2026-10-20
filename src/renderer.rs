@@ -1,9 +1,11 @@
+use crate::app::Selection;
 use crate::term::Grid;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
 
 const BACKGROUND: u32 = 0x1e1e1e;
+const SELECTION_BG: u32 = 0x264f78; // blue
 const CURSOR: u32 = 0x808080;
 const CURSOR_HEIGHT: usize = 4;
 
@@ -47,7 +49,7 @@ impl Renderer {
         (CELL_WIDTH, CELL_HEIGHT)
     }
 
-    pub fn draw(&mut self, grid: &Grid) {
+    pub fn draw(&mut self, grid: &Grid, selection: Option<Selection>) {
         let size = self.window.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
@@ -64,9 +66,10 @@ impl Renderer {
             for col in 0..grid.cols() {
                 let x = col * CELL_WIDTH;
 
-                // Cursor
+                let selected = selection.is_some_and(|s| s.contains(row, col));
                 let cell = grid.visible_cell(row, col);
-                fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, cell.bg);
+                let bg = if selected { SELECTION_BG } else { cell.bg };
+                fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, bg);
 
                 if cell.ch != ' ' {
                     draw_char(

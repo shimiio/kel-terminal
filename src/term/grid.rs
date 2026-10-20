@@ -128,6 +128,21 @@ impl Grid {
         line.get(col).copied().unwrap_or_default()
     }
 
+    /// The text on screen from `start` to `end` (row, col), in reading order.
+    /// Trailing spaces are removed from each line, and lines are joined with "\r\n".
+    pub fn text_between(&self, start: (usize, usize), end: (usize, usize)) -> String {
+        let mut lines = Vec::new();
+        for row in start.0..=end.0 {
+            let first_col = if row == start.0 { start.1 } else { 0 };
+            let last_col = if row == end.0 { end.1 } else { self.cols - 1 };
+            let line: String = (first_col..=last_col)
+                .map(|col| self.visible_cell(row, col).ch)
+                .collect();
+            lines.push(line.trim_end().to_string());
+        }
+        lines.join("\r\n")
+    }
+
     pub fn scrollback(&self) -> &VecDeque<Vec<Cell>> {
         &self.scrollback
     }
