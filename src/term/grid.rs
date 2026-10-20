@@ -34,6 +34,7 @@ pub struct Grid {
     cursor_col: usize,
     pub fg: u32,
     pub bg: u32,
+    pub cursor_visible: bool,
 }
 
 impl Grid {
@@ -48,6 +49,7 @@ impl Grid {
             cursor_row: 0,
             fg: DEFAULT_FG,
             bg: DEFAULT_BG,
+            cursor_visible: true,
         }
     }
 

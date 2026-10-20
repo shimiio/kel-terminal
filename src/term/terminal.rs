@@ -94,10 +94,16 @@ impl Perform for Terminal {
         _ignore: bool,
         action: char,
     ) {
-        // Private sequences like `CSI ? 25 l` (hide cursor) aren't supported yet.
-        if !intermediates.is_empty() {
+        // esc private sequences
+        if intermediates == [b'?'] {
+            match (action, param(params, 0, 0)) {
+                ('l', 25) => self.grid.cursor_visible = false,
+                ('h', 25) => self.grid.cursor_visible = true,
+                _ => {}
+            }
             return;
         }
+        // esc sequences
         let n = param(params, 0, 1) as usize;
         match action {
             'A' => self.grid.move_up(n),
@@ -268,5 +274,11 @@ mod tests {
     fn erase_scrollback() {
         let t = feed("1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7\x1b[3J");
         assert_eq!(t.grid.scrollback().len(), 0);
+    }
+
+    #[test]
+    fn cursor_hide_and_show() {
+        assert!(!feed("\x1b[?25l").grid.cursor_visible);
+        assert!(feed("\x1b[?25l\x1b[?25h").grid.cursor_visible);
     }
 }

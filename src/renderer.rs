@@ -65,7 +65,10 @@ impl Renderer {
                 let x = col * CELL_WIDTH;
 
                 // Cursor
-                if grid.scroll_offset() == 0 && (row, col) == (cursor_row, cursor_col) {
+                if grid.cursor_visible
+                    && grid.scroll_offset() == 0
+                    && (row, col) == (cursor_row, cursor_col)
+                {
                     fill_rect(
                         &mut buffer,
                         width,
