@@ -18,10 +18,12 @@ use std::io::{Read, Write};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 use vte::Parser;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event_loop::ControlFlow;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
@@ -29,6 +31,8 @@ use winit::window::{Window, WindowId};
 // Starting size, in cells. After that, the size comes from the window (`on_resize`).
 const ROWS: usize = 24;
 const COLS: usize = 80;
+/// How long the cursor stays on, then off.
+const BLINK_INTERVAL: Duration = Duration::from_millis(500);
 
 /// The selected area, from where the mouse was pressed to where it is now. (row, col)
 #[derive(Clone, Copy, Debug)]
@@ -85,6 +89,11 @@ pub struct App {
     selection: Option<Selection>,
     /// True while the left button is held down (dragging).
     selecting: bool,
+
+    /// Is the blinking cursor in its "on" half right now?
+    cursor_on: bool,
+    /// When the cursor switches on/off next.
+    next_blink: Instant,
 }
 
 impl App {
@@ -115,6 +124,9 @@ impl App {
             mouse_cell: (0, 0),
             selection: None,
             selecting: false,
+
+            cursor_on: true,
+            next_blink: Instant::now() + BLINK_INTERVAL,
         })
     }
 
@@ -128,6 +140,13 @@ impl App {
         // If the shell is gone, the reader thread will report PtyExited.
         let _ = self.writer.write_all(bytes);
         let _ = self.writer.flush();
+    }
+
+    /// Shows the cursor and starts the blink over, so it doesn't vanish while you type.
+    fn restart_blink(&mut self) {
+        self.cursor_on = true;
+        self.next_blink = Instant::now() + BLINK_INTERVAL;
+        self.request_redraw();
     }
 }
 
@@ -242,6 +261,18 @@ impl ApplicationHandler<UserEvent> for App {
             _ => {}
         }
     }
+
+    /// Called when winit has handled all events and is about to sleep.
+    /// We use it as the timer for the blinking cursor.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if Instant::now() >= self.next_blink {
+            self.cursor_on = !self.cursor_on;
+            self.next_blink = Instant::now() + BLINK_INTERVAL;
+            self.request_redraw();
+        }
+        // Sleep until the next event, or until it's time to blink, whichever comes first.
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_blink));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +288,11 @@ impl App {
     /// Draws the grid (and the mouse selection) into the window.
     fn on_redraw(&mut self) {
         if let Some(renderer) = &mut self.renderer {
-            renderer.draw(&self.terminal.lock().unwrap().grid, self.selection);
+            renderer.draw(
+                &self.terminal.lock().unwrap().grid,
+                self.selection,
+                self.cursor_on,
+            );
         }
     }
 
@@ -291,6 +326,7 @@ impl App {
     /// Shortcuts use `physical_key` (the key's place on the keyboard), so they
     /// work with any layout, Cyrillic too.
     fn on_key(&mut self, event: KeyEvent) {
+        self.restart_blink();
         let ctrl = self.modifiers.control_key();
         let shift = self.modifiers.shift_key();
 

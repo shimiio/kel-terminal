@@ -1,4 +1,4 @@
-//! Draws the grid into the window, pixel by pixel, on the CPU.
+//! Draws the gri        self.restart_blink();d into the window, pixel by pixel, on the CPU.
 //!
 //! - softbuffer gives us the window's pixels as one long `[u32]` list, row after row.
 //!   Pixel (x, y) is at index `y * width + x`. A color is `0xRRGGBB`.
@@ -61,7 +61,7 @@ impl Renderer {
 
     /// Draws one frame. For each cell: 1. background (or selection blue),
     /// 2. the letter on top, 3. the cursor line on top of that.
-    pub fn draw(&mut self, grid: &Grid, selection: Option<Selection>) {
+    pub fn draw(&mut self, grid: &Grid, selection: Option<Selection>, cursor_on: bool) {
         let size = self.window.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
@@ -97,6 +97,7 @@ impl Renderer {
                 }
 
                 if grid.cursor_visible
+                    && cursor_on
                     && grid.scroll_offset() == 0
                     && (row, col) == (cursor_row, cursor_col)
                 {
