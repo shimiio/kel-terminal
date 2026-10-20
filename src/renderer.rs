@@ -1,3 +1,11 @@
+//! Draws the grid into the window, pixel by pixel, on the CPU.
+//!
+//! - softbuffer gives us the window's pixels as one long `[u32]` list, row after row.
+//!   Pixel (x, y) is at index `y * width + x`. A color is `0xRRGGBB`.
+//! - fontdue turns a character into a coverage map: how much of each pixel the
+//!   letter covers, 0 (not at all) to 255 (fully).
+//! - Every frame redraws everything: backgrounds, letters, cursor.
+
 use crate::app::Selection;
 use crate::term::Grid;
 use std::num::NonZeroU32;
@@ -16,8 +24,10 @@ const FONT_SIZE: f32 = 18.0;
 
 pub struct Renderer {
     window: Rc<Window>,
+    /// The window's pixels, which we draw into.
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
     font: fontdue::Font,
+    /// Pixels from the top of a cell down to the baseline, the line letters sit on.
     ascent: i32,
 }
 
@@ -49,6 +59,8 @@ impl Renderer {
         (CELL_WIDTH, CELL_HEIGHT)
     }
 
+    /// Draws one frame. For each cell: 1. background (or selection blue),
+    /// 2. the letter on top, 3. the cursor line on top of that.
     pub fn draw(&mut self, grid: &Grid, selection: Option<Selection>) {
         let size = self.window.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
@@ -113,6 +125,8 @@ fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: 
     }
 }
 
+/// Mixes one color channel: `a` = 0 gives `bg`, 255 gives `fg`.
+/// e.g. mix(0, 255, 128) = 128, halfway between.
 fn mix(bg: u32, fg: u32, a: u32) -> u32 {
     (fg * a + bg * (255 - a)) / 255
 }

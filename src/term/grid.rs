@@ -1,10 +1,18 @@
+//! The screen as a grid of cells: what is shown where, in which colors,
+//! where the cursor is, and the old lines that scrolled off the top.
+//!
+//! Rows and columns start at 0 here. Escape codes count from 1, so the
+//! functions called from escape codes (`move_cursor`, `set_col`...) subtract 1.
+
 use std::collections::VecDeque;
 
+/// How many old lines to keep. Older ones are thrown away.
 pub const SCROLLBACK_LIMIT: usize = 10_000;
-pub const DEFAULT_FG: u32 = 0xd4d4d4;
-pub const DEFAULT_BG: u32 = 0x1e1e1e;
+pub const DEFAULT_FG: u32 = 0xd4d4d4; // light gray text
+pub const DEFAULT_BG: u32 = 0x1e1e1e; // dark gray background
 const TAB_WIDTH: usize = 8;
 
+/// One character on the screen, with its colors (`0xRRGGBB`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cell {
     pub ch: char,
@@ -23,8 +31,11 @@ impl Default for Cell {
 }
 
 pub struct Grid {
+    /// The live screen: `rows` lines, each `cols` cells. `cells[row][col]`.
     cells: Vec<Vec<Cell>>,
+    /// Lines that scrolled off the top, oldest first.
     scrollback: VecDeque<Vec<Cell>>,
+    /// How many lines the view is scrolled up into the scrollback. 0 = the live screen.
     scroll_offset: usize,
     rows: usize,
     cols: usize,
@@ -32,8 +43,10 @@ pub struct Grid {
     // Can be equal to `cols` after printing in the last column: the wrap only
     // happens when the next char is printed ("pending wrap").
     cursor_col: usize,
+    // The "pen": the colors the next printed chars get. Changed by `ESC[...m`.
     pub fg: u32,
     pub bg: u32,
+    /// Hidden by `ESC[?25l`, shown again by `ESC[?25h`.
     pub cursor_visible: bool,
 }
 
@@ -81,6 +94,7 @@ impl Grid {
         self.cols
     }
 
+    /// A cell of the live screen, ignoring scrolling. Drawing uses `visible_cell`.
     pub fn cell(&self, row: usize, col: usize) -> Cell {
         self.cells[row][col]
     }
@@ -90,6 +104,8 @@ impl Grid {
         (self.cursor_row, self.cursor_col.min(self.cols - 1))
     }
 
+    /// Moves the cursor one line down. On the last line, the screen scrolls instead:
+    /// the top line goes into the scrollback and a blank line appears at the bottom.
     pub fn newline(&mut self) {
         if self.cursor_row + 1 >= self.rows {
             let line = self.cells.remove(0);
@@ -103,7 +119,9 @@ impl Grid {
         }
     }
 
+    /// Writes `c` at the cursor with the pen's colors, and moves the cursor right.
     pub fn put_char(&mut self, c: char) {
+        // The last char went into the last column (pending wrap): wrap now.
         if self.cursor_col >= self.cols {
             self.cursor_col = 0;
             self.newline();
@@ -117,6 +135,9 @@ impl Grid {
     }
 
     /// The cell shown at this screen position, taking the scroll offset into account.
+    /// Think of scrollback + screen as one long list of lines. Example: 100 lines of
+    /// scrollback, scrolled up 3. Row 0 is line 97, which is `scrollback[97]`.
+    /// Row 5 is line 102, which is `cells[2]`.
     pub fn visible_cell(&self, row: usize, col: usize) -> Cell {
         let sb = self.scrollback.len();
         let index = sb - self.scroll_offset + row;
@@ -143,6 +164,7 @@ impl Grid {
         lines.join("\r\n")
     }
 
+    /// Used by tests.
     pub fn scrollback(&self) -> &VecDeque<Vec<Cell>> {
         &self.scrollback
     }
@@ -275,6 +297,8 @@ impl Grid {
         line[start..start + n].fill(Cell::default());
     }
 
+    /// The live screen as plain text, for tests. Trailing spaces and empty
+    /// lines at the bottom are removed, so tests can compare short strings.
     pub fn render(&self) -> String {
         let lines: Vec<String> = self
             .cells

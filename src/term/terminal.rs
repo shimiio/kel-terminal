@@ -1,3 +1,14 @@
+//! Understands what the shell sends.
+//!
+//! The shell's output is text mixed with escape codes, e.g. `ESC[31m` (red text)
+//! or `ESC[2;5H` (move the cursor to row 2, column 5). The `vte` parser splits the
+//! bytes and calls one of our `Perform` methods for each piece:
+//! - `print`: a normal character to show
+//! - `execute`: a control byte like `\r` or `\n`
+//! - `csi_dispatch`: an `ESC[...` sequence, with its numbers (params) and final letter (action)
+//!
+//! Each method only decides which `Grid` function to call.
+
 use super::Grid;
 use super::grid::DEFAULT_BG;
 use super::grid::DEFAULT_FG;
@@ -20,6 +31,8 @@ impl Terminal {
         }
     }
 
+    /// `ESC[...m`: change the pen's colors. One sequence can hold several codes,
+    /// e.g. `ESC[31;44m` = red text (31) on a blue background (44).
     fn set_colors(&mut self, params: &vte::Params) {
         let mut iter = params.iter();
         while let Some(param) = iter.next() {
@@ -94,7 +107,9 @@ impl Perform for Terminal {
         _ignore: bool,
         action: char,
     ) {
-        // esc private sequences
+        // e.g. `ESC[2;5H`: params = [2, 5], action = 'H'.
+
+        // Private sequences, `ESC[?...`: the `?` arrives in `intermediates`.
         if intermediates == [b'?'] {
             match (action, param(params, 0, 0)) {
                 ('l', 25) => self.grid.cursor_visible = false,
@@ -103,7 +118,7 @@ impl Perform for Terminal {
             }
             return;
         }
-        // esc sequences
+        // Normal sequences. Most take one number, the count `n` (default 1).
         let n = param(params, 0, 1) as usize;
         match action {
             'A' => self.grid.move_up(n),

@@ -1,3 +1,15 @@
+//! The application: owns the window, the shell and the terminal state,
+//! and reacts to every event.
+//!
+//! Two threads:
+//! - the **main thread** runs the winit event loop: keys, mouse, resize, redraw.
+//! - the **reader thread** (`spawn_reader`) waits for shell output and parses it
+//!   into the grid, then sends `UserEvent::PtyOutput` so the main thread redraws.
+//!
+//! Both need the `Terminal`, so it lives in an `Arc<Mutex<..>>`:
+//! `Arc` lets both threads own it, `Mutex` lets only one use it at a time.
+//! Lock it, use it, let the lock go. Locking it twice at once freezes the app (deadlock).
+
 use crate::pty;
 use crate::renderer::{CELL_HEIGHT, CELL_WIDTH, Renderer};
 use crate::term::Terminal;
@@ -14,6 +26,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
+// Starting size, in cells. After that, the size comes from the window (`on_resize`).
 const ROWS: usize = 24;
 const COLS: usize = 80;
 
@@ -26,6 +39,7 @@ pub struct Selection {
 
 impl Selection {
     /// Is the cell at (row, col) inside the selection, in reading order?
+    /// Tuples compare row first, then col: (2, 70) < (3, 5), because row 2 comes before row 3.
     pub fn contains(&self, row: usize, col: usize) -> bool {
         let (first, last) = self.ordered();
         first <= (row, col) && (row, col) <= last
@@ -51,26 +65,38 @@ pub enum UserEvent {
 }
 
 pub struct App {
+    // Created in `resumed`, so they are `None` until the window exists.
     window: Option<Rc<Window>>,
     renderer: Option<Renderer>,
+    /// The screen state, shared with the reader thread.
     terminal: Arc<Mutex<Terminal>>,
+    /// Which of Shift/Ctrl/Alt are held right now (updated by `ModifiersChanged`).
     modifiers: ModifiersState,
+    /// Bytes written here reach the shell as if they were typed.
     writer: Box<dyn Write + Send>,
+    /// Our end of the PTY; used to tell the shell about a new size.
     master: Box<dyn MasterPty + Send>,
+    /// The shell process. Not used yet, but we keep its handle.
     _child: Box<dyn Child + Send + Sync>,
 
+    /// The cell under the mouse pointer, as (row, col).
     mouse_cell: (usize, usize),
+    /// The mouse selection, if any. Screen positions, so it doesn't follow scrolling.
     selection: Option<Selection>,
+    /// True while the left button is held down (dragging).
     selecting: bool,
 }
 
 impl App {
+    /// Starts the shell and the reader thread. The window comes later, in `resumed`.
+    /// `proxy` is how the reader thread wakes up the event loop.
     pub fn new(proxy: EventLoopProxy<UserEvent>) -> anyhow::Result<Self> {
         let (master, child) = pty::spawn_shell(ROWS as u16, COLS as u16)?;
-        let reader = master.try_clone_reader()?;
-        let mut writer = master.take_writer()?;
+        let reader = master.try_clone_reader()?; // shell output comes out here
+        let mut writer = master.take_writer()?; // our keys go in here
 
-        // answer the ConPTY cursor position handshake
+        // At start, ConPTY asks "where is the cursor?" (`ESC[6n`) and waits for the
+        // answer before showing anything. We answer "row 1, column 1".
         writer.write_all(b"\x1b[1;1R")?;
         writer.flush()?;
 
@@ -92,6 +118,7 @@ impl App {
         })
     }
 
+    /// Sends bytes to the shell, as if they were typed.
     fn send_to_shell(&mut self, bytes: &[u8]) {
         // Anything sent to the shell can change the screen, so an old mouse
         // selection would point at the wrong text: remove it.
@@ -115,9 +142,11 @@ fn spawn_reader(
         let mut parser = Parser::new();
         let mut buf = [0u8; 4096];
         loop {
+            // `read` waits until the shell sends something, then gives `n` bytes.
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) | Err(_) => break, // the shell is gone
                 Ok(n) => {
+                    // The lock is held only while this chunk is parsed.
                     parser.advance(&mut *terminal.lock().unwrap(), &buf[..n]);
                     // Err means the event loop has already shut down.
                     if proxy.send_event(UserEvent::PtyOutput).is_err() {
@@ -131,8 +160,10 @@ fn spawn_reader(
 }
 
 /// Translates a key press into the bytes a terminal would send to the shell.
+/// `None` means the key sends nothing (e.g. Shift alone).
 fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<Vec<u8>> {
     // Modifier number: 1 + Shift(1) + Alt(2) + Ctrl(4)
+    // e.g. Ctrl+Left: m = 1 + 4 = 5, so it sends `ESC[1;5D`.
     let m = 1 + mods.shift_key() as u8 + 2 * mods.alt_key() as u8 + 4 * mods.control_key() as u8;
 
     // Arrows, Home and End: `\x1b[X` without modifiers, `\x1b[1;{m}X` with them.
@@ -146,8 +177,8 @@ fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<V
     };
 
     let bytes: &[u8] = match key {
-        Key::Named(NamedKey::Enter) => b"\r",
-        Key::Named(NamedKey::Backspace) => b"\x7f",
+        Key::Named(NamedKey::Enter) => b"\r", // carriage return, not "\n"
+        Key::Named(NamedKey::Backspace) => b"\x7f", // the DEL character
         Key::Named(NamedKey::Delete) => b"\x1b[3~",
         Key::Named(NamedKey::Tab) => b"\t",
         Key::Named(NamedKey::Escape) => b"\x1b",
@@ -159,12 +190,15 @@ fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<V
         Key::Named(NamedKey::ArrowLeft) => return with_mods('D'),
         Key::Named(NamedKey::Home) => return with_mods('H'),
         Key::Named(NamedKey::End) => return with_mods('F'),
+        // Everything else (letters, digits, Cyrillic...): the typed text, as UTF-8 bytes.
         _ => return text.map(|t| t.as_bytes().to_vec()),
     };
     Some(bytes.to_vec())
 }
 
+// winit calls these methods when something happens; we never call them ourselves.
 impl ApplicationHandler<UserEvent> for App {
+    /// Called when the app starts. A window can only be created from here.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let size = PhysicalSize::new((COLS * CELL_WIDTH) as u32, (ROWS * CELL_HEIGHT) as u32);
         let attrs = Window::default_attributes()
@@ -176,6 +210,7 @@ impl ApplicationHandler<UserEvent> for App {
         self.window = Some(window);
     }
 
+    /// Our own events, sent by the reader thread.
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::PtyOutput => {
@@ -232,6 +267,7 @@ impl App {
         let (Some(renderer), Some(window)) = (&self.renderer, &self.window) else {
             return;
         };
+        // e.g. an 800x480 window with 10x20 cells: 80 cols, 24 rows.
         let size = window.inner_size();
         let (cell_w, cell_h) = renderer.cell_size();
         let cols = size.width as usize / cell_w;
@@ -251,6 +287,9 @@ impl App {
     }
 
     /// A key was pressed: handle our own shortcuts, or send the key to the shell.
+    /// The order of the checks matters: the most specific shortcut comes first.
+    /// Shortcuts use `physical_key` (the key's place on the keyboard), so they
+    /// work with any layout, Cyrillic too.
     fn on_key(&mut self, event: KeyEvent) {
         let ctrl = self.modifiers.control_key();
         let shift = self.modifiers.shift_key();
@@ -258,6 +297,7 @@ impl App {
         // Ctrl+Shift+V: paste from the clipboard
         if ctrl && shift && event.physical_key == PhysicalKey::Code(KeyCode::KeyV) {
             if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                // The shell treats `\r` as Enter, so every line break becomes `\r`.
                 let text = text.replace("\r\n", "\r").replace('\n', "\r");
                 self.send_to_shell(text.as_bytes());
             }
@@ -278,7 +318,9 @@ impl App {
             }
         }
 
-        // Ctrl+C: interrupt the running command
+        // Ctrl+C: interrupt the running command.
+        // Ctrl+Shift+C without a mouse selection also lands here, and PowerShell
+        // then copies its own keyboard selection.
         if ctrl && event.physical_key == PhysicalKey::Code(KeyCode::KeyC) {
             self.send_to_shell(&[0x03]);
             return;
@@ -294,6 +336,8 @@ impl App {
 
     /// Mouse wheel: scroll the view into the scrollback (3 lines per wheel step).
     fn on_mouse_wheel(&mut self, delta: MouseScrollDelta) {
+        // `y` is +1.0 per wheel notch up, -1.0 per notch down.
+        // `PixelDelta` (touchpads) isn't handled yet.
         if let MouseScrollDelta::LineDelta(_, y) = delta {
             let lines = (y * 3.0) as i32;
             self.terminal.lock().unwrap().grid.scroll_view(lines);
@@ -303,6 +347,7 @@ impl App {
 
     /// The mouse moved: remember which cell it's over, and extend the selection while dragging.
     fn on_mouse_move(&mut self, position: PhysicalPosition<f64>) {
+        // Pixels to cells, e.g. x=235, y=47 with 10x20 cells: col 23, row 2.
         let col = position.x as usize / CELL_WIDTH;
         let row = position.y as usize / CELL_HEIGHT;
         self.mouse_cell = (row, col);

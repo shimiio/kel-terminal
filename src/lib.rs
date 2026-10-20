@@ -1,3 +1,19 @@
+//! Kel: a small terminal emulator.
+//!
+//! How the pieces fit together:
+//!
+//! ```text
+//!  keyboard/mouse ──> app ──bytes──> pty (ConPTY) ──> powershell.exe
+//!                                                         │
+//!  window <── renderer <── term::Grid <── term::Terminal <┘ bytes (text + escape codes)
+//!            (pixels)      (cells)        (escape codes → Grid calls)
+//! ```
+//!
+//! - `app`: the window and all events. Owns everything else.
+//! - `pty`: starts the shell inside a pseudo-terminal.
+//! - `term`: understands what the shell sends and keeps the screen as a grid of cells.
+//! - `renderer`: turns that grid into pixels.
+
 pub mod app;
 pub mod pty;
 pub mod renderer;
