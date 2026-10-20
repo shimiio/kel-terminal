@@ -9,13 +9,20 @@ use std::thread;
 use vte::Parser;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 const ROWS: usize = 24;
 const COLS: usize = 80;
+
+/// The selected area, from where the mouse was pressed to where it is now. (row, col)
+#[derive(Clone, Copy, Debug)]
+pub struct Selection {
+    pub start: (usize, usize),
+    pub end: (usize, usize),
+}
 
 /// Custom events sent from other threads to wake up the event loop.
 #[derive(Debug)]
@@ -34,6 +41,10 @@ pub struct App {
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
     _child: Box<dyn Child + Send + Sync>,
+
+    mouse_cell: (usize, usize),
+    selection: Option<Selection>,
+    selecting: bool,
 }
 
 impl App {
@@ -57,6 +68,10 @@ impl App {
             modifiers: ModifiersState::empty(),
             master,
             _child: child,
+
+            mouse_cell: (0, 0),
+            selection: None,
+            selecting: false,
         })
     }
 
@@ -94,21 +109,34 @@ fn spawn_reader(
 }
 
 /// Translates a key press into the bytes a terminal would send to the shell.
-fn key_to_bytes(key: &Key, text: Option<&str>) -> Option<Vec<u8>> {
+fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<Vec<u8>> {
+    // Modifier number: 1 + Shift(1) + Alt(2) + Ctrl(4)
+    let m = 1 + mods.shift_key() as u8 + 2 * mods.alt_key() as u8 + 4 * mods.control_key() as u8;
+
+    // Arrows, Home and End: `\x1b[X` without modifiers, `\x1b[1;{m}X` with them.
+    let with_mods = |letter: char| -> Option<Vec<u8>> {
+        let seq = if m == 1 {
+            format!("\x1b[{letter}")
+        } else {
+            format!("\x1b[1;{m}{letter}")
+        };
+        Some(seq.into_bytes())
+    };
+
     let bytes: &[u8] = match key {
         Key::Named(NamedKey::Enter) => b"\r",
         Key::Named(NamedKey::Backspace) => b"\x7f",
         Key::Named(NamedKey::Delete) => b"\x1b[3~",
         Key::Named(NamedKey::Tab) => b"\t",
         Key::Named(NamedKey::Escape) => b"\x1b",
-        Key::Named(NamedKey::Home) => b"\x1b[H",
-        Key::Named(NamedKey::End) => b"\x1b[F",
         Key::Named(NamedKey::PageUp) => b"\x1b[5",
         Key::Named(NamedKey::PageDown) => b"\x1b[6~",
-        Key::Named(NamedKey::ArrowUp) => b"\x1b[A",
-        Key::Named(NamedKey::ArrowDown) => b"\x1b[B",
-        Key::Named(NamedKey::ArrowRight) => b"\x1b[C",
-        Key::Named(NamedKey::ArrowLeft) => b"\x1b[D",
+        Key::Named(NamedKey::ArrowUp) => return with_mods('A'),
+        Key::Named(NamedKey::ArrowDown) => return with_mods('B'),
+        Key::Named(NamedKey::ArrowRight) => return with_mods('C'),
+        Key::Named(NamedKey::ArrowLeft) => return with_mods('D'),
+        Key::Named(NamedKey::Home) => return with_mods('H'),
+        Key::Named(NamedKey::End) => return with_mods('F'),
         _ => return text.map(|t| t.as_bytes().to_vec()),
     };
     Some(bytes.to_vec())
@@ -144,13 +172,30 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 self.terminal.lock().unwrap().grid.scroll_to_bottom();
 
+                // control + C
                 if self.modifiers.control_key()
                     && event.physical_key == PhysicalKey::Code(KeyCode::KeyC)
                 {
                     self.send_to_shell(&[0x03]);
                     return;
                 }
-                if let Some(bytes) = key_to_bytes(&event.logical_key, event.text.as_deref()) {
+
+                // control + shift + V - paste
+                if self.modifiers.control_key()
+                    && self.modifiers.shift_key()
+                    && event.physical_key == PhysicalKey::Code(KeyCode::KeyV)
+                {
+                    if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                        let text = text.replace("\r\n", "\r").replace('\n', "\r");
+                        self.send_to_shell(text.as_bytes());
+                    }
+                    return;
+                }
+
+                //
+                if let Some(bytes) =
+                    key_to_bytes(&event.logical_key, event.text.as_deref(), self.modifiers)
+                {
                     self.send_to_shell(&bytes);
                 }
             }
@@ -191,6 +236,32 @@ impl ApplicationHandler<UserEvent> for App {
                     }
                 }
             }
+            WindowEvent::CursorMoved { position, .. } => {
+                let col = position.x as usize / CELL_WIDTH;
+                let row = position.y as usize / CELL_HEIGHT;
+                self.mouse_cell = (row, col);
+
+                if self.selecting {
+                    if let Some(selection) = &mut self.selection {
+                        selection.end = (row, col);
+                        println!("{:?}", selection);
+                    }
+                }
+            }
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } => match state {
+                ElementState::Pressed => {
+                    self.selection = Some(Selection {
+                        start: self.mouse_cell,
+                        end: self.mouse_cell,
+                    });
+                    self.selecting = true;
+                }
+                ElementState::Released => self.selecting = false,
+            },
             _ => {}
         }
     }

@@ -65,6 +65,22 @@ impl Renderer {
                 let x = col * CELL_WIDTH;
 
                 // Cursor
+                let cell = grid.visible_cell(row, col);
+                fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, cell.bg);
+
+                if cell.ch != ' ' {
+                    draw_char(
+                        &mut buffer,
+                        width,
+                        &self.font,
+                        self.ascent,
+                        cell.ch,
+                        cell.fg,
+                        x,
+                        y,
+                    );
+                }
+
                 if grid.cursor_visible
                     && grid.scroll_offset() == 0
                     && (row, col) == (cursor_row, cursor_col)
@@ -77,21 +93,6 @@ impl Renderer {
                         CELL_WIDTH,
                         CURSOR_HEIGHT,
                         CURSOR,
-                    );
-                }
-
-                let cell = grid.visible_cell(row, col);
-                if cell.ch != ' ' {
-                    fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, cell.bg);
-                    draw_char(
-                        &mut buffer,
-                        width,
-                        &self.font,
-                        self.ascent,
-                        cell.ch,
-                        cell.fg,
-                        x,
-                        y,
                     );
                 }
             }
