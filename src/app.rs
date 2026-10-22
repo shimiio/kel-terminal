@@ -94,6 +94,9 @@ pub struct App {
     cursor_on: bool,
     /// When the cursor switches on/off next.
     next_blink: Instant,
+
+    /// Scrolling that doesn't add up to a whole line yet (touchpads send tiny steps).
+    scroll_rest: f32,
 }
 
 impl App {
@@ -127,6 +130,8 @@ impl App {
 
             cursor_on: true,
             next_blink: Instant::now() + BLINK_INTERVAL,
+
+            scroll_rest: 0.0,
         })
     }
 
@@ -370,13 +375,20 @@ impl App {
         }
     }
 
-    /// Mouse wheel: scroll the view into the scrollback (3 lines per wheel step).
+    /// Mouse wheel or touchpad: scroll the view into the scrollback.
     fn on_mouse_wheel(&mut self, delta: MouseScrollDelta) {
-        // `y` is +1.0 per wheel notch up, -1.0 per notch down.
-        // `PixelDelta` (touchpads) isn't handled yet.
-        if let MouseScrollDelta::LineDelta(_, y) = delta {
-            let lines = (y * 3.0) as i32;
-            self.terminal.lock().unwrap().grid.scroll_view(lines);
+        // How many lines this event is worth. Often not a whole number:
+        // a touchpad sends many small steps, like 0.1 of a wheel notch.
+        let lines = match delta {
+            MouseScrollDelta::LineDelta(_, y) => y * 3.0, // 3 lines per wheel notch
+            MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / CELL_HEIGHT as f32,
+        };
+        // Add it to the leftover from before. Scroll by the whole lines, keep the rest.
+        self.scroll_rest += lines;
+        let whole = self.scroll_rest.trunc();
+        self.scroll_rest -= whole;
+        if whole != 0.0 {
+            self.terminal.lock().unwrap().grid.scroll_view(whole as i32);
             self.request_redraw();
         }
     }
