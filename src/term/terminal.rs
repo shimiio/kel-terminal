@@ -55,29 +55,19 @@ impl Terminal {
                 39 => self.grid.fg = DEFAULT_FG,
                 30..=37 => self.grid.fg = PALETTE[(code - 30) as usize],
                 90..=97 => self.grid.fg = PALETTE[(code - 90 + 8) as usize],
-                38 => {
-                    // `38;5;n`: color number n. Take the next two params ourselves.
-                    let kind = iter.next().and_then(|p| p.first().copied());
-                    let n = iter.next().and_then(|p| p.first().copied());
-                    match (kind, n) {
-                        (Some(5), Some(n)) if n < 16 => self.grid.fg = PALETTE[n as usize],
-                        _ => break, // other extended formats: not supported yet
-                    }
-                }
+                38 => match extended_color(&mut iter) {
+                    Some(color) => self.grid.fg = color,
+                    None => break, // a format we don't know: stop reading this sequence
+                },
 
                 // background color: same as above, but 4x / 10x / 49 / 48
                 40..=47 => self.grid.bg = PALETTE[(code - 40) as usize],
                 100..=107 => self.grid.bg = PALETTE[(code - 100 + 8) as usize],
                 49 => self.grid.bg = DEFAULT_BG,
-                48 => {
-                    let kind = iter.next().and_then(|p| p.first().copied());
-                    let n = iter.next().and_then(|p| p.first().copied());
-                    match (kind, n) {
-                        (Some(5), Some(n)) if n < 16 => self.grid.bg = PALETTE[n as usize],
-                        _ => break,
-                    }
-                }
-
+                48 => match extended_color(&mut iter) {
+                    Some(color) => self.grid.bg = color,
+                    None => break,
+                },
                 _ => {}
             }
         }
@@ -90,6 +80,42 @@ fn param(params: &vte::Params, index: usize, default: u16) -> u16 {
     match params.iter().nth(index).and_then(|p| p.first()) {
         Some(&0) | None => default,
         Some(&v) => v,
+    }
+}
+
+/// Reads the rest of an extended color, after a 38 (text) or 48 (background):
+/// - `5;n`: color number n of the 256-color table
+/// - `2;r;g;b`: any color, as red, green and blue (0-255 each)
+/// `None` = a format we don't know.
+fn extended_color(iter: &mut vte::ParamsIter) -> Option<u32> {
+    let mut next = || iter.next().and_then(|p| p.first().copied());
+    match next()? {
+        5 => Some(color_256(next()?)),
+        2 => {
+            let r = next()? as u32;
+            let g = next()? as u32;
+            let b = next()? as u32;
+            Some((r << 16) | (g << 8) | b)
+        }
+        _ => None,
+    }
+}
+
+/// Color number n of the 256-color table.
+fn color_256(n: u16) -> u32 {
+    match n {
+        0..=15 => PALETTE[n as usize],
+        16..=231 => {
+            // The 6x6x6 cube: n - 16 = 36*r + 6*g + b, each a level 0-5.
+            let i = (n - 16) as u32;
+            let level = |v: u32| if v == 0 { 0 } else { 55 + 40 * v };
+            (level(i / 36) << 16) | (level(i / 6 % 6) << 8) | level(i % 6)
+        }
+        _ => {
+            // 232-255: 24 grays, from dark to light.
+            let v = 8 + 10 * (n.min(255) - 232) as u32;
+            (v << 16) | (v << 8) | v
+        }
     }
 }
 
@@ -330,5 +356,33 @@ mod tests {
     fn alternate_screen_has_no_scrollback() {
         let t = feed("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7");
         assert_eq!(t.grid.scrollback().len(), 0); // 2 lines scrolled off, none were kept
+    }
+
+    #[test]
+    fn truecolor() {
+        let t = feed("\x1b[38;2;255;128;0;48;2;20;22;27mx");
+        assert_eq!(t.grid.cell(0, 0).fg, 0xff8000); // orange text
+        assert_eq!(t.grid.cell(0, 0).bg, 0x14161b); // Neovim's dark background
+    }
+
+    #[test]
+    fn colors_256() {
+        let t = feed("\x1b[38;5;196ma\x1b[38;5;244mb");
+        assert_eq!(t.grid.cell(0, 0).fg, 0xff0000); // 196: pure red, from the cube
+        assert_eq!(t.grid.cell(0, 1).fg, 0x808080); // 244: a middle gray
+    }
+
+    #[test]
+    fn erase_uses_the_pen_background() {
+        let t = feed("\x1b[44m\x1b[K"); // blue background, then erase the line
+        assert_eq!(t.grid.cell(0, 5).bg, PALETTE[4]); // erased cells are blue
+    }
+
+    #[test]
+    fn erase_chars_uses_the_pen_background() {
+        // What ConPTY sends for nvim's "-- INSERT --" line (recorded with probe_nvim).
+        let t = feed("\x1b[48;2;20;22;27m\r\n\x1b[12X");
+        assert_eq!(t.grid.cell(1, 0).bg, 0x14161b);
+        assert_eq!(t.grid.cell(1, 9).bg, 0x14161b); // last column (the test grid is 10 wide)
     }
 }

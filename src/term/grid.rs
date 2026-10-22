@@ -128,7 +128,8 @@ impl Grid {
                     self.scrollback.pop_front();
                 }
             }
-            self.cells.push(vec![Cell::default(); self.cols]);
+            let blank = self.blank();
+            self.cells.push(vec![blank; self.cols]);
         } else {
             self.cursor_row += 1;
         }
@@ -253,6 +254,7 @@ impl Grid {
 
     /// `CSI n K`. 0: cursor to end of line, 1: start of line to cursor, 2: whole line.
     pub fn erase_in_line(&mut self, mode: u16) {
+        let blank = self.blank();
         let col = self.cursor_col.min(self.cols);
         let line = &mut self.cells[self.cursor_row];
         let range = match mode {
@@ -261,27 +263,28 @@ impl Grid {
             2 => 0..self.cols,
             _ => return,
         };
-        line[range].fill(Cell::default());
+        line[range].fill(blank);
     }
 
     /// `CSI n J`. 0: cursor to end of screen, 1: start of screen to cursor, 2/3: everything.
     pub fn erase_in_display(&mut self, mode: u16) {
+        let blank = self.blank();
         match mode {
             0 => {
                 self.erase_in_line(0);
                 for row in &mut self.cells[self.cursor_row + 1..] {
-                    row.fill(Cell::default());
+                    row.fill(blank);
                 }
             }
             1 => {
                 self.erase_in_line(1);
                 for row in &mut self.cells[..self.cursor_row] {
-                    row.fill(Cell::default());
+                    row.fill(blank);
                 }
             }
             2 => {
                 for row in &mut self.cells {
-                    row.fill(Cell::default());
+                    row.fill(blank);
                 }
             }
             3 => {
@@ -294,27 +297,30 @@ impl Grid {
 
     /// `CSI n X`: blank out n chars starting at the cursor, without moving anything.
     pub fn erase_chars(&mut self, n: usize) {
+        let blank = self.blank();
         let start = self.cursor_col.min(self.cols - 1);
         let end = (start + n).min(self.cols);
-        self.cells[self.cursor_row][start..end].fill(Cell::default());
+        self.cells[self.cursor_row][start..end].fill(blank);
     }
 
     /// `CSI n P`: delete n chars at the cursor, shifting the rest of the line left.
     pub fn delete_chars(&mut self, n: usize) {
+        let blank = self.blank();
         let start = self.cursor_col.min(self.cols - 1);
         let n = n.min(self.cols - start);
         let line = &mut self.cells[self.cursor_row];
         line[start..].rotate_left(n);
-        line[self.cols - n..].fill(Cell::default());
+        line[self.cols - n..].fill(blank);
     }
 
     /// `CSI n @`: insert n blanks at the cursor, shifting the rest of the line right.
     pub fn insert_blanks(&mut self, n: usize) {
+        let blank = self.blank();
         let start = self.cursor_col.min(self.cols - 1);
         let n = n.min(self.cols - start);
         let line = &mut self.cells[self.cursor_row];
         line[start..].rotate_right(n);
-        line[start..start + n].fill(Cell::default());
+        line[start..start + n].fill(blank);
     }
 
     /// The live screen as plain text, for tests. Trailing spaces and empty
@@ -355,6 +361,15 @@ impl Grid {
             // The window may have been resized while vim was open; fit the old screen to the new size.
             let (rows, cols) = (self.rows, self.cols);
             self.resize(rows, cols);
+        }
+    }
+
+    /// An empty cell for erasing: a space with the pen's background color,
+    /// like real terminals do ("background color erase").
+    fn blank(&self) -> Cell {
+        Cell {
+            bg: self.bg,
+            ..Cell::default()
         }
     }
 }
