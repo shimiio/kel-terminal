@@ -94,20 +94,28 @@ impl Renderer {
 
                 let selected = selection.is_some_and(|s| s.contains(row, col));
                 let cell = grid.visible_cell(row, col);
-                let bg = if selected { SELECTION_BG } else { cell.bg };
+                let (fg, bg) = if cell.inverse {
+                    (cell.bg, cell.fg)
+                } else {
+                    (cell.fg, cell.bg)
+                };
+                let bg = if selected { SELECTION_BG } else { bg };
                 fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, bg);
 
                 if cell.ch != ' ' {
                     let font = &self.fonts[cell.bold as usize + 2 * cell.italic as usize];
-                    draw_char(
+                    draw_char(&mut buffer, width, font, self.ascent, cell.ch, fg, x, y);
+                }
+
+                if cell.underline {
+                    fill_rect(
                         &mut buffer,
                         width,
-                        font,
-                        self.ascent,
-                        cell.ch,
-                        cell.fg,
                         x,
-                        y,
+                        y + self.ascent as usize + 2,
+                        CELL_WIDTH,
+                        1,
+                        fg,
                     );
                 }
 

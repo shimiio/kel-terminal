@@ -20,6 +20,8 @@ pub struct Cell {
     pub bg: u32,
     pub bold: bool,
     pub italic: bool,
+    pub underline: bool,
+    pub inverse: bool,
 }
 
 impl Default for Cell {
@@ -30,6 +32,8 @@ impl Default for Cell {
             bg: DEFAULT_BG,
             bold: false,
             italic: false,
+            underline: false,
+            inverse: false,
         }
     }
 }
@@ -52,6 +56,8 @@ pub struct Grid {
     pub bg: u32,
     pub bold: bool,
     pub italic: bool,
+    pub underline: bool,
+    pub inverse: bool,
     /// Hidden by `ESC[?25l`, shown again by `ESC[?25h`.
     pub cursor_visible: bool,
 
@@ -74,6 +80,8 @@ impl Grid {
             bg: DEFAULT_BG,
             bold: false,
             italic: false,
+            underline: false,
+            inverse: false,
             cursor_visible: true,
             saved_screen: None,
         }
@@ -148,6 +156,8 @@ impl Grid {
             bg: self.bg,
             bold: self.bold,
             italic: self.italic,
+            underline: self.underline,
+            inverse: self.inverse,
         };
         self.cursor_col += 1;
     }

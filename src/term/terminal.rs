@@ -43,6 +43,8 @@ impl Terminal {
                     self.grid.bg = DEFAULT_BG;
                     self.grid.bold = false;
                     self.grid.italic = false;
+                    self.grid.underline = false;
+                    self.grid.inverse = false;
                 }
 
                 // text style
@@ -50,6 +52,10 @@ impl Terminal {
                 22 => self.grid.bold = false,
                 3 => self.grid.italic = true,
                 23 => self.grid.italic = false,
+                4 => self.grid.underline = true,
+                24 => self.grid.underline = false,
+                7 => self.grid.inverse = true,
+                27 => self.grid.inverse = false,
 
                 // text color
                 39 => self.grid.fg = DEFAULT_FG,
@@ -86,6 +92,7 @@ fn param(params: &vte::Params, index: usize, default: u16) -> u16 {
 /// Reads the rest of an extended color, after a 38 (text) or 48 (background):
 /// - `5;n`: color number n of the 256-color table
 /// - `2;r;g;b`: any color, as red, green and blue (0-255 each)
+///
 /// `None` = a format we don't know.
 fn extended_color(iter: &mut vte::ParamsIter) -> Option<u32> {
     let mut next = || iter.next().and_then(|p| p.first().copied());
@@ -343,6 +350,15 @@ mod tests {
         assert!(t.grid.cell(0, 1).bold && t.grid.cell(0, 1).italic); // I: both
         assert!(!t.grid.cell(0, 2).bold && t.grid.cell(0, 2).italic); // i: bold off, italic stays
         assert!(!t.grid.cell(0, 3).italic); // x: everything reset
+    }
+
+    #[test]
+    fn underline_and_inverse() {
+        let t = feed("\x1b[4mU\x1b[7mR\x1b[24mr\x1b[0mx");
+        assert!(t.grid.cell(0, 0).underline); // U: underline
+        assert!(t.grid.cell(0, 1).underline && t.grid.cell(0, 1).inverse); // R: both
+        assert!(!t.grid.cell(0, 2).underline && t.grid.cell(0, 2).inverse); // r: underline off, inverse stays
+        assert!(!t.grid.cell(0, 3).underline && !t.grid.cell(0, 3).inverse); // x: everything reset
     }
 
     #[test]
