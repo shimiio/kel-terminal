@@ -12,3 +12,11 @@ softbuffer = "0.4.8"
 window-vibrancy = "0.8.1"
 fontdue = "0.9.4"
 arboard = "3.7.0"
+
+# Debug builds: optimize the libraries (fontdue rasterizing was ~35x slower without it),
+# keep our own code lightly optimized so it still compiles fast.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

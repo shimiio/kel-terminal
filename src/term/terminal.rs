@@ -41,7 +41,15 @@ impl Terminal {
                 0 => {
                     self.grid.fg = DEFAULT_FG;
                     self.grid.bg = DEFAULT_BG;
+                    self.grid.bold = false;
+                    self.grid.italic = false;
                 }
+
+                // text style
+                1 => self.grid.bold = true,
+                22 => self.grid.bold = false,
+                3 => self.grid.italic = true,
+                23 => self.grid.italic = false,
 
                 // text color
                 39 => self.grid.fg = DEFAULT_FG,
@@ -114,8 +122,13 @@ impl Perform for Terminal {
             match (action, param(params, 0, 0)) {
                 ('l', 25) => self.grid.cursor_visible = false,
                 ('h', 25) => self.grid.cursor_visible = true,
+                ('h', 1049) => self.grid.enter_alt_screen(),
+                ('l', 1049) => self.grid.leave_alt_screen(),
                 _ => {}
             }
+            return;
+        }
+        if !intermediates.is_empty() {
             return;
         }
         // Normal sequences. Most take one number, the count `n` (default 1).
@@ -295,5 +308,27 @@ mod tests {
     fn cursor_hide_and_show() {
         assert!(!feed("\x1b[?25l").grid.cursor_visible);
         assert!(feed("\x1b[?25l\x1b[?25h").grid.cursor_visible);
+    }
+
+    #[test]
+    fn bold_and_italic() {
+        let t = feed("\x1b[1mB\x1b[3mI\x1b[22mi\x1b[0mx");
+        assert!(t.grid.cell(0, 0).bold); // B: bold
+        assert!(t.grid.cell(0, 1).bold && t.grid.cell(0, 1).italic); // I: both
+        assert!(!t.grid.cell(0, 2).bold && t.grid.cell(0, 2).italic); // i: bold off, italic stays
+        assert!(!t.grid.cell(0, 3).italic); // x: everything reset
+    }
+
+    #[test]
+    fn alternate_screen_keeps_the_normal_one() {
+        let t = feed("hello\x1b[?1049hvim\x1b[?1049l");
+        assert_eq!(t.grid.render(), "hello"); // "vim" is gone, "hello" is back
+        assert_eq!(t.grid.cursor(), (0, 5)); // and the cursor too
+    }
+
+    #[test]
+    fn alternate_screen_has_no_scrollback() {
+        let t = feed("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7");
+        assert_eq!(t.grid.scrollback().len(), 0); // 2 lines scrolled off, none were kept
     }
 }

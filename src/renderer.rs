@@ -17,6 +17,15 @@ const SELECTION_BG: u32 = 0x264f78; // blue
 const CURSOR: u32 = 0x808080;
 const CURSOR_HEIGHT: usize = 4;
 
+/// Consolas comes as 4 files. Index = bold + 2 * italic:
+/// 0 = regular, 1 = bold, 2 = italic, 3 = bold italic.
+const FONT_FILES: [&str; 4] = [
+    "C:\\Windows\\Fonts\\consola.ttf",
+    "C:\\Windows\\Fonts\\consolab.ttf",
+    "C:\\Windows\\Fonts\\consolai.ttf",
+    "C:\\Windows\\Fonts\\consolaz.ttf",
+];
+
 // Fixed cell size; FONT_SIZE is picked so a Consolas letter fits in a cell.
 pub const CELL_WIDTH: usize = 10;
 pub const CELL_HEIGHT: usize = 20;
@@ -26,7 +35,8 @@ pub struct Renderer {
     window: Rc<Window>,
     /// The window's pixels, which we draw into.
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
-    font: fontdue::Font,
+    /// Regular, bold, italic, bold italic (see FONT_FILES).
+    fonts: [fontdue::Font; 4],
     /// Pixels from the top of a cell down to the baseline, the line letters sit on.
     ascent: i32,
 }
@@ -38,10 +48,14 @@ impl Renderer {
         let surface = softbuffer::Surface::new(&context, window.clone())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let font_bytes = std::fs::read("C:\\Windows\\Fonts\\consola.ttf")?;
-        let font = fontdue::Font::from_bytes(font_bytes, fontdue::FontSettings::default())
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let ascent = font
+        let fonts = [
+            load_font(FONT_FILES[0])?,
+            load_font(FONT_FILES[1])?,
+            load_font(FONT_FILES[2])?,
+            load_font(FONT_FILES[3])?,
+        ];
+        // All 4 files share the same baseline, so the regular font's ascent works for all.
+        let ascent = fonts[0]
             .horizontal_line_metrics(FONT_SIZE)
             .ok_or_else(|| anyhow::anyhow!("font has no line metrics"))?
             .ascent
@@ -50,7 +64,7 @@ impl Renderer {
         Ok(Renderer {
             window,
             surface,
-            font,
+            fonts,
             ascent,
         })
     }
@@ -84,10 +98,11 @@ impl Renderer {
                 fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, bg);
 
                 if cell.ch != ' ' {
+                    let font = &self.fonts[cell.bold as usize + 2 * cell.italic as usize];
                     draw_char(
                         &mut buffer,
                         width,
-                        &self.font,
+                        font,
                         self.ascent,
                         cell.ch,
                         cell.fg,
@@ -124,6 +139,12 @@ fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: 
             pixels[py * width + px] = color;
         }
     }
+}
+
+fn load_font(path: &str) -> anyhow::Result<fontdue::Font> {
+    let bytes = std::fs::read(path)?;
+    fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
+        .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 /// Mixes one color channel: `a` = 0 gives `bg`, 255 gives `fg`.

@@ -18,6 +18,8 @@ pub struct Cell {
     pub ch: char,
     pub fg: u32,
     pub bg: u32,
+    pub bold: bool,
+    pub italic: bool,
 }
 
 impl Default for Cell {
@@ -26,6 +28,8 @@ impl Default for Cell {
             ch: ' ',
             fg: DEFAULT_FG,
             bg: DEFAULT_BG,
+            bold: false,
+            italic: false,
         }
     }
 }
@@ -46,8 +50,14 @@ pub struct Grid {
     // The "pen": the colors the next printed chars get. Changed by `ESC[...m`.
     pub fg: u32,
     pub bg: u32,
+    pub bold: bool,
+    pub italic: bool,
     /// Hidden by `ESC[?25l`, shown again by `ESC[?25h`.
     pub cursor_visible: bool,
+
+    /// While the alternate screen is shown (vim, less...): the normal screen and
+    /// its cursor (row, col), put aside. `None` = we are on the normal screen.
+    saved_screen: Option<(Vec<Vec<Cell>>, usize, usize)>,
 }
 
 impl Grid {
@@ -62,7 +72,10 @@ impl Grid {
             cursor_row: 0,
             fg: DEFAULT_FG,
             bg: DEFAULT_BG,
+            bold: false,
+            italic: false,
             cursor_visible: true,
+            saved_screen: None,
         }
     }
 
@@ -109,9 +122,11 @@ impl Grid {
     pub fn newline(&mut self) {
         if self.cursor_row + 1 >= self.rows {
             let line = self.cells.remove(0);
-            self.scrollback.push_back(line);
-            if self.scrollback.len() > SCROLLBACK_LIMIT {
-                self.scrollback.pop_front();
+            if self.saved_screen.is_none() {
+                self.scrollback.push_back(line);
+                if self.scrollback.len() > SCROLLBACK_LIMIT {
+                    self.scrollback.pop_front();
+                }
             }
             self.cells.push(vec![Cell::default(); self.cols]);
         } else {
@@ -130,6 +145,8 @@ impl Grid {
             ch: c,
             fg: self.fg,
             bg: self.bg,
+            bold: self.bold,
+            italic: self.italic,
         };
         self.cursor_col += 1;
     }
@@ -171,6 +188,9 @@ impl Grid {
 
     /// Scrolls the view: positive = up (into the past), negative = down.
     pub fn scroll_view(&mut self, lines: i32) {
+        if self.saved_screen.is_some() {
+            return;
+        }
         let max = self.scrollback.len() as i32;
         let new = (self.scroll_offset as i32 + lines).clamp(0, max);
         self.scroll_offset = new as usize;
@@ -313,5 +333,28 @@ impl Grid {
             .collect();
         let last = lines.iter().rposition(|l| !l.is_empty()).unwrap_or(0);
         lines[..=last].join("\n")
+    }
+
+    /// `ESC[?1049h`: put the normal screen aside and show a blank one.
+    pub fn enter_alt_screen(&mut self) {
+        if self.saved_screen.is_some() {
+            return; // already there
+        }
+        let blank = vec![vec![Cell::default(); self.cols]; self.rows];
+        let normal = std::mem::replace(&mut self.cells, blank);
+        self.saved_screen = Some((normal, self.cursor_row, self.cursor_col));
+        self.scroll_offset = 0;
+    }
+
+    /// `ESC[?1049l`: throw the alternate screen away and bring the normal one back.
+    pub fn leave_alt_screen(&mut self) {
+        if let Some((cells, row, col)) = self.saved_screen.take() {
+            self.cells = cells;
+            self.cursor_row = row;
+            self.cursor_col = col;
+            // The window may have been resized while vim was open; fit the old screen to the new size.
+            let (rows, cols) = (self.rows, self.cols);
+            self.resize(rows, cols);
+        }
     }
 }

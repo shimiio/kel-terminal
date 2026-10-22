@@ -323,7 +323,7 @@ impl App {
 
     /// A key was pressed: handle our own shortcuts, or send the key to the shell.
     /// The order of the checks matters: the most specific shortcut comes first.
-    /// Shortcuts use `physical_key` (the key's place on the keyboard), so they
+    /// Shortcuts use `physial_key` (the key's place on the keyboard), so they
     /// work with any layout, Cyrillic too.
     fn on_key(&mut self, event: KeyEvent) {
         self.restart_blink();
