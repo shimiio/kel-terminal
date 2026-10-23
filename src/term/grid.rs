@@ -60,10 +60,20 @@ pub struct Grid {
     pub inverse: bool,
     /// Hidden by `ESC[?25l`, shown again by `ESC[?25h`.
     pub cursor_visible: bool,
+    /// Set by ESC[n q.
+    pub cursor_shape: CursorShape,
 
     /// While the alternate screen is shown (vim, less...): the normal screen and
     /// its cursor (row, col), put aside. `None` = we are on the normal screen.
     saved_screen: Option<(Vec<Vec<Cell>>, usize, usize)>,
+}
+
+/// How the cursor looks. Apps choose it with `ESC[n q`.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum CursorShape {
+    Block,
+    Underline,
+    Bar,
 }
 
 impl Grid {
@@ -83,6 +93,7 @@ impl Grid {
             underline: false,
             inverse: false,
             cursor_visible: true,
+            cursor_shape: CursorShape::Underline,
             saved_screen: None,
         }
     }

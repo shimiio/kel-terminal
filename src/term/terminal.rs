@@ -10,6 +10,7 @@
 //! Each method only decides which `Grid` function to call.
 
 use super::Grid;
+use super::grid::CursorShape;
 use super::grid::DEFAULT_BG;
 use super::grid::DEFAULT_FG;
 use vte::Perform;
@@ -159,6 +160,16 @@ impl Perform for Terminal {
                 ('l', 1049) => self.grid.leave_alt_screen(),
                 _ => {}
             }
+            return;
+        }
+        // Cursor shape, `ESC[n q`.
+        if intermediates == [b' '] && action == 'q' {
+            self.grid.cursor_shape = match param(params, 0, 0) {
+                1 | 2 => CursorShape::Block,
+                3 | 4 => CursorShape::Underline,
+                5 | 6 => CursorShape::Bar,
+                _ => CursorShape::Underline, // 0 or unknown: Kel's default
+            };
             return;
         }
         if !intermediates.is_empty() {
@@ -359,6 +370,13 @@ mod tests {
         assert!(t.grid.cell(0, 1).underline && t.grid.cell(0, 1).inverse); // R: both
         assert!(!t.grid.cell(0, 2).underline && t.grid.cell(0, 2).inverse); // r: underline off, inverse stays
         assert!(!t.grid.cell(0, 3).underline && !t.grid.cell(0, 3).inverse); // x: everything reset
+    }
+
+    #[test]
+    fn cursor_shape() {
+        assert_eq!(feed("\x1b[2 q").grid.cursor_shape, CursorShape::Block);
+        assert_eq!(feed("\x1b[4 q").grid.cursor_shape, CursorShape::Underline);
+        assert_eq!(feed("\x1b[6 q").grid.cursor_shape, CursorShape::Bar);
     }
 
     #[test]

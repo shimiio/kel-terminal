@@ -7,7 +7,7 @@
 //! - Every frame redraws everything: backgrounds, letters, cursor.
 
 use crate::app::Selection;
-use crate::term::Grid;
+use crate::term::{CursorShape, Grid};
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
@@ -94,12 +94,21 @@ impl Renderer {
 
                 let selected = selection.is_some_and(|s| s.contains(row, col));
                 let cell = grid.visible_cell(row, col);
+                // Is the cursor drawn on this cell right now?
+                let is_cursor = grid.cursor_visible
+                    && cursor_on
+                    && grid.scroll_offset() == 0
+                    && (row, col) == (cursor_row, cursor_col);
+                // A block cursor is drawn by swapping colors, so the letter stays visible.
+                let block = is_cursor && grid.cursor_shape == CursorShape::Block;
+
                 let (fg, bg) = if cell.inverse {
                     (cell.bg, cell.fg)
                 } else {
                     (cell.fg, cell.bg)
                 };
                 let bg = if selected { SELECTION_BG } else { bg };
+                let (fg, bg) = if block { (bg, CURSOR) } else { (fg, bg) };
                 fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, bg);
 
                 if cell.ch != ' ' {
@@ -119,20 +128,13 @@ impl Renderer {
                     );
                 }
 
-                if grid.cursor_visible
-                    && cursor_on
-                    && grid.scroll_offset() == 0
-                    && (row, col) == (cursor_row, cursor_col)
-                {
-                    fill_rect(
-                        &mut buffer,
-                        width,
-                        x,
-                        y + CELL_HEIGHT - CURSOR_HEIGHT,
-                        CELL_WIDTH,
-                        CURSOR_HEIGHT,
-                        CURSOR,
-                    );
+                if is_cursor {
+                    let (w, h) = match grid.cursor_shape {
+                        CursorShape::Underline => (CELL_WIDTH, CURSOR_HEIGHT),
+                        CursorShape::Bar => (2, CELL_HEIGHT),
+                        CursorShape::Block => continue, // already drawn: the swapped colors above
+                    };
+                    fill_rect(&mut buffer, width, x, y + CELL_HEIGHT - h, w, h, CURSOR);
                 }
             }
         }
