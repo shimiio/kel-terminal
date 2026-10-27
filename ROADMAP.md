@@ -18,7 +18,7 @@ Stages go in order; items inside a stage can move around.
 
 - [x] Font zoom: Ctrl+= / Ctrl+- / Ctrl+0 (cell size from the font instead of constants)
 - [x] Glyph cache (stop rasterizing every character on every frame)
-- [ ] F1–F12 and Insert keys
+- [x] F1–F12 and Insert keys
 - [x] Commit `examples/` (byte dump and nvim probe tools)
 
 ## 2. nvim essentials

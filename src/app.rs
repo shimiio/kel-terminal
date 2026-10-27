@@ -200,20 +200,57 @@ fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<V
         Some(seq.into_bytes())
     };
 
+    // F1-F4: like arrows, but `\x1bOX` without modifiers (a leftover from the
+    // PF1-PF4 keys of the VT100 terminal, which used `ESC O`).
+    let f1_to_f4 = |letter: char| -> Option<Vec<u8>> {
+        let seq = if m == 1 {
+            format!("\x1bO{letter}")
+        } else {
+            format!("\x1b[1;{m}{letter}")
+        };
+        Some(seq.into_bytes())
+    };
+
+    // Insert, Delete, PageUp/Down, F5-F12: a number and `~`.
+    // `\x1b[{n}~` without modifiers, `\x1b[{n};{m}~` with them, e.g. Ctrl+Delete: `\x1b[3;5~`.
+    let tilde = |n: u8| -> Option<Vec<u8>> {
+        let seq = if m == 1 {
+            format!("\x1b[{n}~")
+        } else {
+            format!("\x1b[{n};{m}~")
+        };
+        Some(seq.into_bytes())
+    };
+
     let bytes: &[u8] = match key {
         Key::Named(NamedKey::Enter) => b"\r", // carriage return, not "\n"
         Key::Named(NamedKey::Backspace) => b"\x7f", // the DEL character
-        Key::Named(NamedKey::Delete) => b"\x1b[3~",
         Key::Named(NamedKey::Tab) => b"\t",
         Key::Named(NamedKey::Escape) => b"\x1b",
-        Key::Named(NamedKey::PageUp) => b"\x1b[5~",
-        Key::Named(NamedKey::PageDown) => b"\x1b[6~",
         Key::Named(NamedKey::ArrowUp) => return with_mods('A'),
         Key::Named(NamedKey::ArrowDown) => return with_mods('B'),
         Key::Named(NamedKey::ArrowRight) => return with_mods('C'),
         Key::Named(NamedKey::ArrowLeft) => return with_mods('D'),
         Key::Named(NamedKey::Home) => return with_mods('H'),
         Key::Named(NamedKey::End) => return with_mods('F'),
+        Key::Named(NamedKey::F1) => return f1_to_f4('P'),
+        Key::Named(NamedKey::F2) => return f1_to_f4('Q'),
+        Key::Named(NamedKey::F3) => return f1_to_f4('R'),
+        Key::Named(NamedKey::F4) => return f1_to_f4('S'),
+        Key::Named(NamedKey::Insert) => return tilde(2),
+        Key::Named(NamedKey::Delete) => return tilde(3),
+        Key::Named(NamedKey::PageUp) => return tilde(5),
+        Key::Named(NamedKey::PageDown) => return tilde(6),
+        // The gaps (16, 22) are from the VT220 keyboard, where they were
+        // spaces between groups of keys. Every terminal kept the numbers.
+        Key::Named(NamedKey::F5) => return tilde(15),
+        Key::Named(NamedKey::F6) => return tilde(17),
+        Key::Named(NamedKey::F7) => return tilde(18),
+        Key::Named(NamedKey::F8) => return tilde(19),
+        Key::Named(NamedKey::F9) => return tilde(20),
+        Key::Named(NamedKey::F10) => return tilde(21),
+        Key::Named(NamedKey::F11) => return tilde(23),
+        Key::Named(NamedKey::F12) => return tilde(24),
         // Everything else (letters, digits, Cyrillic...): the typed text, as UTF-8 bytes.
         _ => return text.map(|t| t.as_bytes().to_vec()),
     };
@@ -457,5 +494,31 @@ impl App {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bytes a named key sends, as a string, e.g. "\x1b[15~".
+    fn send(key: NamedKey, mods: ModifiersState) -> String {
+        let bytes = key_to_bytes(&Key::Named(key), None, mods).unwrap();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    #[test]
+    fn f1_to_f4() {
+        assert_eq!(send(NamedKey::F1, ModifiersState::empty()), "\x1bOP");
+        assert_eq!(send(NamedKey::F4, ModifiersState::empty()), "\x1bOS");
+        assert_eq!(send(NamedKey::F1, ModifiersState::SHIFT), "\x1b[1;2P");
+    }
+
+    #[test]
+    fn tilde_keys() {
+        assert_eq!(send(NamedKey::Insert, ModifiersState::empty()), "\x1b[2~");
+        assert_eq!(send(NamedKey::F5, ModifiersState::empty()), "\x1b[15~");
+        assert_eq!(send(NamedKey::F12, ModifiersState::empty()), "\x1b[24~");
+        assert_eq!(send(NamedKey::Delete, ModifiersState::CONTROL), "\x1b[3;5~");
     }
 }
