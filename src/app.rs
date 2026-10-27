@@ -11,7 +11,7 @@
 //! Lock it, use it, let the lock go. Locking it twice at once freezes the app (deadlock).
 
 use crate::pty;
-use crate::renderer::{CELL_HEIGHT, CELL_WIDTH, Renderer};
+use crate::renderer::{FONT_SIZE, Renderer};
 use crate::term::Terminal;
 use portable_pty::{Child, MasterPty, PtySize};
 use std::io::{Read, Write};
@@ -224,12 +224,14 @@ fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<V
 impl ApplicationHandler<UserEvent> for App {
     /// Called when the app starts. A window can only be created from here.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let size = PhysicalSize::new((COLS * CELL_WIDTH) as u32, (ROWS * CELL_HEIGHT) as u32);
-        let attrs = Window::default_attributes()
-            .with_title("Kel")
-            .with_inner_size(size);
+        let attrs = Window::default_attributes().with_title("Kel");
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
+        // The cell size comes from the font, which the renderer loads, and the renderer
+        // needs the window. So: window first, then renderer, then the 80x24 size.
         let renderer = Renderer::new(window.clone()).unwrap();
+        let (cell_w, cell_h) = renderer.cell_size();
+        let size = PhysicalSize::new((COLS * cell_w) as u32, (ROWS * cell_h) as u32);
+        let _ = window.request_inner_size(size);
         self.renderer = Some(renderer);
         self.window = Some(window);
     }
@@ -359,6 +361,25 @@ impl App {
             }
         }
 
+        // Ctrl+= / Ctrl+- / Ctrl+0: font bigger, smaller, back to the default
+        if ctrl && let Some(renderer) = &mut self.renderer {
+            let size = renderer.font_size();
+            let new_size = match event.physical_key {
+                PhysicalKey::Code(KeyCode::Equal) => Some(size + 1.0),
+                PhysicalKey::Code(KeyCode::Minus) => Some(size - 1.0),
+                PhysicalKey::Code(KeyCode::Digit0) => Some(FONT_SIZE),
+                _ => None,
+            };
+            if let Some(new_size) = new_size {
+                renderer.set_font_size(new_size);
+                // The selection points at cells that move around when the grid changes size.
+                self.selection = None;
+                self.on_resize();
+                self.request_redraw();
+                return;
+            }
+        }
+
         // Ctrl+C: interrupt the running command.
         // Ctrl+Shift+C without a mouse selection also lands here, and PowerShell
         // then copies its own keyboard selection.
@@ -377,11 +398,15 @@ impl App {
 
     /// Mouse wheel or touchpad: scroll the view into the scrollback.
     fn on_mouse_wheel(&mut self, delta: MouseScrollDelta) {
+        let Some(renderer) = &self.renderer else {
+            return;
+        };
+        let (_, cell_h) = renderer.cell_size();
         // How many lines this event is worth. Often not a whole number:
         // a touchpad sends many small steps, like 0.1 of a wheel notch.
         let lines = match delta {
             MouseScrollDelta::LineDelta(_, y) => y * 3.0, // 3 lines per wheel notch
-            MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / CELL_HEIGHT as f32,
+            MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / cell_h as f32,
         };
         // Add it to the leftover from before. Scroll by the whole lines, keep the rest.
         self.scroll_rest += lines;
@@ -395,9 +420,13 @@ impl App {
 
     /// The mouse moved: remember which cell it's over, and extend the selection while dragging.
     fn on_mouse_move(&mut self, position: PhysicalPosition<f64>) {
-        // Pixels to cells, e.g. x=235, y=47 with 10x20 cells: col 23, row 2.
-        let col = position.x as usize / CELL_WIDTH;
-        let row = position.y as usize / CELL_HEIGHT;
+        let Some(renderer) = &self.renderer else {
+            return;
+        };
+        let (cell_w, cell_h) = renderer.cell_size();
+        // Pixels to cells, e.g. x=235, y=47 with 10x21 cells: col 23, row 2.
+        let col = position.x as usize / cell_w;
+        let row = position.y as usize / cell_h;
         self.mouse_cell = (row, col);
 
         if self.selecting {

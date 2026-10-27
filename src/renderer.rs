@@ -1,4 +1,4 @@
-//! Draws the gri        self.restart_blink();d into the window, pixel by pixel, on the CPU.
+//! Draws the grid into the window, pixel by pixel, on the CPU.
 //!
 //! - softbuffer gives us the window's pixels as one long `[u32]` list, row after row.
 //!   Pixel (x, y) is at index `y * width + x`. A color is `0xRRGGBB`.
@@ -26,10 +26,11 @@ const FONT_FILES: [&str; 4] = [
     "C:\\Windows\\Fonts\\consolaz.ttf",
 ];
 
-// Fixed cell size; FONT_SIZE is picked so a Consolas letter fits in a cell.
-pub const CELL_WIDTH: usize = 10;
-pub const CELL_HEIGHT: usize = 20;
-const FONT_SIZE: f32 = 18.0;
+/// Font size in pixels at startup. The cell size is measured from it (see `measure_cell`).
+pub const FONT_SIZE: f32 = 18.0;
+/// Zoom limits: smaller is unreadable, bigger leaves only a few cells in the window.
+const MIN_FONT_SIZE: f32 = 8.0;
+const MAX_FONT_SIZE: f32 = 48.0;
 
 pub struct Renderer {
     window: Rc<Window>,
@@ -37,6 +38,10 @@ pub struct Renderer {
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
     /// Regular, bold, italic, bold italic (see FONT_FILES).
     fonts: [fontdue::Font; 4],
+    font_size: f32,
+    /// One cell in pixels.
+    cell_w: usize,
+    cell_h: usize,
     /// Pixels from the top of a cell down to the baseline, the line letters sit on.
     ascent: i32,
 }
@@ -54,23 +59,39 @@ impl Renderer {
             load_font(FONT_FILES[2])?,
             load_font(FONT_FILES[3])?,
         ];
-        // All 4 files share the same baseline, so the regular font's ascent works for all.
-        let ascent = fonts[0]
-            .horizontal_line_metrics(FONT_SIZE)
-            .ok_or_else(|| anyhow::anyhow!("font has no line metrics"))?
-            .ascent
-            .round() as i32;
+        // All 4 files share the same sizes, so measuring the regular one is enough.
+        let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], FONT_SIZE)?;
 
         Ok(Renderer {
             window,
             surface,
             fonts,
+            font_size: FONT_SIZE,
+            cell_w,
+            cell_h,
             ascent,
         })
     }
 
     pub fn cell_size(&self) -> (usize, usize) {
-        (CELL_WIDTH, CELL_HEIGHT)
+        (self.cell_w, self.cell_h)
+    }
+
+    pub fn font_size(&self) -> f32 {
+        self.font_size
+    }
+
+    /// Changes the font size and measures the cell again.
+    /// The grid doesn't know yet: call `App::on_resize` after this.
+    pub fn set_font_size(&mut self, size: f32) {
+        let size = size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+        // Can only fail for a font without line metrics, and `new` already checked that.
+        if let Ok((cell_w, cell_h, ascent)) = measure_cell(&self.fonts[0], size) {
+            self.font_size = size;
+            self.cell_w = cell_w;
+            self.cell_h = cell_h;
+            self.ascent = ascent;
+        }
     }
 
     /// Draws one frame. For each cell: 1. background (or selection blue),
@@ -86,11 +107,12 @@ impl Renderer {
         let width = size.width as usize;
 
         let (cursor_row, cursor_col) = grid.cursor();
+        let (cell_w, cell_h) = (self.cell_w, self.cell_h);
 
         for row in 0..grid.rows() {
-            let y = row * CELL_HEIGHT;
+            let y = row * cell_h;
             for col in 0..grid.cols() {
-                let x = col * CELL_WIDTH;
+                let x = col * cell_w;
 
                 let selected = selection.is_some_and(|s| s.contains(row, col));
                 let cell = grid.visible_cell(row, col);
@@ -109,32 +131,25 @@ impl Renderer {
                 };
                 let bg = if selected { SELECTION_BG } else { bg };
                 let (fg, bg) = if block { (bg, CURSOR) } else { (fg, bg) };
-                fill_rect(&mut buffer, width, x, y, CELL_WIDTH, CELL_HEIGHT, bg);
+                fill_rect(&mut buffer, width, x, y, cell_w, cell_h, bg);
 
                 if cell.ch != ' ' {
                     let font = &self.fonts[cell.bold as usize + 2 * cell.italic as usize];
-                    draw_char(&mut buffer, width, font, self.ascent, cell.ch, fg, x, y);
+                    let size = self.font_size;
+                    draw_char(&mut buffer, width, font, size, self.ascent, cell.ch, fg, x, y);
                 }
 
                 if cell.underline {
-                    fill_rect(
-                        &mut buffer,
-                        width,
-                        x,
-                        y + self.ascent as usize + 2,
-                        CELL_WIDTH,
-                        1,
-                        fg,
-                    );
+                    fill_rect(&mut buffer, width, x, y + self.ascent as usize + 2, cell_w, 1, fg);
                 }
 
                 if is_cursor {
                     let (w, h) = match grid.cursor_shape {
-                        CursorShape::Underline => (CELL_WIDTH, CURSOR_HEIGHT),
-                        CursorShape::Bar => (2, CELL_HEIGHT),
+                        CursorShape::Underline => (cell_w, CURSOR_HEIGHT),
+                        CursorShape::Bar => (2, cell_h),
                         CursorShape::Block => continue, // already drawn: the swapped colors above
                     };
-                    fill_rect(&mut buffer, width, x, y + CELL_HEIGHT - h, w, h, CURSOR);
+                    fill_rect(&mut buffer, width, x, y + cell_h - h, w, h, CURSOR);
                 }
             }
         }
@@ -157,6 +172,25 @@ fn load_font(path: &str) -> anyhow::Result<fontdue::Font> {
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
+/// Measures one cell for a font size: (width, height, ascent) in pixels.
+/// - width: how far the pen moves after a letter. In a monospaced font it's
+///   the same for every letter, so any letter works.
+/// - height: one line of text, top of the tallest letter to the bottom of 'g', plus the line gap.
+///
+/// e.g. Consolas 18: advance 9.90 → 10 wide, line 21.08 → 21 tall,
+/// ascent 13.37 + half the gap 1.54 → 15.
+fn measure_cell(font: &fontdue::Font, size: f32) -> anyhow::Result<(usize, usize, i32)> {
+    let line = font
+        .horizontal_line_metrics(size)
+        .ok_or_else(|| anyhow::anyhow!("font has no line metrics"))?;
+    let cell_w = font.metrics('M', size).advance_width.round() as usize;
+    let cell_h = line.new_line_size.round() as usize;
+    // The gap is extra space between lines. Half of it goes above the letters,
+    // half below, so the text sits in the middle of the cell.
+    let ascent = (line.ascent + line.line_gap / 2.0).round() as i32;
+    Ok((cell_w, cell_h, ascent))
+}
+
 /// Mixes one color channel: `a` = 0 gives `bg`, 255 gives `fg`.
 /// e.g. mix(0, 255, 128) = 128, halfway between.
 fn mix(bg: u32, fg: u32, a: u32) -> u32 {
@@ -176,13 +210,14 @@ fn draw_char(
     pixels: &mut [u32],
     width: usize,
     font: &fontdue::Font,
+    size: f32,
     ascent: i32,
     ch: char,
     color: u32,
     x: usize,
     y: usize,
 ) {
-    let (metrics, coverage) = font.rasterize(ch, FONT_SIZE);
+    let (metrics, coverage) = font.rasterize(ch, size);
 
     // Letters sit on the baseline, `ascent` pixels below the top of the cell.
     // ymin is how far the letter's bottom is below the baseline (negative for 'g', 'p'...).
