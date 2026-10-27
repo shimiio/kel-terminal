@@ -64,6 +64,8 @@ impl Selection {
 pub enum UserEvent {
     /// The reader thread parsed new shell output into the grid.
     PtyOutput,
+    /// The program asked the terminal something; these bytes are the answer.
+    Reply(Vec<u8>),
     /// The shell closed its output.
     PtyExited,
 }
@@ -105,12 +107,9 @@ impl App {
     pub fn new(proxy: EventLoopProxy<UserEvent>) -> anyhow::Result<Self> {
         let (master, child) = pty::spawn_shell(ROWS as u16, COLS as u16)?;
         let reader = master.try_clone_reader()?; // shell output comes out here
-        let mut writer = master.take_writer()?; // our keys go in here
-
-        // At start, ConPTY asks "where is the cursor?" (`ESC[6n`) and waits for the
-        // answer before showing anything. We answer "row 1, column 1".
-        writer.write_all(b"\x1b[1;1R")?;
-        writer.flush()?;
+        // Our keys go in here. At start, ConPTY asks "where is the cursor?" (`ESC[6n`)
+        // and shows nothing until the answer comes back through it (see `UserEvent::Reply`).
+        let writer = master.take_writer()?;
 
         let terminal = Arc::new(Mutex::new(Terminal::new(ROWS, COLS)));
         spawn_reader(reader, terminal.clone(), proxy);
@@ -171,8 +170,17 @@ fn spawn_reader(
                 Ok(0) | Err(_) => break, // the shell is gone
                 Ok(n) => {
                     // The lock is held only while this chunk is parsed.
-                    parser.advance(&mut *terminal.lock().unwrap(), &buf[..n]);
+                    let replies = {
+                        let mut terminal = terminal.lock().unwrap();
+                        parser.advance(&mut *terminal, &buf[..n]);
+                        // Take the answers out, leaving the list empty for the next chunk.
+                        std::mem::take(&mut terminal.replies)
+                    };
+                    // The writer belongs to the main thread, so the answers go there.
                     // Err means the event loop has already shut down.
+                    if !replies.is_empty() && proxy.send_event(UserEvent::Reply(replies)).is_err() {
+                        return;
+                    }
                     if proxy.send_event(UserEvent::PtyOutput).is_err() {
                         return;
                     }
@@ -280,6 +288,11 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
+            }
+            // Not `send_to_shell`: an answer isn't typing, so the mouse selection stays.
+            UserEvent::Reply(bytes) => {
+                let _ = self.writer.write_all(&bytes);
+                let _ = self.writer.flush();
             }
             UserEvent::PtyExited => event_loop.exit(),
         }

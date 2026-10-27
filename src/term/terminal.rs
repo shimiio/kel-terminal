@@ -23,12 +23,16 @@ const PALETTE: [u32; 16] = [
 
 pub struct Terminal {
     pub grid: Grid,
+    /// Answers to the program's questions (e.g. "where is the cursor?"), waiting
+    /// to be sent back to it. The reader thread takes them after each chunk.
+    pub replies: Vec<u8>,
 }
 
 impl Terminal {
     pub fn new(rows: usize, cols: usize) -> Self {
         Terminal {
             grid: Grid::new(rows, cols),
+            replies: Vec::new(),
         }
     }
 
@@ -194,6 +198,18 @@ impl Perform for Terminal {
             'P' => self.grid.delete_chars(n),
             '@' => self.grid.insert_blanks(n),
             'm' => self.set_colors(params),
+            // Questions, `ESC[5n` "are you OK?" and `ESC[6n` "where is the cursor?".
+            // The answer goes back like typed text: `ESC[0n` "OK", `ESC[{row};{col}R`.
+            'n' => match param(params, 0, 0) {
+                5 => self.replies.extend_from_slice(b"\x1b[0n"),
+                6 => {
+                    let (row, col) = self.grid.cursor();
+                    // The grid counts from 0, the answer from 1.
+                    let answer = format!("\x1b[{};{}R", row + 1, col + 1);
+                    self.replies.extend_from_slice(answer.as_bytes());
+                }
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -214,6 +230,14 @@ mod tests {
     #[test]
     fn prints_text() {
         assert_eq!(feed("hello").grid.render(), "hello");
+    }
+
+    #[test]
+    fn answers_where_the_cursor_is() {
+        assert_eq!(feed("ab\x1b[6n").replies, b"\x1b[1;3R");
+        assert_eq!(feed("\x1b[2;5H\x1b[6n").replies, b"\x1b[2;5R");
+        assert_eq!(feed("\x1b[5n").replies, b"\x1b[0n");
+        assert!(feed("hello").replies.is_empty());
     }
 
     #[test]

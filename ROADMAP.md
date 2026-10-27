@@ -23,12 +23,14 @@ Stages go in order; items inside a stage can move around.
 
 ## 2. nvim essentials
 
-- [ ] Replies from the terminal to the program (cursor position `ESC[6n`, device attributes);
-      replace the hardcoded `ESC[1;1R` at startup
-- [ ] Scroll regions `ESC[r`, insert/delete lines `ESC[L` / `ESC[M`, scroll `ESC[S` / `ESC[T`
-- [ ] Save/restore cursor `ESC 7` / `ESC 8` (`esc_dispatch`)
+ConPTY sits between nvim and Kel and redraws the screen with simple sequences itself
+(checked with `examples/probe_nvim.rs` on Windows 11 26200), so scroll regions,
+insert/delete lines, save/restore cursor and application cursor keys never reach Kel.
+They are only needed if Kel runs on Linux/macOS someday.
+
+- [x] Replies from the terminal to the program (`ESC[6n`, `ESC[5n`);
+      replaces the hardcoded `ESC[1;1R` at startup
 - [ ] Alt+key sends `ESC` + key
-- [ ] Application cursor keys (`ESC[?1h`)
 - [ ] Bracketed paste (`ESC[?2004h`)
 
 ## 3. Config, font, README
@@ -78,3 +80,5 @@ Stages go in order; items inside a stage can move around.
 - [ ] Split panes
 - [ ] Window vibrancy
 - [ ] License, CI, release `.exe` on GitHub
+- [ ] Linux/macOS: scroll regions `ESC[r`, `ESC[L` / `ESC[M` / `ESC[S` / `ESC[T`,
+      save/restore cursor `ESC 7` / `ESC 8`, application cursor keys `ESC[?1h`
