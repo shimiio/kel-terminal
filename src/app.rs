@@ -278,7 +278,7 @@ impl ApplicationHandler<UserEvent> for App {
             self.request_redraw();
         }
         // Sleep until the next event, or until it's time to blink, whichever comes first.
-        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_blink));
+        event_loop.set_contl_flow(ControlFlow::WaitUntil(self.next_blink));
     }
 }
 

@@ -8,6 +8,7 @@
 
 use crate::app::Selection;
 use crate::term::{CursorShape, Grid};
+use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
@@ -32,6 +33,9 @@ pub const FONT_SIZE: f32 = 18.0;
 const MIN_FONT_SIZE: f32 = 8.0;
 const MAX_FONT_SIZE: f32 = 48.0;
 
+/// A letter already turned into pixels: its metrics and coverage map.
+type Glyph = (fontdue::Metrics, Vec<u8>);
+
 pub struct Renderer {
     window: Rc<Window>,
     /// The window's pixels, which we draw into.
@@ -44,6 +48,11 @@ pub struct Renderer {
     cell_h: usize,
     /// Pixels from the top of a cell down to the baseline, the line letters sit on.
     ascent: i32,
+    /// Glyph cache: letters already rasterized, keyed by (letter, font index).
+    /// Rasterizing is the slow part of drawing a letter, and for the same letter
+    /// and size the result never changes, so each one is rasterized only once.
+    /// Cleared when the font size changes.
+    glyphs: HashMap<(char, usize), Glyph>,
 }
 
 impl Renderer {
@@ -70,6 +79,7 @@ impl Renderer {
             cell_w,
             cell_h,
             ascent,
+            glyphs: HashMap::new(),
         })
     }
 
@@ -91,6 +101,8 @@ impl Renderer {
             self.cell_w = cell_w;
             self.cell_h = cell_h;
             self.ascent = ascent;
+            // The cached letters have the old size.
+            self.glyphs.clear();
         }
     }
 
@@ -134,9 +146,15 @@ impl Renderer {
                 fill_rect(&mut buffer, width, x, y, cell_w, cell_h, bg);
 
                 if cell.ch != ' ' {
-                    let font = &self.fonts[cell.bold as usize + 2 * cell.italic as usize];
+                    let style = cell.bold as usize + 2 * cell.italic as usize;
+                    let font = &self.fonts[style];
                     let size = self.font_size;
-                    draw_char(&mut buffer, width, font, size, self.ascent, cell.ch, fg, x, y);
+                    // Already in the cache: take it. Not yet: rasterize, store, take.
+                    let glyph = self
+                        .glyphs
+                        .entry((cell.ch, style))
+                        .or_insert_with(|| font.rasterize(cell.ch, size));
+                    draw_glyph(&mut buffer, width, glyph, self.ascent, fg, x, y);
                 }
 
                 if cell.underline {
@@ -205,19 +223,17 @@ fn blend(bg: u32, fg: u32, a: u32) -> u32 {
     (r << 16) | (g << 8) | b
 }
 
-/// Draws `ch` in the cell whose top-left corner is at (x, y).
-fn draw_char(
+/// Draws a rasterized letter in the cell whose top-left corner is at (x, y).
+fn draw_glyph(
     pixels: &mut [u32],
     width: usize,
-    font: &fontdue::Font,
-    size: f32,
+    glyph: &Glyph,
     ascent: i32,
-    ch: char,
     color: u32,
     x: usize,
     y: usize,
 ) {
-    let (metrics, coverage) = font.rasterize(ch, size);
+    let (metrics, coverage) = glyph;
 
     // Letters sit on the baseline, `ascent` pixels below the top of the cell.
     // ymin is how far the letter's bottom is below the baseline (negative for 'g', 'p'...).
