@@ -37,6 +37,7 @@ cargo build --release   # a fast build: target/release/kel-terminal.exe
 | Mouse wheel | Scroll back through earlier output |
 | Drag the empty top bar | Move the window |
 | Double-click the empty top bar | Maximize / restore |
+| Drag the window's edge or corner | Resize the window |
 
 ## Config
 
@@ -121,8 +122,10 @@ color schemes, don't use them.
 
 - **At start:** Kel uses the default settings and shows the error in red at the top
   of the window, e.g. a missing font or shell, or a typo in the file.
-- **After saving:** Kel keeps the settings it had and shows the error in the window
-  title, with the line and the reason. Fix the file and save again.
+- **After saving:** Kel keeps the settings it had and shows the error in red at the
+  right end of the tab bar, with the line and the reason, e.g.
+  `config.toml, line 3: invalid type: string "big", expected f32`.
+  Fix the file and save again: the message goes away.
 
 ## How the code is laid out
 

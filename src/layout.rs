@@ -18,6 +18,12 @@
 //! means changing numbers there.
 
 use serde::Deserialize;
+use winit::window::ResizeDirection;
+
+/// How close to the window's edge the mouse must be to resize the window.
+const RESIZE_EDGE: usize = 5;
+/// How far from a corner, along both edges, resizing goes diagonally.
+const RESIZE_CORNER: usize = 12;
 
 /// A window button's width, like the Windows ones.
 const BUTTON_WIDTH: usize = 46;
@@ -90,6 +96,8 @@ impl Default for Spacing {
 /// Where everything is, for one window size.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Layout {
+    /// The whole window.
+    pub window: Rect,
     /// Everything above the panel, from the window's top edge: Kel's own title bar.
     /// Its empty parts move the window.
     pub title_bar: Rect,
@@ -149,6 +157,7 @@ impl Spacing {
         let inside = panel.shrink(self.border);
         let text = inside.shrink(self.padding);
         Layout {
+            window,
             title_bar,
             tab_bar,
             minimize,
@@ -170,6 +179,32 @@ impl Spacing {
 }
 
 impl Layout {
+    /// Which way the window resizes when dragged at (x, y): near an edge or a
+    /// corner, `Some`. Without the Windows title bar, Kel decides this itself.
+    pub fn resize_edge(&self, x: usize, y: usize) -> Option<ResizeDirection> {
+        // How far the mouse is from each edge, in pixels.
+        let left = x;
+        let top = y;
+        let right = self.window.w.saturating_sub(x + 1);
+        let bottom = self.window.h.saturating_sub(y + 1);
+        // Close to one edge, and not far along the other: a corner.
+        let corner = |a: usize, b: usize| {
+            a < RESIZE_CORNER && b < RESIZE_CORNER && (a < RESIZE_EDGE || b < RESIZE_EDGE)
+        };
+        use ResizeDirection::*;
+        Some(match () {
+            _ if corner(top, left) => NorthWest,
+            _ if corner(top, right) => NorthEast,
+            _ if corner(bottom, left) => SouthWest,
+            _ if corner(bottom, right) => SouthEast,
+            _ if top < RESIZE_EDGE => North,
+            _ if bottom < RESIZE_EDGE => South,
+            _ if left < RESIZE_EDGE => West,
+            _ if right < RESIZE_EDGE => East,
+            _ => return None,
+        })
+    }
+
     /// The window button at (x, y), if there is one.
     pub fn button_at(&self, x: usize, y: usize) -> Option<WindowButton> {
         [
@@ -268,6 +303,19 @@ mod tests {
         // A click at (200, 20) is on the second tab.
         assert!(tabs[1].contains(200, 20));
         assert!(!tabs[1].contains(200, 45)); // below the bar: the panel
+    }
+
+    #[test]
+    fn resize_edges() {
+        let layout = Spacing::default().layout(1000, 700);
+        assert_eq!(layout.resize_edge(0, 300), Some(ResizeDirection::West));
+        assert_eq!(layout.resize_edge(999, 300), Some(ResizeDirection::East));
+        assert_eq!(layout.resize_edge(500, 698), Some(ResizeDirection::South));
+        assert_eq!(layout.resize_edge(500, 2), Some(ResizeDirection::North));
+        // Near the corner: 2 from the top, 8 from the right, diagonal.
+        assert_eq!(layout.resize_edge(991, 2), Some(ResizeDirection::NorthEast));
+        // Further in: the close button, not an edge.
+        assert_eq!(layout.resize_edge(980, 20), None);
     }
 
     #[test]

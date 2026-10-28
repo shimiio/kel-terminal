@@ -60,7 +60,7 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       Ctrl+1…9 go to tab N
 - [ ] Later: a config option for Ctrl+Tab order, by position or most recently used (like browsers)
 - [x] Tab bar: the active tab merges into the panel, the others stay muted; clickable
-- [ ] Own title bar: no Windows title bar, the tab bar takes its place. Kel then does
+- [x] Own title bar: no Windows title bar, the tab bar takes its place. Kel then does
       what it did: drag to move, double-click to maximize, minimize/maximize/close buttons,
       resize at the edges, the window shadow. Config errors move into Kel's own UI
 - [ ] Activity dot on a background tab with new output

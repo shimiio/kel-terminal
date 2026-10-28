@@ -19,7 +19,7 @@ use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, Window
 use winit::event_loop::ControlFlow;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::ModifiersState;
-use winit::window::{Window, WindowId};
+use winit::window::{CursorIcon, ResizeDirection, Window, WindowId};
 
 // Starting size, in cells. After that, the size comes from the window (`on_resize`).
 const ROWS: usize = 24;
@@ -111,6 +111,10 @@ pub struct App {
     last_click: Option<Instant>,
     /// The close button was clicked: `about_to_wait` ends the event loop.
     quit: bool,
+    /// The mouse is at the window's edge: pressing there resizes the window this way.
+    resize_edge: Option<ResizeDirection>,
+    /// Something went wrong (a config error...), shown in the tab bar until it's fixed.
+    status: Option<String>,
 }
 
 impl App {
@@ -180,6 +184,8 @@ impl App {
             hovered: None,
             last_click: None,
             quit: false,
+            resize_edge: None,
+            status: None,
         })
     }
 
@@ -220,7 +226,7 @@ impl App {
                 self.tabs.push(tab);
                 self.show_tab(self.tabs.len() - 1);
             }
-            Err(e) => self.set_title(&format!("Kel - can't open a tab: {e:#}")),
+            Err(e) => self.set_status(Some(format!("can't open a tab: {e:#}"))),
         }
     }
 
@@ -264,9 +270,11 @@ impl App {
         self.show_tab(index as usize);
     }
 
-    fn set_title(&self, title: &str) {
-        if let Some(window) = &self.window {
-            window.set_title(title);
+    /// Shows a problem in the tab bar, or (`None`) clears it.
+    fn set_status(&mut self, status: Option<String>) {
+        if self.status != status {
+            self.status = status;
+            self.request_redraw();
         }
     }
 
@@ -309,7 +317,7 @@ impl App {
         }
         self.config_modified = modified;
 
-        // `Some`: something went wrong, and the title says what.
+        // `Some`: something went wrong, and the tab bar says what.
         let error = match config::load() {
             Ok(new) => {
                 let mut error = None;
@@ -317,7 +325,7 @@ impl App {
                 if new.font != self.config.font {
                     match renderer::load_fonts(&new.font) {
                         Ok(fonts) => self.set_fonts(fonts),
-                        Err(e) => error = Some(format!("Kel - {e:#}")), // keeps the old font
+                        Err(e) => error = Some(format!("{e:#}")), // keeps the old font
                     }
                 }
                 if new.font_size != self.config.font_size {
@@ -336,22 +344,10 @@ impl App {
                 self.config = new;
                 error
             }
-            // The error has several lines: the place ("...config.toml: TOML parse error
-            // at line 1, column 13"), a drawing of that line, and the reason
-            // ("invalid type: string "big", expected f32"). A title fits one line,
-            // so it gets the first and the last.
-            Err(e) => {
-                let error = format!("{e:#}");
-                let mut lines = error.lines();
-                let first = lines.next().unwrap_or("");
-                let last = lines.last().unwrap_or("");
-                Some(format!("Kel - config error: {first} {last}"))
-            }
+            // e.g. "config.toml, line 3: invalid type: string "big", expected f32"
+            Err(e) => Some(format!("{e:#}")),
         };
-        match error {
-            Some(error) => self.set_title(&error),
-            None => self.set_title("Kel"),
-        }
+        self.set_status(error);
     }
 
     // -----------------------------------------------------------------------
@@ -542,6 +538,7 @@ impl App {
             active: self.active,
             hovered: self.hovered,
             maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),
+            status: self.status.as_deref(),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -638,7 +635,26 @@ impl App {
         let row = y.saturating_sub(text.y) / cell_h;
         self.mouse_pos = (x, y);
         self.mouse_cell = (row, col);
-        self.set_hovered(self.layout.button_at(x, y));
+        // At the window's edge: resize arrows, and no lit button under them. A
+        // maximized window can't be resized, so it has no edges.
+        let maximized = self.window.as_ref().is_some_and(|w| w.is_maximized());
+        let edge = if maximized {
+            None
+        } else {
+            self.layout.resize_edge(x, y)
+        };
+        if edge != self.resize_edge {
+            self.resize_edge = edge;
+            if let Some(window) = &self.window {
+                window.set_cursor(edge.map_or(CursorIcon::Default, CursorIcon::from));
+            }
+        }
+        let button = if edge.is_some() {
+            None
+        } else {
+            self.layout.button_at(x, y)
+        };
+        self.set_hovered(button);
 
         if self.selecting {
             if let Some(selection) = &mut self.selection {
@@ -693,6 +709,13 @@ impl App {
     /// Left mouse button: pressing starts a new selection, releasing finishes it.
     fn on_left_button(&mut self, state: ElementState) {
         match state {
+            // At the window's edge: Windows resizes the window with the mouse
+            // until the button is released.
+            ElementState::Pressed if self.resize_edge.is_some() => {
+                if let (Some(window), Some(edge)) = (&self.window, self.resize_edge) {
+                    let _ = window.drag_resize_window(edge);
+                }
+            }
             // Above the panel: Kel's title bar. There's no text to select there.
             ElementState::Pressed
                 if self

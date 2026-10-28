@@ -99,7 +99,19 @@ pub fn load() -> anyhow::Result<Config> {
         std::fs::write(&path, DEFAULT_CONFIG)?;
     }
     let text = std::fs::read_to_string(&path)?;
-    toml::from_str(&text).with_context(|| format!("{}", path.display()))
+    // toml's own message has several lines with a drawing of the bad line.
+    // Kel shows errors on one line, so: where, and why.
+    // e.g. "config.toml, line 3: invalid type: string "big", expected f32"
+    toml::from_str(&text).map_err(|e| {
+        let line = e.span().map_or(1, |span| line_at(&text, span.start));
+        anyhow::anyhow!("config.toml, line {line}: {}", e.message())
+    })
+}
+
+/// The line number (from 1) of byte `offset` in `text`: one more than the
+/// line breaks before it.
+fn line_at(text: &str, offset: usize) -> usize {
+    text[..offset].matches('\n').count() + 1
 }
 
 #[cfg(test)]
@@ -132,6 +144,13 @@ mod tests {
     fn bad_colors_are_errors() {
         assert!(toml::from_str::<Config>("[colors]\nbackground = \"black\"").is_err());
         assert!(toml::from_str::<Config>("[colors]\npalette = [\"#000000\"]").is_err()); // not 16
+    }
+
+    #[test]
+    fn line_numbers() {
+        let text = "a = 1\nb = 2\nc = 3\n";
+        assert_eq!(line_at(text, 0), 1); // "a"
+        assert_eq!(line_at(text, 12), 3); // "c", the very start of line 3
     }
 
     #[test]

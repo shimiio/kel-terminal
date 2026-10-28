@@ -48,6 +48,8 @@ pub struct Chrome<'a> {
     pub hovered: Option<WindowButton>,
     /// The maximize button then shows "restore" (two squares).
     pub maximized: bool,
+    /// Something went wrong (a config error...): shown in red at the end of the tab bar.
+    pub status: Option<&'a str>,
 }
 
 /// Text in Kel's own UI, like the tab names: one size, its own glyph cache.
@@ -222,6 +224,17 @@ impl Renderer {
             &mut self.ui,
         );
         draw_window_buttons(&mut buffer, width, theme, layout, chrome);
+        if let Some(status) = chrome.status {
+            draw_status(
+                &mut buffer,
+                width,
+                theme,
+                layout,
+                status,
+                font,
+                &mut self.ui,
+            );
+        }
 
         let (cursor_row, cursor_col) = grid.cursor();
         let (cell_w, cell_h) = (self.cell_w, self.cell_h);
@@ -399,6 +412,45 @@ fn draw_window_buttons(
                 }
             }
         }
+    }
+}
+
+/// A message in red at the right end of the tab bar, just before the window buttons.
+/// It goes over the tabs if they reach that far: a problem should be seen.
+fn draw_status(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    status: &str,
+    font: &fontdue::Font,
+    ui: &mut UiText,
+) {
+    let bar = layout.tab_bar;
+    // At most the right half of the bar; a longer message is cut.
+    let max_chars = (bar.w / 2) / ui.advance.max(1);
+    let shown: String = status.chars().take(max_chars).collect();
+    let text_w = shown.chars().count() * ui.advance;
+    let end = bar.x + bar.w;
+    let x = end.saturating_sub(text_w);
+    // The window's color behind it, so tabs under it don't show through.
+    let back = x.saturating_sub(TAB_TEXT_PADDING);
+    fill_rect(pixels, width, back, bar.y, end - back, bar.h, theme.frame);
+    let y = bar.y + bar.h.saturating_sub(ui.line_h) / 2;
+    for (n, ch) in shown.chars().enumerate() {
+        let glyph = ui
+            .glyphs
+            .entry(ch)
+            .or_insert_with(|| font.rasterize(ch, UI_FONT_SIZE));
+        draw_glyph(
+            pixels,
+            width,
+            glyph,
+            ui.ascent,
+            theme.palette[9],
+            x + n * ui.advance,
+            y,
+        );
     }
 }
 
