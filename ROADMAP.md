@@ -60,6 +60,9 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       Ctrl+1…9 go to tab N
 - [ ] Later: a config option for Ctrl+Tab order, by position or most recently used (like browsers)
 - [ ] Tab bar: the active tab merges into the panel, the others stay muted; clickable
+- [ ] Own title bar: no Windows title bar, the tab bar takes its place. Kel then does
+      what it did: drag to move, double-click to maximize, minimize/maximize/close buttons,
+      resize at the edges, the window shadow. Config errors move into Kel's own UI
 - [ ] Activity dot on a background tab with new output
 - [ ] Tab/window title from OSC 0/2
 - [ ] Ask before closing a tab with a running program
@@ -105,7 +108,6 @@ Not decided, each one gets tried on screen first:
 - Sidebar on the left (hover with a short delay, or a key): dims the rest, lists projects
 - Display scaling (DPI): font and pixel art must follow Windows' 125% / 150%;
   pixel art only at whole steps (×2, ×3), or its pixels get uneven
-- Own title bar instead of the Windows one (then Kel must move, resize, minimize itself)
 
 ## Fonts (to decide)
 
