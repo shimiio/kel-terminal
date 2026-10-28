@@ -260,8 +260,14 @@ fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<V
         Key::Named(NamedKey::F11) => return tilde(23),
         Key::Named(NamedKey::F12) => return tilde(24),
         // Everything else (letters, digits, Cyrillic...): the typed text, as UTF-8 bytes.
-        _ => return text.map(|t| t.as_bytes().to_vec()),
+        _ => text?.as_bytes(),
     };
+
+    // Alt+key: ESC, then the key, e.g. Alt+f sends `\x1bf`. Not with Ctrl:
+    // Ctrl+Alt is AltGr on many layouts, and AltGr types letters like `@` or `ł`.
+    if mods.alt_key() && !mods.control_key() {
+        return Some([b"\x1b", bytes].concat());
+    }
     Some(bytes.to_vec())
 }
 
@@ -518,6 +524,18 @@ mod tests {
     fn send(key: NamedKey, mods: ModifiersState) -> String {
         let bytes = key_to_bytes(&Key::Named(key), None, mods).unwrap();
         String::from_utf8(bytes).unwrap()
+    }
+
+    #[test]
+    fn alt_adds_escape() {
+        let alt_f = key_to_bytes(&Key::Character("f".into()), Some("f"), ModifiersState::ALT);
+        assert_eq!(alt_f.unwrap(), b"\x1bf");
+        assert_eq!(send(NamedKey::Backspace, ModifiersState::ALT), "\x1b\x7f");
+        // Ctrl+Alt is AltGr: the typed letter goes as it is.
+        let altgr = ModifiersState::ALT | ModifiersState::CONTROL;
+        assert_eq!(key_to_bytes(&Key::Character("@".into()), Some("@"), altgr).unwrap(), b"@");
+        // Arrows already carry Alt in their number, no extra ESC.
+        assert_eq!(send(NamedKey::ArrowUp, ModifiersState::ALT), "\x1b[1;3A");
     }
 
     #[test]

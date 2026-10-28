@@ -30,7 +30,7 @@ They are only needed if Kel runs on Linux/macOS someday.
 
 - [x] Replies from the terminal to the program (`ESC[6n`, `ESC[5n`);
       replaces the hardcoded `ESC[1;1R` at startup
-- [ ] Alt+key sends `ESC` + key
+- [x] Alt+key sends `ESC` + key
 - [ ] Bracketed paste (`ESC[?2004h`)
 
 ## 3. Config, font, README
