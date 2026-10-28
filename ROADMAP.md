@@ -48,10 +48,18 @@ They are only needed if Kel runs on Linux/macOS someday.
 
 ## 4. Tabs
 
+The look is an experiment: an app frame, the terminal as a panel inside it, the active
+tab merging into the panel, other tabs muted. Sizes and colors live in one place
+(layout + theme), so trying another look means changing numbers, not code.
+
+- [ ] Layout: the terminal is a panel inside the window (margins, frame color in the theme);
+      mouse and grid size measured from the panel
 - [ ] `Tab` struct (terminal + PTY + title); `App` keeps a list and the active index
 - [ ] PTY events carry the tab id; shell exit closes the tab, not the window
-- [ ] Tab bar (drawn by the renderer, clickable)
-- [ ] Ctrl+Shift+T new, Ctrl+Shift+W close, Ctrl+Tab next
+- [ ] Ctrl+Shift+T new, Ctrl+Shift+W close, Ctrl+Tab / Ctrl+Shift+Tab next / previous,
+      Ctrl+1…9 go to tab N
+- [ ] Tab bar: the active tab merges into the panel, the others stay muted; clickable
+- [ ] Activity dot on a background tab with new output
 - [ ] Tab/window title from OSC 0/2
 - [ ] Ask before closing a tab with a running program
 
@@ -86,6 +94,17 @@ They are only needed if Kel runs on Linux/macOS someday.
 - [ ] Split panes
 - [ ] Window vibrancy
 - [ ] License, CI, release `.exe` on GitHub
+
+## Look (ideas, to try)
+
+Not decided, each one gets tried on screen first:
+- Project accent color: fills the tab icons, colors the project name
+- Pixel-art tab icons (made in Aseprite, PNG), outlines filled with the accent color
+- Pixel font for the UI: the Kel logo, the project name
+- Sidebar on the left (hover with a short delay, or a key): dims the rest, lists projects
+- Display scaling (DPI): font and pixel art must follow Windows' 125% / 150%;
+  pixel art only at whole steps (×2, ×3), or its pixels get uneven
+- Own title bar instead of the Windows one (then Kel must move, resize, minimize itself)
 
 ## Fonts (to decide)
 
