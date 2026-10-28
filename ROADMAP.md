@@ -3,6 +3,9 @@
 Kel is a terminal built to be a daily work tool: tabs, and **projects** that remember
 their tabs (name, folder, startup command) so a whole workspace opens in one go.
 
+Kel should run on Windows, Linux and macOS. It's developed on Windows first, so new
+code avoids Windows-only things where a cross-platform way is cheap (see the last section).
+
 Stages go in order; items inside a stage can move around.
 
 ## Done
@@ -38,7 +41,6 @@ They are only needed if Kel runs on Linux/macOS someday.
 - [x] `config.toml` in `%APPDATA%\kel` (font size, shell); errors shown in the window
 - [x] Key to open the config (Ctrl+,); apply changes without a restart
 - [x] Pick the font by name; Nerd Font icons
-- [ ] Fallback font for missing glyphs (emoji, CJK)
 - [ ] Colors in the config (cells must remember "default color" / "palette color N",
       not the final RGB, so a new theme can recolor text already on screen)
 - [ ] README with short how-to guides (kept up to date with each feature)
@@ -84,5 +86,26 @@ They are only needed if Kel runs on Linux/macOS someday.
 - [ ] Split panes
 - [ ] Window vibrancy
 - [ ] License, CI, release `.exe` on GitHub
-- [ ] Linux/macOS: scroll regions `ESC[r`, `ESC[L` / `ESC[M` / `ESC[S` / `ESC[T`,
-      save/restore cursor `ESC 7` / `ESC 8`, application cursor keys `ESC[?1h`
+
+## Fonts (to decide)
+
+A font that works on any computer without installing it: built into the Kel binary.
+Options:
+- A. JetBrainsMono Nerd Font as is: 4 files × 2.5 MB, each with the same icons (~10 MB)
+- B. JetBrains Mono (4 small files) + Symbols Nerd Font (icons once, any font gets them), ~3–4 MB
+
+Either way:
+- [ ] Fallback font for missing glyphs: config font → built-in icons → system emoji/CJK fonts
+
+## Linux / macOS
+
+The base is already cross-platform: winit, softbuffer, fontdue, fontdb, portable-pty, arboard.
+What is Windows-only today:
+- [ ] Config path `%APPDATA%\kel` (Linux `~/.config/kel`, macOS `~/Library/Application Support/kel`)
+- [ ] Ctrl+, opens the config with `explorer.exe` (Linux `xdg-open`, macOS `open`)
+- [ ] Default shell `powershell.exe` (Linux/macOS: `$SHELL`)
+- [ ] Default font Consolas (solved by a built-in font, see Fonts)
+- [ ] Without ConPTY, programs send everything straight to Kel: scroll regions `ESC[r`,
+      `ESC[L` / `ESC[M` / `ESC[S` / `ESC[T`, save/restore cursor `ESC 7` / `ESC 8`,
+      application cursor keys `ESC[?1h`, device attributes `ESC[c`
+- [ ] macOS shortcuts with Cmd instead of Ctrl+Shift
