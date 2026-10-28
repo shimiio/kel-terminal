@@ -4,20 +4,19 @@
 //! Rows and columns start at 0 here. Escape codes count from 1, so the
 //! functions called from escape codes (`move_cursor`, `set_col`...) subtract 1.
 
+use crate::theme::Color;
 use std::collections::VecDeque;
 
 /// How many old lines to keep. Older ones are thrown away.
 pub const SCROLLBACK_LIMIT: usize = 10_000;
-pub const DEFAULT_FG: u32 = 0xd4d4d4; // light gray text
-pub const DEFAULT_BG: u32 = 0x1e1e1e; // dark gray background
 const TAB_WIDTH: usize = 8;
 
-/// One character on the screen, with its colors (`0xRRGGBB`).
+/// One character on the screen, with its colors.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cell {
     pub ch: char,
-    pub fg: u32,
-    pub bg: u32,
+    pub fg: Color,
+    pub bg: Color,
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
@@ -28,8 +27,8 @@ impl Default for Cell {
     fn default() -> Self {
         Cell {
             ch: ' ',
-            fg: DEFAULT_FG,
-            bg: DEFAULT_BG,
+            fg: Color::Default,
+            bg: Color::Default,
             bold: false,
             italic: false,
             underline: false,
@@ -52,8 +51,8 @@ pub struct Grid {
     // happens when the next char is printed ("pending wrap").
     cursor_col: usize,
     // The "pen": the colors the next printed chars get. Changed by `ESC[...m`.
-    pub fg: u32,
-    pub bg: u32,
+    pub fg: Color,
+    pub bg: Color,
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
@@ -86,8 +85,8 @@ impl Grid {
             cols,
             cursor_col: 0,
             cursor_row: 0,
-            fg: DEFAULT_FG,
-            bg: DEFAULT_BG,
+            fg: Color::Default,
+            bg: Color::Default,
             bold: false,
             italic: false,
             underline: false,

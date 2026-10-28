@@ -14,9 +14,11 @@
 //! - `pty`: starts the shell inside a pseudo-terminal.
 //! - `term`: understands what the shell sends and keeps the screen as a grid of cells.
 //! - `renderer`: turns that grid into pixels.
+//! - `theme`: colors as programs ask for them, and the theme that turns them into pixels.
 
 pub mod app;
 pub mod config;
 pub mod pty;
 pub mod renderer;
 pub mod term;
+pub mod theme;

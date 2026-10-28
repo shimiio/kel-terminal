@@ -11,15 +11,8 @@
 
 use super::Grid;
 use super::grid::CursorShape;
-use super::grid::DEFAULT_BG;
-use super::grid::DEFAULT_FG;
+use crate::theme::Color;
 use vte::Perform;
-
-/// The 16 basic colors: 0-7 normal (codes 30-37), 8-15 bright (codes 90-97).
-const PALETTE: [u32; 16] = [
-    0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00, 0x0037da, 0x881798, 0x3a96dd, 0xcccccc, 0x767676,
-    0xe74856, 0x16c60c, 0xf9f1a5, 0x3b78ff, 0xb4009e, 0x61d6d6, 0xf2f2f2,
-];
 
 pub struct Terminal {
     pub grid: Grid,
@@ -47,8 +40,8 @@ impl Terminal {
             let code = param.first().copied().unwrap_or(0);
             match code {
                 0 => {
-                    self.grid.fg = DEFAULT_FG;
-                    self.grid.bg = DEFAULT_BG;
+                    self.grid.fg = Color::Default;
+                    self.grid.bg = Color::Default;
                     self.grid.bold = false;
                     self.grid.italic = false;
                     self.grid.underline = false;
@@ -65,19 +58,19 @@ impl Terminal {
                 7 => self.grid.inverse = true,
                 27 => self.grid.inverse = false,
 
-                // text color
-                39 => self.grid.fg = DEFAULT_FG,
-                30..=37 => self.grid.fg = PALETTE[(code - 30) as usize],
-                90..=97 => self.grid.fg = PALETTE[(code - 90 + 8) as usize],
+                // text color: the color's number, the theme decides how it looks
+                39 => self.grid.fg = Color::Default,
+                30..=37 => self.grid.fg = Color::Indexed((code - 30) as u8),
+                90..=97 => self.grid.fg = Color::Indexed((code - 90 + 8) as u8),
                 38 => match extended_color(&mut iter) {
                     Some(color) => self.grid.fg = color,
                     None => break, // a format we don't know: stop reading this sequence
                 },
 
                 // background color: same as above, but 4x / 10x / 49 / 48
-                40..=47 => self.grid.bg = PALETTE[(code - 40) as usize],
-                100..=107 => self.grid.bg = PALETTE[(code - 100 + 8) as usize],
-                49 => self.grid.bg = DEFAULT_BG,
+                40..=47 => self.grid.bg = Color::Indexed((code - 40) as u8),
+                100..=107 => self.grid.bg = Color::Indexed((code - 100 + 8) as u8),
+                49 => self.grid.bg = Color::Default,
                 48 => match extended_color(&mut iter) {
                     Some(color) => self.grid.bg = color,
                     None => break,
@@ -102,35 +95,17 @@ fn param(params: &vte::Params, index: usize, default: u16) -> u16 {
 /// - `2;r;g;b`: any color, as red, green and blue (0-255 each)
 ///
 /// `None` = a format we don't know.
-fn extended_color(iter: &mut vte::ParamsIter) -> Option<u32> {
+fn extended_color(iter: &mut vte::ParamsIter) -> Option<Color> {
     let mut next = || iter.next().and_then(|p| p.first().copied());
     match next()? {
-        5 => Some(color_256(next()?)),
+        5 => Some(Color::Indexed(next()?.min(255) as u8)),
         2 => {
             let r = next()? as u32;
             let g = next()? as u32;
             let b = next()? as u32;
-            Some((r << 16) | (g << 8) | b)
+            Some(Color::Rgb((r << 16) | (g << 8) | b))
         }
         _ => None,
-    }
-}
-
-/// Color number n of the 256-color table.
-fn color_256(n: u16) -> u32 {
-    match n {
-        0..=15 => PALETTE[n as usize],
-        16..=231 => {
-            // The 6x6x6 cube: n - 16 = 36*r + 6*g + b, each a level 0-5.
-            let i = (n - 16) as u32;
-            let level = |v: u32| if v == 0 { 0 } else { 55 + 40 * v };
-            (level(i / 36) << 16) | (level(i / 6 % 6) << 8) | level(i % 6)
-        }
-        _ => {
-            // 232-255: 24 grays, from dark to light.
-            let v = 8 + 10 * (n.min(255) - 232) as u32;
-            (v << 16) | (v << 8) | v
-        }
     }
 }
 
@@ -353,21 +328,21 @@ mod tests {
     #[test]
     fn colors_apply_until_reset() {
         let t = feed("\x1b[31mE\x1b[0mx");
-        assert_eq!(t.grid.cell(0, 0).fg, PALETTE[1]); // E is red
-        assert_eq!(t.grid.cell(0, 1).fg, DEFAULT_FG); // x is default again
+        assert_eq!(t.grid.cell(0, 0).fg, Color::Indexed(1)); // E is red
+        assert_eq!(t.grid.cell(0, 1).fg, Color::Default); // x is default again
     }
 
     #[test]
     fn extended_color_number() {
         let t = feed("\x1b[38;5;9mhello");
-        assert_eq!(t.grid.cell(0, 0).fg, PALETTE[9]);
+        assert_eq!(t.grid.cell(0, 0).fg, Color::Indexed(9));
     }
 
     #[test]
     fn background_applies_until_reset() {
         let t = feed("\x1b[41mE\x1b[0mx");
-        assert_eq!(t.grid.cell(0, 0).bg, PALETTE[1]);
-        assert_eq!(t.grid.cell(0, 1).bg, DEFAULT_BG);
+        assert_eq!(t.grid.cell(0, 0).bg, Color::Indexed(1));
+        assert_eq!(t.grid.cell(0, 1).bg, Color::Default);
     }
 
     #[test]
@@ -431,28 +406,28 @@ mod tests {
     #[test]
     fn truecolor() {
         let t = feed("\x1b[38;2;255;128;0;48;2;20;22;27mx");
-        assert_eq!(t.grid.cell(0, 0).fg, 0xff8000); // orange text
-        assert_eq!(t.grid.cell(0, 0).bg, 0x14161b); // Neovim's dark background
+        assert_eq!(t.grid.cell(0, 0).fg, Color::Rgb(0xff8000)); // orange text
+        assert_eq!(t.grid.cell(0, 0).bg, Color::Rgb(0x14161b)); // Neovim's dark background
     }
 
     #[test]
     fn colors_256() {
         let t = feed("\x1b[38;5;196ma\x1b[38;5;244mb");
-        assert_eq!(t.grid.cell(0, 0).fg, 0xff0000); // 196: pure red, from the cube
-        assert_eq!(t.grid.cell(0, 1).fg, 0x808080); // 244: a middle gray
+        assert_eq!(t.grid.cell(0, 0).fg, Color::Indexed(196));
+        assert_eq!(t.grid.cell(0, 1).fg, Color::Indexed(244));
     }
 
     #[test]
     fn erase_uses_the_pen_background() {
         let t = feed("\x1b[44m\x1b[K"); // blue background, then erase the line
-        assert_eq!(t.grid.cell(0, 5).bg, PALETTE[4]); // erased cells are blue
+        assert_eq!(t.grid.cell(0, 5).bg, Color::Indexed(4)); // erased cells are blue
     }
 
     #[test]
     fn erase_chars_uses_the_pen_background() {
         // What ConPTY sends for nvim's "-- INSERT --" line (recorded with probe_nvim).
         let t = feed("\x1b[48;2;20;22;27m\r\n\x1b[12X");
-        assert_eq!(t.grid.cell(1, 0).bg, 0x14161b);
-        assert_eq!(t.grid.cell(1, 9).bg, 0x14161b); // last column (the test grid is 10 wide)
+        assert_eq!(t.grid.cell(1, 0).bg, Color::Rgb(0x14161b));
+        assert_eq!(t.grid.cell(1, 9).bg, Color::Rgb(0x14161b)); // last column (the test grid is 10 wide)
     }
 }

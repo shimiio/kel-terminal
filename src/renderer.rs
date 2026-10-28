@@ -8,6 +8,7 @@
 
 use crate::app::Selection;
 use crate::term::{CursorShape, Grid};
+use crate::theme::Theme;
 use anyhow::Context;
 use fontdb::{Family, Query, Style, Weight};
 use std::collections::HashMap;
@@ -15,9 +16,6 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
 
-const BACKGROUND: u32 = 0x1e1e1e;
-const SELECTION_BG: u32 = 0x264f78; // blue
-const CURSOR: u32 = 0x808080;
 const CURSOR_HEIGHT: usize = 4;
 
 /// One font family in 4 styles. Index = bold + 2 * italic:
@@ -47,6 +45,8 @@ pub struct Renderer {
     /// and size the result never changes, so each one is rasterized only once.
     /// Cleared when the font size changes.
     glyphs: HashMap<(char, usize), Glyph>,
+    /// Turns the colors in the cells into pixels.
+    theme: Theme,
 }
 
 impl Renderer {
@@ -69,6 +69,7 @@ impl Renderer {
             cell_h,
             ascent,
             glyphs: HashMap::new(),
+            theme: Theme::default(),
         })
     }
 
@@ -112,7 +113,8 @@ impl Renderer {
         };
         self.surface.resize(w, h).unwrap();
         let mut buffer = self.surface.buffer_mut().unwrap();
-        buffer.fill(BACKGROUND);
+        let theme = &self.theme;
+        buffer.fill(theme.background);
         let width = size.width as usize;
 
         let (cursor_row, cursor_col) = grid.cursor();
@@ -137,13 +139,13 @@ impl Renderer {
                     // A block cursor is drawn by swapping colors, so the letter stays visible.
                     let block = is_cursor && grid.cursor_shape == CursorShape::Block;
 
-                    let (fg, bg) = if cell.inverse {
-                        (cell.bg, cell.fg)
-                    } else {
-                        (cell.fg, cell.bg)
-                    };
-                    let bg = if selected { SELECTION_BG } else { bg };
-                    let (fg, bg) = if block { (bg, CURSOR) } else { (fg, bg) };
+                    // Look the colors up in the theme. "Default" means a different
+                    // color for text and background, so this comes before the swap.
+                    let fg = theme.rgb(cell.fg, theme.foreground);
+                    let bg = theme.rgb(cell.bg, theme.background);
+                    let (fg, bg) = if cell.inverse { (bg, fg) } else { (fg, bg) };
+                    let bg = if selected { theme.selection } else { bg };
+                    let (fg, bg) = if block { (bg, theme.cursor) } else { (fg, bg) };
 
                     if backgrounds {
                         fill_rect(&mut buffer, width, x, y, cell_w, cell_h, bg);
@@ -173,7 +175,7 @@ impl Renderer {
                             CursorShape::Bar => (2, cell_h),
                             CursorShape::Block => continue, // drawn: the swapped colors above
                         };
-                        fill_rect(&mut buffer, width, x, y + cell_h - h, w, h, CURSOR);
+                        fill_rect(&mut buffer, width, x, y + cell_h - h, w, h, theme.cursor);
                     }
                 }
             }
