@@ -10,8 +10,9 @@
 //! `Arc` lets both threads own it, `Mutex` lets only one use it at a time.
 //! Lock it, use it, let the lock go. Locking it twice at once freezes the app (deadlock).
 
+use crate::config::{self, Config};
 use crate::pty;
-use crate::renderer::{FONT_SIZE, Renderer};
+use crate::renderer::Renderer;
 use crate::term::Terminal;
 use portable_pty::{Child, MasterPty, PtySize};
 use std::io::{Read, Write};
@@ -99,19 +100,41 @@ pub struct App {
 
     /// Scrolling that doesn't add up to a whole line yet (touchpads send tiny steps).
     scroll_rest: f32,
+
+    config: Config,
 }
 
 impl App {
     /// Starts the shell and the reader thread. The window comes later, in `resumed`.
     /// `proxy` is how the reader thread wakes up the event loop.
     pub fn new(proxy: EventLoopProxy<UserEvent>) -> anyhow::Result<Self> {
-        let (master, child) = pty::spawn_shell(ROWS as u16, COLS as u16)?;
+        // A broken config or a missing shell shouldn't stop Kel: start with the
+        // defaults and show what went wrong at the top of the screen.
+        let mut problems = Vec::new();
+        let config = config::load().unwrap_or_else(|e| {
+            problems.push(format!("{e:#}"));
+            Config::default()
+        });
+        let (master, child) = match pty::spawn_shell(&config.shell, ROWS as u16, COLS as u16) {
+            Ok(pty) => pty,
+            Err(e) => {
+                problems.push(format!("can't start shell \"{}\": {e:#}", config.shell));
+                pty::spawn_shell(&Config::default().shell, ROWS as u16, COLS as u16)?
+            }
+        };
         let reader = master.try_clone_reader()?; // shell output comes out here
         // Our keys go in here. At start, ConPTY asks "where is the cursor?" (`ESC[6n`)
         // and shows nothing until the answer comes back through it (see `UserEvent::Reply`).
         let writer = master.take_writer()?;
 
-        let terminal = Arc::new(Mutex::new(Terminal::new(ROWS, COLS)));
+        let mut terminal = Terminal::new(ROWS, COLS);
+        for problem in problems {
+            // Red text, then the shell starts below it: when ConPTY asks where the
+            // cursor is, the answer is the line after this message.
+            let text = format!("\x1b[31mkel: {problem}\x1b[m\n\n").replace('\n', "\r\n");
+            Parser::new().advance(&mut terminal, text.as_bytes());
+        }
+        let terminal = Arc::new(Mutex::new(terminal));
         spawn_reader(reader, terminal.clone(), proxy);
 
         Ok(App {
@@ -131,6 +154,8 @@ impl App {
             next_blink: Instant::now() + BLINK_INTERVAL,
 
             scroll_rest: 0.0,
+
+            config,
         })
     }
 
@@ -294,7 +319,7 @@ impl ApplicationHandler<UserEvent> for App {
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
         // The cell size comes from the font, which the renderer loads, and the renderer
         // needs the window. So: window first, then renderer, then the 80x24 size.
-        let renderer = Renderer::new(window.clone()).unwrap();
+        let renderer = Renderer::new(window.clone(), self.config.font_size).unwrap();
         let (cell_w, cell_h) = renderer.cell_size();
         let size = PhysicalSize::new((COLS * cell_w) as u32, (ROWS * cell_h) as u32);
         let _ = window.request_inner_size(size);
@@ -431,13 +456,13 @@ impl App {
             }
         }
 
-        // Ctrl+= / Ctrl+- / Ctrl+0: font bigger, smaller, back to the default
+        // Ctrl+= / Ctrl+- / Ctrl+0: font bigger, smaller, back to the size from the config
         if ctrl && let Some(renderer) = &mut self.renderer {
             let size = renderer.font_size();
             let new_size = match event.physical_key {
                 PhysicalKey::Code(KeyCode::Equal) => Some(size + 1.0),
                 PhysicalKey::Code(KeyCode::Minus) => Some(size - 1.0),
-                PhysicalKey::Code(KeyCode::Digit0) => Some(FONT_SIZE),
+                PhysicalKey::Code(KeyCode::Digit0) => Some(self.config.font_size),
                 _ => None,
             };
             if let Some(new_size) = new_size {

@@ -27,8 +27,6 @@ const FONT_FILES: [&str; 4] = [
     "C:\\Windows\\Fonts\\consolaz.ttf",
 ];
 
-/// Font size in pixels at startup. The cell size is measured from it (see `measure_cell`).
-pub const FONT_SIZE: f32 = 18.0;
 /// Zoom limits: smaller is unreadable, bigger leaves only a few cells in the window.
 const MIN_FONT_SIZE: f32 = 8.0;
 const MAX_FONT_SIZE: f32 = 48.0;
@@ -56,7 +54,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window: Rc<Window>) -> anyhow::Result<Self> {
+    pub fn new(window: Rc<Window>, font_size: f32) -> anyhow::Result<Self> {
         let context =
             softbuffer::Context::new(window.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
         let surface = softbuffer::Surface::new(&context, window.clone())
@@ -69,13 +67,14 @@ impl Renderer {
             load_font(FONT_FILES[3])?,
         ];
         // All 4 files share the same sizes, so measuring the regular one is enough.
-        let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], FONT_SIZE)?;
+        let font_size = font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+        let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], font_size)?;
 
         Ok(Renderer {
             window,
             surface,
             fonts,
-            font_size: FONT_SIZE,
+            font_size,
             cell_w,
             cell_h,
             ascent,

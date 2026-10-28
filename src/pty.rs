@@ -7,9 +7,10 @@
 
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
-/// Starts PowerShell in a new PTY of `rows` x `cols` cells.
+/// Starts `shell` (e.g. "powershell.exe") in a new PTY of `rows` x `cols` cells.
 /// Returns our (master) end and the shell process.
 pub fn spawn_shell(
+    shell: &str,
     rows: u16,
     cols: u16,
 ) -> anyhow::Result<(Box<dyn MasterPty + Send>, Box<dyn Child + Send + Sync>)> {
@@ -19,7 +20,7 @@ pub fn spawn_shell(
         pixel_width: 0,
         pixel_height: 0,
     })?;
-    let cmd = CommandBuilder::new("powershell.exe");
+    let cmd = CommandBuilder::new(shell);
     let child = pair.slave.spawn_command(cmd)?;
     // The shell holds the slave end now. We drop our copy, so that when the
     // shell exits, reading from the master ends instead of waiting forever.
