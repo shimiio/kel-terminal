@@ -10,6 +10,7 @@
 //! ```
 //!
 //! - `app`: the window and all events. Owns everything else.
+//! - `keys`: Kel's shortcuts, and the bytes other keys send to the shell.
 //! - `config`: the settings file, `%APPDATA%\kel\config.toml`.
 //! - `layout`: where the terminal panel goes in the window.
 //! - `pty`: starts the shell inside a pseudo-terminal.
@@ -20,6 +21,7 @@
 
 pub mod app;
 pub mod config;
+pub mod keys;
 pub mod layout;
 pub mod pty;
 pub mod renderer;

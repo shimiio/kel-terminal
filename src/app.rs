@@ -5,6 +5,7 @@
 //! report back with `UserEvent`s.
 
 use crate::config::{self, Config};
+use crate::keys::{self, Action};
 use crate::layout::Layout;
 use crate::renderer::{self, Fonts, Renderer};
 use crate::tab::{Tab, TabId};
@@ -17,7 +18,7 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
+use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
 
 // Starting size, in cells. After that, the size comes from the window (`on_resize`).
@@ -164,6 +165,10 @@ impl App {
         })
     }
 
+    // -----------------------------------------------------------------------
+    // Tabs
+    // -----------------------------------------------------------------------
+
     /// The tab on screen.
     fn tab(&self) -> &Tab {
         &self.tabs[self.active]
@@ -257,6 +262,10 @@ impl App {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Font, config, title
+    // -----------------------------------------------------------------------
+
     /// Changes the font size, then the grid to match it (see `Renderer::set_font_size`).
     fn set_font_size(&mut self, size: f32) {
         let Some(renderer) = &mut self.renderer else {
@@ -337,107 +346,73 @@ impl App {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Shortcuts: what each `Action` does.
+    // -----------------------------------------------------------------------
+
+    /// Does what a shortcut stands for. Which key is which action: `keys::shortcut`.
+    fn run(&mut self, action: Action) {
+        match action {
+            Action::NewTab => self.new_tab(),
+            // Only ends the shell; the tab goes when the shell is gone (`remove_tab`),
+            // the same way as after `exit`.
+            Action::CloseTab => self.tab_mut().kill(),
+            Action::NextTab => self.next_tab(1),
+            Action::PreviousTab => self.next_tab(-1),
+            Action::GoToTab(n) => self.show_tab(n - 1), // tab 1 is at index 0
+            Action::LastTab => self.show_tab(self.tabs.len() - 1),
+            Action::Paste => self.paste(),
+            Action::Copy => self.copy(),
+            Action::Interrupt => self.send_to_shell(&[0x03]), // the byte Ctrl+C stands for
+            Action::ZoomIn => self.zoom(1.0),
+            Action::ZoomOut => self.zoom(-1.0),
+            Action::ZoomReset => self.set_font_size(self.config.font_size),
+            Action::OpenConfig => {
+                if let Ok(path) = config::path() {
+                    // Explorer opens a file the same way as a double-click on it.
+                    let _ = std::process::Command::new("explorer.exe").arg(path).spawn();
+                }
+            }
+        }
+    }
+
+    /// Pastes the clipboard into the shell.
+    fn paste(&mut self) {
+        if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+            let bracketed = self.tab().terminal.lock().unwrap().bracketed_paste;
+            self.send_to_shell(&keys::paste_bytes(&text, bracketed));
+        }
+    }
+
+    /// Copies the mouse selection. Without one, it's a Ctrl+C for the shell,
+    /// and PowerShell then copies its own keyboard selection.
+    fn copy(&mut self) {
+        let Some(selection) = self.selection else {
+            self.send_to_shell(&[0x03]);
+            return;
+        };
+        let (start, end) = selection.ordered();
+        let text = self.tab().terminal.lock().unwrap().grid.text_between(start, end);
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            let _ = clipboard.set_text(text);
+        }
+        self.selection = None;
+        self.request_redraw();
+    }
+
+    /// Font one pixel bigger (`step` = 1) or smaller (-1).
+    fn zoom(&mut self, step: f32) {
+        if let Some(renderer) = &self.renderer {
+            self.set_font_size(renderer.font_size() + step);
+        }
+    }
+
     /// Shows the cursor and starts the blink over, so it doesn't vanish while you type.
     fn restart_blink(&mut self) {
         self.cursor_on = true;
         self.next_blink = Instant::now() + BLINK_INTERVAL;
         self.request_redraw();
     }
-}
-
-/// The bytes to send for pasted text.
-/// - Every line break becomes `\r`, because the shell treats `\r` as Enter.
-/// - With bracketed paste on, the text goes between `ESC[200~` and `ESC[201~`, so the
-///   program knows it's pasted, not typed: it won't run the lines or indent them.
-///   An end marker hidden inside the text is removed, so it can't end the paste early.
-fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
-    let text = text.replace("\r\n", "\r").replace('\n', "\r");
-    if bracketed {
-        let text = text.replace("\x1b[201~", "");
-        format!("\x1b[200~{text}\x1b[201~").into_bytes()
-    } else {
-        text.into_bytes()
-    }
-}
-
-/// Translates a key press into the bytes a terminal would send to the shell.
-/// `None` means the key sends nothing (e.g. Shift alone).
-fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<Vec<u8>> {
-    // Modifier number: 1 + Shift(1) + Alt(2) + Ctrl(4)
-    // e.g. Ctrl+Left: m = 1 + 4 = 5, so it sends `ESC[1;5D`.
-    let m = 1 + mods.shift_key() as u8 + 2 * mods.alt_key() as u8 + 4 * mods.control_key() as u8;
-
-    // Arrows, Home and End: `\x1b[X` without modifiers, `\x1b[1;{m}X` with them.
-    let with_mods = |letter: char| -> Option<Vec<u8>> {
-        let seq = if m == 1 {
-            format!("\x1b[{letter}")
-        } else {
-            format!("\x1b[1;{m}{letter}")
-        };
-        Some(seq.into_bytes())
-    };
-
-    // F1-F4: like arrows, but `\x1bOX` without modifiers (a leftover from the
-    // PF1-PF4 keys of the VT100 terminal, which used `ESC O`).
-    let f1_to_f4 = |letter: char| -> Option<Vec<u8>> {
-        let seq = if m == 1 {
-            format!("\x1bO{letter}")
-        } else {
-            format!("\x1b[1;{m}{letter}")
-        };
-        Some(seq.into_bytes())
-    };
-
-    // Insert, Delete, PageUp/Down, F5-F12: a number and `~`.
-    // `\x1b[{n}~` without modifiers, `\x1b[{n};{m}~` with them, e.g. Ctrl+Delete: `\x1b[3;5~`.
-    let tilde = |n: u8| -> Option<Vec<u8>> {
-        let seq = if m == 1 {
-            format!("\x1b[{n}~")
-        } else {
-            format!("\x1b[{n};{m}~")
-        };
-        Some(seq.into_bytes())
-    };
-
-    let bytes: &[u8] = match key {
-        Key::Named(NamedKey::Enter) => b"\r", // carriage return, not "\n"
-        Key::Named(NamedKey::Backspace) => b"\x7f", // the DEL character
-        Key::Named(NamedKey::Tab) => b"\t",
-        Key::Named(NamedKey::Escape) => b"\x1b",
-        Key::Named(NamedKey::ArrowUp) => return with_mods('A'),
-        Key::Named(NamedKey::ArrowDown) => return with_mods('B'),
-        Key::Named(NamedKey::ArrowRight) => return with_mods('C'),
-        Key::Named(NamedKey::ArrowLeft) => return with_mods('D'),
-        Key::Named(NamedKey::Home) => return with_mods('H'),
-        Key::Named(NamedKey::End) => return with_mods('F'),
-        Key::Named(NamedKey::F1) => return f1_to_f4('P'),
-        Key::Named(NamedKey::F2) => return f1_to_f4('Q'),
-        Key::Named(NamedKey::F3) => return f1_to_f4('R'),
-        Key::Named(NamedKey::F4) => return f1_to_f4('S'),
-        Key::Named(NamedKey::Insert) => return tilde(2),
-        Key::Named(NamedKey::Delete) => return tilde(3),
-        Key::Named(NamedKey::PageUp) => return tilde(5),
-        Key::Named(NamedKey::PageDown) => return tilde(6),
-        // The gaps (16, 22) are from the VT220 keyboard, where they were
-        // spaces between groups of keys. Every terminal kept the numbers.
-        Key::Named(NamedKey::F5) => return tilde(15),
-        Key::Named(NamedKey::F6) => return tilde(17),
-        Key::Named(NamedKey::F7) => return tilde(18),
-        Key::Named(NamedKey::F8) => return tilde(19),
-        Key::Named(NamedKey::F9) => return tilde(20),
-        Key::Named(NamedKey::F10) => return tilde(21),
-        Key::Named(NamedKey::F11) => return tilde(23),
-        Key::Named(NamedKey::F12) => return tilde(24),
-        // Everything else (letters, digits, Cyrillic...): the typed text, as UTF-8 bytes.
-        _ => text?.as_bytes(),
-    };
-
-    // Alt+key: ESC, then the key, e.g. Alt+f sends `\x1bf`. Not with Ctrl:
-    // Ctrl+Alt is AltGr on many layouts, and AltGr types letters like `@` or `ł`.
-    if mods.alt_key() && !mods.control_key() {
-        return Some([b"\x1b", bytes].concat());
-    }
-    Some(bytes.to_vec())
 }
 
 // winit calls these methods when something happens; we never call them ourselves.
@@ -563,117 +538,18 @@ impl App {
         }
     }
 
-    /// A key was pressed: handle our own shortcuts, or send the key to the shell.
-    /// The order of the checks matters: the most specific shortcut comes first.
-    /// Shortcuts use `physial_key` (the key's place on the keyboard), so they
-    /// work with any layout, Cyrillic too.
+    /// A key was pressed: one of Kel's shortcuts (see `keys::shortcut`),
+    /// or a key for the shell.
     fn on_key(&mut self, event: KeyEvent) {
         self.restart_blink();
-        let ctrl = self.modifiers.control_key();
-        let shift = self.modifiers.shift_key();
-
-        // Ctrl+Shift+V: paste from the clipboard
-        if ctrl && shift && event.physical_key == PhysicalKey::Code(KeyCode::KeyV) {
-            if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-                let bracketed = self.tab().terminal.lock().unwrap().bracketed_paste;
-                self.send_to_shell(&paste_bytes(&text, bracketed));
-            }
+        if let Some(action) = keys::shortcut(event.physical_key, self.modifiers) {
+            self.run(action);
             return;
         }
-
-        // Ctrl+Shift+C: copy the mouse selection. Without one, the key goes on to the shell.
-        if ctrl && shift && event.physical_key == PhysicalKey::Code(KeyCode::KeyC) {
-            if let Some(selection) = self.selection {
-                let (start, end) = selection.ordered();
-                let text = self.tab().terminal.lock().unwrap().grid.text_between(start, end);
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    let _ = clipboard.set_text(text);
-                }
-                self.selection = None;
-                self.request_redraw();
-                return;
-            }
-        }
-
-        // Tabs: Ctrl+Shift+T new, Ctrl+Shift+W close, Ctrl+Tab / Ctrl+Shift+Tab next /
-        // previous, Ctrl+1…8 tab 1…8, Ctrl+9 the last tab (like browsers).
-        if ctrl {
-            let digit = match event.physical_key {
-                PhysicalKey::Code(KeyCode::Digit1) => Some(1),
-                PhysicalKey::Code(KeyCode::Digit2) => Some(2),
-                PhysicalKey::Code(KeyCode::Digit3) => Some(3),
-                PhysicalKey::Code(KeyCode::Digit4) => Some(4),
-                PhysicalKey::Code(KeyCode::Digit5) => Some(5),
-                PhysicalKey::Code(KeyCode::Digit6) => Some(6),
-                PhysicalKey::Code(KeyCode::Digit7) => Some(7),
-                PhysicalKey::Code(KeyCode::Digit8) => Some(8),
-                PhysicalKey::Code(KeyCode::Digit9) => Some(9),
-                _ => None,
-            };
-            // `true`: it was a tab shortcut, so the shell doesn't get the key.
-            let handled = match (event.physical_key, shift, digit) {
-                (PhysicalKey::Code(KeyCode::KeyT), true, _) => {
-                    self.new_tab();
-                    true
-                }
-                // Only ends the shell; the tab goes when the shell is gone (`remove_tab`),
-                // the same way as after `exit`.
-                (PhysicalKey::Code(KeyCode::KeyW), true, _) => {
-                    self.tab_mut().kill();
-                    true
-                }
-                (PhysicalKey::Code(KeyCode::Tab), _, _) => {
-                    self.next_tab(if shift { -1 } else { 1 });
-                    true
-                }
-                (_, false, Some(n)) => {
-                    let index = if n == 9 { self.tabs.len() - 1 } else { n - 1 };
-                    self.show_tab(index);
-                    true
-                }
-                _ => false,
-            };
-            if handled {
-                return;
-            }
-        }
-
-        // Ctrl+= / Ctrl+- / Ctrl+0: font bigger, smaller, back to the size from the config
-        if ctrl && let Some(renderer) = &self.renderer {
-            let size = renderer.font_size();
-            let new_size = match event.physical_key {
-                PhysicalKey::Code(KeyCode::Equal) => Some(size + 1.0),
-                PhysicalKey::Code(KeyCode::Minus) => Some(size - 1.0),
-                PhysicalKey::Code(KeyCode::Digit0) => Some(self.config.font_size),
-                _ => None,
-            };
-            if let Some(new_size) = new_size {
-                self.set_font_size(new_size);
-                return;
-            }
-        }
-
-        // Ctrl+,: open the config file in the app Windows uses for .toml files.
-        if ctrl && event.physical_key == PhysicalKey::Code(KeyCode::Comma) {
-            if let Ok(path) = config::path() {
-                // Explorer opens a file the same way as a double-click on it.
-                let _ = std::process::Command::new("explorer.exe").arg(path).spawn();
-            }
-            return;
-        }
-
-        // Ctrl+C: interrupt the running command.
-        // Ctrl+Shift+C without a mouse selection also lands here, and PowerShell
-        // then copies its own keyboard selection.
-        if ctrl && event.physical_key == PhysicalKey::Code(KeyCode::KeyC) {
-            self.send_to_shell(&[0x03]);
-            return;
-        }
-
         // Any other key: jump back to the bottom, then translate it to bytes for the shell
         self.tab().terminal.lock().unwrap().grid.scroll_to_bottom();
-        if let Some(bytes) = key_to_bytes(&event.logical_key, event.text.as_deref(), self.modifiers)
-        {
+        let text = event.text.as_deref();
+        if let Some(bytes) = keys::key_to_bytes(&event.logical_key, text, self.modifiers) {
             self.send_to_shell(&bytes);
         }
     }
@@ -742,52 +618,5 @@ impl App {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The bytes a named key sends, as a string, e.g. "\x1b[15~".
-    fn send(key: NamedKey, mods: ModifiersState) -> String {
-        let bytes = key_to_bytes(&Key::Named(key), None, mods).unwrap();
-        String::from_utf8(bytes).unwrap()
-    }
-
-    #[test]
-    fn paste() {
-        assert_eq!(paste_bytes("a\r\nb\nc", false), b"a\rb\rc");
-        assert_eq!(paste_bytes("a\nb", true), b"\x1b[200~a\rb\x1b[201~");
-        // A hidden end marker would let `rm -rf ~` run as if typed: it's removed.
-        let evil = "echo hi\x1b[201~rm -rf ~\n";
-        assert_eq!(paste_bytes(evil, true), b"\x1b[200~echo hirm -rf ~\r\x1b[201~");
-    }
-
-    #[test]
-    fn alt_adds_escape() {
-        let alt_f = key_to_bytes(&Key::Character("f".into()), Some("f"), ModifiersState::ALT);
-        assert_eq!(alt_f.unwrap(), b"\x1bf");
-        assert_eq!(send(NamedKey::Backspace, ModifiersState::ALT), "\x1b\x7f");
-        // Ctrl+Alt is AltGr: the typed letter goes as it is.
-        let altgr = ModifiersState::ALT | ModifiersState::CONTROL;
-        assert_eq!(key_to_bytes(&Key::Character("@".into()), Some("@"), altgr).unwrap(), b"@");
-        // Arrows already carry Alt in their number, no extra ESC.
-        assert_eq!(send(NamedKey::ArrowUp, ModifiersState::ALT), "\x1b[1;3A");
-    }
-
-    #[test]
-    fn f1_to_f4() {
-        assert_eq!(send(NamedKey::F1, ModifiersState::empty()), "\x1bOP");
-        assert_eq!(send(NamedKey::F4, ModifiersState::empty()), "\x1bOS");
-        assert_eq!(send(NamedKey::F1, ModifiersState::SHIFT), "\x1b[1;2P");
-    }
-
-    #[test]
-    fn tilde_keys() {
-        assert_eq!(send(NamedKey::Insert, ModifiersState::empty()), "\x1b[2~");
-        assert_eq!(send(NamedKey::F5, ModifiersState::empty()), "\x1b[15~");
-        assert_eq!(send(NamedKey::F12, ModifiersState::empty()), "\x1b[24~");
-        assert_eq!(send(NamedKey::Delete, ModifiersState::CONTROL), "\x1b[3;5~");
     }
 }

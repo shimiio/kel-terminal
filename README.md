@@ -132,6 +132,7 @@ color schemes, don't use them.
 | File | What it does |
 |---|---|
 | `src/app.rs` | The window, the list of tabs, and all events: keys, mouse, resize |
+| `src/keys.rs` | Kel's shortcuts (one table), and the bytes every other key sends to the shell |
 | `src/layout.rs` | Where the terminal panel goes in the window |
 | `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
 | `src/config.rs` | Reads `config.toml` |
