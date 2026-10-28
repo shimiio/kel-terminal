@@ -12,7 +12,7 @@
 
 use crate::config::{self, Config};
 use crate::pty;
-use crate::renderer::Renderer;
+use crate::renderer::{self, Fonts, Renderer};
 use crate::term::Terminal;
 use portable_pty::{Child, MasterPty, PtySize};
 use std::io::{Read, Write};
@@ -104,6 +104,9 @@ pub struct App {
     config: Config,
     /// When the config file was saved, as of the last load (see `reload_config_if_changed`).
     config_modified: Option<SystemTime>,
+    /// Loaded in `new`, so a font problem can be shown with the others;
+    /// handed to the renderer in `resumed`.
+    fonts: Option<Fonts>,
 }
 
 impl App {
@@ -117,6 +120,13 @@ impl App {
             problems.push(format!("{e:#}"));
             Config::default()
         });
+        let fonts = match renderer::load_fonts(&config.font) {
+            Ok(fonts) => fonts,
+            Err(e) => {
+                problems.push(format!("{e:#}"));
+                renderer::load_fonts(&Config::default().font)?
+            }
+        };
         let (master, child) = match pty::spawn_shell(&config.shell, ROWS as u16, COLS as u16) {
             Ok(pty) => pty,
             Err(e) => {
@@ -159,6 +169,7 @@ impl App {
 
             config,
             config_modified: config::modified(),
+            fonts: Some(fonts),
         })
     }
 
@@ -180,6 +191,20 @@ impl App {
             return;
         };
         renderer.set_font_size(size);
+        self.cell_size_changed();
+    }
+
+    /// Changes the font family, then the grid to match it (see `Renderer::set_fonts`).
+    fn set_fonts(&mut self, fonts: Fonts) {
+        let Some(renderer) = &mut self.renderer else {
+            return;
+        };
+        renderer.set_fonts(fonts);
+        self.cell_size_changed();
+    }
+
+    /// After the cell got a new size: fit the grid to the window again.
+    fn cell_size_changed(&mut self) {
         // The selection points at cells that move around when the grid changes size.
         self.selection = None;
         self.on_resize();
@@ -197,12 +222,19 @@ impl App {
 
         let title = match config::load() {
             Ok(new) => {
+                let mut title = "Kel".to_string();
                 // Only what changed, so saving another setting doesn't undo your zoom.
+                if new.font != self.config.font {
+                    match renderer::load_fonts(&new.font) {
+                        Ok(fonts) => self.set_fonts(fonts),
+                        Err(e) => title = format!("Kel - {e:#}"), // keeps the old font
+                    }
+                }
                 if new.font_size != self.config.font_size {
                     self.set_font_size(new.font_size);
                 }
                 self.config = new;
-                "Kel".to_string()
+                title
             }
             // The error has several lines: the place ("...config.toml: TOML parse error
             // at line 1, column 13"), a drawing of that line, and the reason
@@ -365,11 +397,14 @@ fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<V
 impl ApplicationHandler<UserEvent> for App {
     /// Called when the app starts. A window can only be created from here.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(fonts) = self.fonts.take() else {
+            return; // already started
+        };
         let attrs = Window::default_attributes().with_title("Kel");
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
-        // The cell size comes from the font, which the renderer loads, and the renderer
+        // The cell size comes from the font, which the renderer holds, and the renderer
         // needs the window. So: window first, then renderer, then the 80x24 size.
-        let renderer = Renderer::new(window.clone(), self.config.font_size).unwrap();
+        let renderer = Renderer::new(window.clone(), fonts, self.config.font_size).unwrap();
         let (cell_w, cell_h) = renderer.cell_size();
         let size = PhysicalSize::new((COLS * cell_w) as u32, (ROWS * cell_h) as u32);
         let _ = window.request_inner_size(size);

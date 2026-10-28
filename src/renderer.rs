@@ -8,6 +8,8 @@
 
 use crate::app::Selection;
 use crate::term::{CursorShape, Grid};
+use anyhow::Context;
+use fontdb::{Family, Query, Style, Weight};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -18,14 +20,9 @@ const SELECTION_BG: u32 = 0x264f78; // blue
 const CURSOR: u32 = 0x808080;
 const CURSOR_HEIGHT: usize = 4;
 
-/// Consolas comes as 4 files. Index = bold + 2 * italic:
+/// One font family in 4 styles. Index = bold + 2 * italic:
 /// 0 = regular, 1 = bold, 2 = italic, 3 = bold italic.
-const FONT_FILES: [&str; 4] = [
-    "C:\\Windows\\Fonts\\consola.ttf",
-    "C:\\Windows\\Fonts\\consolab.ttf",
-    "C:\\Windows\\Fonts\\consolai.ttf",
-    "C:\\Windows\\Fonts\\consolaz.ttf",
-];
+pub type Fonts = [fontdue::Font; 4];
 
 /// Zoom limits: smaller is unreadable, bigger leaves only a few cells in the window.
 const MIN_FONT_SIZE: f32 = 8.0;
@@ -38,8 +35,7 @@ pub struct Renderer {
     window: Rc<Window>,
     /// The window's pixels, which we draw into.
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
-    /// Regular, bold, italic, bold italic (see FONT_FILES).
-    fonts: [fontdue::Font; 4],
+    fonts: Fonts,
     font_size: f32,
     /// One cell in pixels.
     cell_w: usize,
@@ -54,19 +50,13 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window: Rc<Window>, font_size: f32) -> anyhow::Result<Self> {
+    pub fn new(window: Rc<Window>, fonts: Fonts, font_size: f32) -> anyhow::Result<Self> {
         let context =
             softbuffer::Context::new(window.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
         let surface = softbuffer::Surface::new(&context, window.clone())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let fonts = [
-            load_font(FONT_FILES[0])?,
-            load_font(FONT_FILES[1])?,
-            load_font(FONT_FILES[2])?,
-            load_font(FONT_FILES[3])?,
-        ];
-        // All 4 files share the same sizes, so measuring the regular one is enough.
+        // All 4 styles share the same sizes, so measuring the regular one is enough.
         let font_size = font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], font_size)?;
 
@@ -105,6 +95,14 @@ impl Renderer {
         }
     }
 
+    /// Switches to another font family. Like a size change, the cell is measured
+    /// again: call `App::on_resize` after this.
+    pub fn set_fonts(&mut self, fonts: Fonts) {
+        self.fonts = fonts;
+        self.glyphs.clear(); // letters of the old font
+        self.set_font_size(self.font_size);
+    }
+
     /// Draws one frame. For each cell: 1. background (or selection blue),
     /// 2. the letter on top, 3. the cursor line on top of that.
     pub fn draw(&mut self, grid: &Grid, selection: Option<Selection>, cursor_on: bool) {
@@ -120,53 +118,63 @@ impl Renderer {
         let (cursor_row, cursor_col) = grid.cursor();
         let (cell_w, cell_h) = (self.cell_w, self.cell_h);
 
-        for row in 0..grid.rows() {
-            let y = row * cell_h;
-            for col in 0..grid.cols() {
-                let x = col * cell_w;
+        // Two passes over the grid: first all backgrounds, then all letters on top.
+        // A letter can be wider than its cell (Nerd Font icons are ~1.5 cells). In one
+        // pass, the next cell's background would be painted over its right part.
+        for backgrounds in [true, false] {
+            for row in 0..grid.rows() {
+                let y = row * cell_h;
+                for col in 0..grid.cols() {
+                    let x = col * cell_w;
 
-                let selected = selection.is_some_and(|s| s.contains(row, col));
-                let cell = grid.visible_cell(row, col);
-                // Is the cursor drawn on this cell right now?
-                let is_cursor = grid.cursor_visible
-                    && cursor_on
-                    && grid.scroll_offset() == 0
-                    && (row, col) == (cursor_row, cursor_col);
-                // A block cursor is drawn by swapping colors, so the letter stays visible.
-                let block = is_cursor && grid.cursor_shape == CursorShape::Block;
+                    let selected = selection.is_some_and(|s| s.contains(row, col));
+                    let cell = grid.visible_cell(row, col);
+                    // Is the cursor drawn on this cell right now?
+                    let is_cursor = grid.cursor_visible
+                        && cursor_on
+                        && grid.scroll_offset() == 0
+                        && (row, col) == (cursor_row, cursor_col);
+                    // A block cursor is drawn by swapping colors, so the letter stays visible.
+                    let block = is_cursor && grid.cursor_shape == CursorShape::Block;
 
-                let (fg, bg) = if cell.inverse {
-                    (cell.bg, cell.fg)
-                } else {
-                    (cell.fg, cell.bg)
-                };
-                let bg = if selected { SELECTION_BG } else { bg };
-                let (fg, bg) = if block { (bg, CURSOR) } else { (fg, bg) };
-                fill_rect(&mut buffer, width, x, y, cell_w, cell_h, bg);
-
-                if cell.ch != ' ' {
-                    let style = cell.bold as usize + 2 * cell.italic as usize;
-                    let font = &self.fonts[style];
-                    let size = self.font_size;
-                    // Already in the cache: take it. Not yet: rasterize, store, take.
-                    let glyph = self
-                        .glyphs
-                        .entry((cell.ch, style))
-                        .or_insert_with(|| font.rasterize(cell.ch, size));
-                    draw_glyph(&mut buffer, width, glyph, self.ascent, fg, x, y);
-                }
-
-                if cell.underline {
-                    fill_rect(&mut buffer, width, x, y + self.ascent as usize + 2, cell_w, 1, fg);
-                }
-
-                if is_cursor {
-                    let (w, h) = match grid.cursor_shape {
-                        CursorShape::Underline => (cell_w, CURSOR_HEIGHT),
-                        CursorShape::Bar => (2, cell_h),
-                        CursorShape::Block => continue, // already drawn: the swapped colors above
+                    let (fg, bg) = if cell.inverse {
+                        (cell.bg, cell.fg)
+                    } else {
+                        (cell.fg, cell.bg)
                     };
-                    fill_rect(&mut buffer, width, x, y + cell_h - h, w, h, CURSOR);
+                    let bg = if selected { SELECTION_BG } else { bg };
+                    let (fg, bg) = if block { (bg, CURSOR) } else { (fg, bg) };
+
+                    if backgrounds {
+                        fill_rect(&mut buffer, width, x, y, cell_w, cell_h, bg);
+                        continue;
+                    }
+
+                    if cell.ch != ' ' {
+                        let style = cell.bold as usize + 2 * cell.italic as usize;
+                        let font = &self.fonts[style];
+                        let size = self.font_size;
+                        // Already in the cache: take it. Not yet: rasterize, store, take.
+                        let glyph = self
+                            .glyphs
+                            .entry((cell.ch, style))
+                            .or_insert_with(|| font.rasterize(cell.ch, size));
+                        draw_glyph(&mut buffer, width, glyph, self.ascent, fg, x, y);
+                    }
+
+                    if cell.underline {
+                        let underline_y = y + self.ascent as usize + 2;
+                        fill_rect(&mut buffer, width, x, underline_y, cell_w, 1, fg);
+                    }
+
+                    if is_cursor {
+                        let (w, h) = match grid.cursor_shape {
+                            CursorShape::Underline => (cell_w, CURSOR_HEIGHT),
+                            CursorShape::Bar => (2, cell_h),
+                            CursorShape::Block => continue, // drawn: the swapped colors above
+                        };
+                        fill_rect(&mut buffer, width, x, y + cell_h - h, w, h, CURSOR);
+                    }
                 }
             }
         }
@@ -183,10 +191,42 @@ fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: 
     }
 }
 
-fn load_font(path: &str) -> anyhow::Result<fontdue::Font> {
-    let bytes = std::fs::read(path)?;
-    fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
-        .map_err(|e| anyhow::anyhow!("{e}"))
+/// Finds the font family `family` (e.g. "Consolas") among the installed fonts and
+/// loads its 4 styles. A family without, say, an italic file gets the closest style.
+pub fn load_fonts(family: &str) -> anyhow::Result<Fonts> {
+    let mut db = fontdb::Database::new();
+    // Reads the names of all installed fonts, in C:\Windows\Fonts and the user's
+    // own fonts folder. About 20 ms (the first time after a reboot, ~1 s: from disk).
+    db.load_system_fonts();
+
+    let load = |weight: Weight, style: Style| -> anyhow::Result<fontdue::Font> {
+        let query = Query {
+            families: &[Family::Name(family)],
+            weight,
+            style,
+            ..Default::default()
+        };
+        let id = db
+            .query(&query)
+            .with_context(|| format!("font \"{family}\" is not installed"))?;
+        // A .ttc file holds several fonts; `index` says which one is ours.
+        db.with_face_data(id, |data, index| {
+            let settings = fontdue::FontSettings {
+                collection_index: index,
+                ..Default::default()
+            };
+            fontdue::Font::from_bytes(data, settings).map_err(|e| anyhow::anyhow!("{e}"))
+        })
+        .with_context(|| format!("can't read font \"{family}\""))?
+    };
+
+    // Same order as the index: bold + 2 * italic.
+    Ok([
+        load(Weight::NORMAL, Style::Normal)?,
+        load(Weight::BOLD, Style::Normal)?,
+        load(Weight::NORMAL, Style::Italic)?,
+        load(Weight::BOLD, Style::Italic)?,
+    ])
 }
 
 /// Measures one cell for a font size: (width, height, ascent) in pixels.
@@ -245,7 +285,9 @@ fn draw_glyph(
             if value > 0 {
                 let window_x = left + gx as i32;
                 let window_y = top + gy as i32;
-                if window_x < 0 || window_y < 0 {
+                // Off the window. Past the right edge matters too: pixel x = width
+                // would land at the start of the next row.
+                if window_x < 0 || window_y < 0 || window_x as usize >= width {
                     continue;
                 }
                 let i = window_y as usize * width + window_x as usize;

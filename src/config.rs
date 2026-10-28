@@ -14,6 +14,10 @@ const DEFAULT_CONFIG: &str = r#"# Kel config. Lines starting with # are comments
 # Ctrl+, opens this file. Saved changes apply right away, unless a setting says otherwise.
 # Delete a setting to go back to its default value.
 
+# Any installed font, by the name Windows shows in Settings > Fonts.
+# A Nerd Font (e.g. "JetBrainsMono Nerd Font") also has icons, which nvim plugins use.
+font = "Consolas"
+
 # Font size in pixels. Ctrl+= / Ctrl+- change it until Kel closes, Ctrl+0 comes back to this.
 font_size = 18
 
@@ -26,6 +30,7 @@ shell = "powershell.exe"
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
+    pub font: String,
     pub font_size: f32,
     pub shell: String,
 }
@@ -33,6 +38,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            font: "Consolas".to_string(),
             font_size: 18.0,
             shell: "powershell.exe".to_string(),
         }
