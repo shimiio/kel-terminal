@@ -4,6 +4,9 @@
 //! default text color", not the final pixels. The renderer looks the color up in
 //! the theme when it draws, so a new theme recolors text already on the screen.
 
+use serde::de::Error;
+use serde::{Deserialize, Deserializer};
+
 /// A color as the program asked for it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Color {
@@ -16,12 +19,22 @@ pub enum Color {
 }
 
 /// How the colors look. Each one is `0xRRGGBB`.
+///
+/// It's the `[colors]` part of the config file, where colors are written
+/// as "#rrggbb" (`deserialize_with` reads them). A missing color keeps its default.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct Theme {
+    #[serde(deserialize_with = "hex_color")]
     pub foreground: u32,
+    #[serde(deserialize_with = "hex_color")]
     pub background: u32,
+    #[serde(deserialize_with = "hex_color")]
     pub cursor: u32,
+    #[serde(deserialize_with = "hex_color")]
     pub selection: u32,
     /// The 16 basic colors: 0-7 normal (codes 30-37), 8-15 bright (codes 90-97).
+    #[serde(deserialize_with = "hex_palette")]
     pub palette: [u32; 16],
 }
 
@@ -71,9 +84,45 @@ impl Theme {
     }
 }
 
+/// "#ff8000" → 0xff8000. `None` if it isn't `#` and 6 hex digits.
+fn parse_hex(text: &str) -> Option<u32> {
+    let digits = text.strip_prefix('#')?;
+    if digits.len() != 6 || !digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    u32::from_str_radix(digits, 16).ok()
+}
+
+/// Reads one color from the config: first the text, then `parse_hex` on it.
+fn hex_color<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
+    let text = String::deserialize(deserializer)?;
+    parse_hex(&text)
+        .ok_or_else(|| D::Error::custom(format!("\"{text}\" is not a color like \"#ff8000\"")))
+}
+
+/// Reads the palette from the config: exactly 16 colors.
+fn hex_palette<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[u32; 16], D::Error> {
+    let texts = <[String; 16]>::deserialize(deserializer)?;
+    let mut palette = [0; 16];
+    for (color, text) in palette.iter_mut().zip(&texts) {
+        *color = parse_hex(text)
+            .ok_or_else(|| D::Error::custom(format!("\"{text}\" is not a color like \"#ff8000\"")))?;
+    }
+    Ok(palette)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hex_colors() {
+        assert_eq!(parse_hex("#ff8000"), Some(0xff8000));
+        assert_eq!(parse_hex("#FF8000"), Some(0xff8000));
+        assert_eq!(parse_hex("ff8000"), None); // no #
+        assert_eq!(parse_hex("#f80"), None); // too short
+        assert_eq!(parse_hex("#+f8000"), None); // not hex digits
+    }
 
     #[test]
     fn default_depends_on_text_or_background() {

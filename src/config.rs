@@ -3,6 +3,7 @@
 //! On the first start Kel writes the default file, with a comment for every setting.
 //! A setting missing from the file keeps its default value.
 
+use crate::theme::Theme;
 use anyhow::Context;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -10,7 +11,9 @@ use std::time::SystemTime;
 
 /// The file Kel writes on the first start. Its values must match `Config::default()`
 /// (a test checks it).
-const DEFAULT_CONFIG: &str = r#"# Kel config. Lines starting with # are comments.
+// `r##"..."##`: a raw string, ending at `"##`. The colors hold `"#`, which would
+// end a plain `r#"..."#` string early.
+const DEFAULT_CONFIG: &str = r##"# Kel config. Lines starting with # are comments.
 # Ctrl+, opens this file. Saved changes apply right away, unless a setting says otherwise.
 # Delete a setting to go back to its default value.
 
@@ -24,7 +27,21 @@ font_size = 18
 # The program Kel starts, e.g. "pwsh.exe" for PowerShell 7, or "cmd.exe".
 # Applies after a restart.
 shell = "powershell.exe"
-"#;
+
+# Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
+# Programs that pick exact colors themselves (like nvim color schemes) don't use them.
+[colors]
+foreground = "#d4d4d4"
+background = "#1e1e1e"
+cursor = "#808080"
+selection = "#264f78"
+# 16 colors: black, red, green, yellow, blue, magenta, cyan, white,
+# then the bright versions of the same 8.
+palette = [
+    "#0c0c0c", "#c50f1f", "#13a10e", "#c19c00", "#0037da", "#881798", "#3a96dd", "#cccccc",
+    "#767676", "#e74856", "#16c60c", "#f9f1a5", "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2",
+]
+"##;
 
 /// `#[serde(default)]`: a setting missing from the file is taken from `Config::default()`.
 #[derive(Debug, Deserialize, PartialEq)]
@@ -33,6 +50,7 @@ pub struct Config {
     pub font: String,
     pub font_size: f32,
     pub shell: String,
+    pub colors: Theme,
 }
 
 impl Default for Config {
@@ -41,6 +59,7 @@ impl Default for Config {
             font: "Consolas".to_string(),
             font_size: 18.0,
             shell: "powershell.exe".to_string(),
+            colors: Theme::default(),
         }
     }
 }
@@ -82,6 +101,19 @@ mod tests {
         let config: Config = toml::from_str("font_size = 24").unwrap();
         assert_eq!(config.font_size, 24.0);
         assert_eq!(config.shell, "powershell.exe");
+    }
+
+    #[test]
+    fn one_color_changes_the_rest_stay() {
+        let config: Config = toml::from_str("[colors]\nbackground = \"#000000\"").unwrap();
+        assert_eq!(config.colors.background, 0x000000);
+        assert_eq!(config.colors.foreground, Theme::default().foreground);
+    }
+
+    #[test]
+    fn bad_colors_are_errors() {
+        assert!(toml::from_str::<Config>("[colors]\nbackground = \"black\"").is_err());
+        assert!(toml::from_str::<Config>("[colors]\npalette = [\"#000000\"]").is_err()); // not 16
     }
 
     #[test]

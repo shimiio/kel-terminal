@@ -43,6 +43,7 @@ Kel creates it on the first start, with a comment for every setting.
 | `font` | `"Consolas"` | Font name, as Windows shows it in Settings > Fonts |
 | `font_size` | `18` | Font size in pixels |
 | `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
+| `[colors]` | dark gray theme | Text, background, cursor, selection and the 16 basic colors |
 
 A setting missing from the file keeps its default, so deleting a line resets it.
 To get the original file back with all its comments, delete it and restart Kel.
@@ -68,6 +69,28 @@ shell = "cmd.exe"
 ```
 
 Then restart Kel.
+
+### Change the colors
+
+Colors are written as `"#rrggbb"`. Set only the ones you want to change, the rest keep
+their defaults. For example, the colors of the Tokyo Night theme:
+
+```toml
+[colors]
+foreground = "#c0caf5"
+background = "#1a1b26"
+cursor = "#c0caf5"
+selection = "#33467c"
+palette = [
+    "#15161e", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6",
+    "#414868", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#c0caf5",
+]
+```
+
+The `palette` holds 16 colors: black, red, green, yellow, blue, magenta, cyan, white,
+then the bright versions of the same 8. Programs ask for these by number ("red" is 1);
+the theme decides how they look. Programs that pick exact colors themselves, like nvim
+color schemes, don't use them.
 
 ### When something is wrong
 

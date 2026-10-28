@@ -50,7 +50,12 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(window: Rc<Window>, fonts: Fonts, font_size: f32) -> anyhow::Result<Self> {
+    pub fn new(
+        window: Rc<Window>,
+        fonts: Fonts,
+        font_size: f32,
+        theme: Theme,
+    ) -> anyhow::Result<Self> {
         let context =
             softbuffer::Context::new(window.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
         let surface = softbuffer::Surface::new(&context, window.clone())
@@ -69,7 +74,7 @@ impl Renderer {
             cell_h,
             ascent,
             glyphs: HashMap::new(),
-            theme: Theme::default(),
+            theme,
         })
     }
 
@@ -98,6 +103,12 @@ impl Renderer {
 
     /// Switches to another font family. Like a size change, the cell is measured
     /// again: call `App::on_resize` after this.
+    /// New colors. The cells keep which color they want, so the next frame
+    /// shows everything in the new theme, even text that is already there.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
     pub fn set_fonts(&mut self, fonts: Fonts) {
         self.fonts = fonts;
         self.glyphs.clear(); // letters of the old font

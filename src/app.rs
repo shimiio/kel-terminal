@@ -233,6 +233,12 @@ impl App {
                 if new.font_size != self.config.font_size {
                     self.set_font_size(new.font_size);
                 }
+                if new.colors != self.config.colors
+                    && let Some(renderer) = &mut self.renderer
+                {
+                    renderer.set_theme(new.colors.clone());
+                    self.request_redraw();
+                }
                 self.config = new;
                 title
             }
@@ -404,7 +410,8 @@ impl ApplicationHandler<UserEvent> for App {
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
         // The cell size comes from the font, which the renderer holds, and the renderer
         // needs the window. So: window first, then renderer, then the 80x24 size.
-        let renderer = Renderer::new(window.clone(), fonts, self.config.font_size).unwrap();
+        let theme = self.config.colors.clone();
+        let renderer = Renderer::new(window.clone(), fonts, self.config.font_size, theme).unwrap();
         let (cell_w, cell_h) = renderer.cell_size();
         let size = PhysicalSize::new((COLS * cell_w) as u32, (ROWS * cell_h) as u32);
         let _ = window.request_inner_size(size);
