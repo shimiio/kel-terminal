@@ -19,6 +19,19 @@
 
 use serde::Deserialize;
 
+/// A window button's width, like the Windows ones.
+const BUTTON_WIDTH: usize = 46;
+/// Space between the last tab and the window buttons.
+const BUTTONS_GAP: usize = 8;
+
+/// The buttons in the top-right corner, in place of the Windows title bar's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WindowButton {
+    Minimize,
+    Maximize,
+    Close,
+}
+
 /// A rectangle in pixels: top-left corner (x, y), width w, height h.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
@@ -77,8 +90,15 @@ impl Default for Spacing {
 /// Where everything is, for one window size.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Layout {
-    /// The strip above the panel where the tabs are.
+    /// Everything above the panel, from the window's top edge: Kel's own title bar.
+    /// Its empty parts move the window.
+    pub title_bar: Rect,
+    /// The part of the title bar where the tabs are.
     pub tab_bar: Rect,
+    /// The window buttons, top right, from the window's top edge down to the panel.
+    pub minimize: Rect,
+    pub maximize: Rect,
+    pub close: Rect,
     /// The panel, with its border.
     pub panel: Rect,
     /// The panel inside its border: the terminal's background.
@@ -101,7 +121,23 @@ impl Spacing {
         };
         // Inside the margin: the tab bar on top, the panel below it.
         let area = window.shrink(self.margin);
+
+        // The title bar: from the window's top edge to the panel.
+        let title_bar = Rect {
+            h: (self.margin + self.tab_height).min(height),
+            ..window
+        };
+        // The buttons fill its right end, right up to the window's corner
+        // (easy to hit: the mouse stops at the screen's edge).
+        let button = |n: usize| Rect {
+            x: width.saturating_sub(n * BUTTON_WIDTH),
+            w: BUTTON_WIDTH,
+            ..title_bar
+        };
+        let (minimize, maximize, close) = (button(3), button(2), button(1));
+        // The tabs get the rest, up to a small gap before the buttons.
         let tab_bar = Rect {
+            w: minimize.x.saturating_sub(BUTTONS_GAP + area.x),
             h: self.tab_height.min(area.h),
             ..area
         };
@@ -113,7 +149,11 @@ impl Spacing {
         let inside = panel.shrink(self.border);
         let text = inside.shrink(self.padding);
         Layout {
+            title_bar,
             tab_bar,
+            minimize,
+            maximize,
+            close,
             panel,
             inside,
             text,
@@ -130,8 +170,20 @@ impl Spacing {
 }
 
 impl Layout {
+    /// The window button at (x, y), if there is one.
+    pub fn button_at(&self, x: usize, y: usize) -> Option<WindowButton> {
+        [
+            (self.minimize, WindowButton::Minimize),
+            (self.maximize, WindowButton::Maximize),
+            (self.close, WindowButton::Close),
+        ]
+        .into_iter()
+        .find(|(rect, _)| rect.contains(x, y))
+        .map(|(_, button)| button)
+    }
+
     /// Where each of `count` tabs is, left to right in the tab bar.
-    /// e.g. a 984-pixel bar: 3 tabs are 180 wide each; 10 tabs get 98 each.
+    /// e.g. an 846-pixel bar: 3 tabs are 180 wide each; 10 tabs get 84 each.
     pub fn tabs(&self, count: usize) -> Vec<Rect> {
         if count == 0 {
             return Vec::new();
@@ -154,14 +206,25 @@ mod tests {
     #[test]
     fn tab_bar_panel_and_text_inside_the_window() {
         let layout = Spacing::default().layout(1000, 700);
-        // margin 8, then the tab bar, 32 tall
+        // margin 8, then the tab bar, 32 tall. It ends 8 pixels before the
+        // 3 buttons (3 x 46 = 138): 1000 - 138 - 8 - 8 = 846 wide.
         assert_eq!(
             layout.tab_bar,
             Rect {
                 x: 8,
                 y: 8,
-                w: 984,
+                w: 846,
                 h: 32
+            }
+        );
+        // The close button: the top-right corner, down to the panel (8 + 32 = 40).
+        assert_eq!(
+            layout.close,
+            Rect {
+                x: 954,
+                y: 0,
+                w: 46,
+                h: 40
             }
         );
         // the panel right below it: y = 8 + 32 = 40
@@ -200,11 +263,21 @@ mod tests {
             }
         );
         assert_eq!(tabs[2].x, 8 + 2 * 180);
-        // Too many for 180 each: 984 / 10 = 98
-        assert_eq!(layout.tabs(10)[0].w, 98);
+        // Too many for 180 each: 846 / 10 = 84
+        assert_eq!(layout.tabs(10)[0].w, 84);
         // A click at (200, 20) is on the second tab.
         assert!(tabs[1].contains(200, 20));
         assert!(!tabs[1].contains(200, 45)); // below the bar: the panel
+    }
+
+    #[test]
+    fn window_buttons() {
+        let layout = Spacing::default().layout(1000, 700);
+        assert_eq!(layout.button_at(990, 5), Some(WindowButton::Close));
+        assert_eq!(layout.button_at(940, 20), Some(WindowButton::Maximize));
+        assert_eq!(layout.button_at(870, 20), Some(WindowButton::Minimize));
+        assert_eq!(layout.button_at(500, 20), None); // the tab bar
+        assert_eq!(layout.button_at(990, 50), None); // the panel
     }
 
     #[test]

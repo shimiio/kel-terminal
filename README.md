@@ -35,6 +35,8 @@ cargo build --release   # a fast build: target/release/kel-terminal.exe
 | Ctrl+C | Stop the running command |
 | Mouse drag | Select text |
 | Mouse wheel | Scroll back through earlier output |
+| Drag the empty top bar | Move the window |
+| Double-click the empty top bar | Maximize / restore |
 
 ## Config
 

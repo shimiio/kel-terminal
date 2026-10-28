@@ -7,7 +7,7 @@
 //! - Every frame redraws everything: backgrounds, letters, cursor.
 
 use crate::app::Selection;
-use crate::layout::Layout;
+use crate::layout::{Layout, Rect, WindowButton};
 use crate::term::{CursorShape, Grid};
 use crate::theme::Theme;
 use anyhow::Context;
@@ -28,6 +28,8 @@ pub type Fonts = [fontdue::Font; 4];
 const UI_FONT_SIZE: f32 = 14.0;
 /// Space between a tab's edge and its name.
 const TAB_TEXT_PADDING: usize = 12;
+/// The close button under the mouse: the red of Windows' own.
+const CLOSE_HOVER: u32 = 0xc42b1c;
 
 /// Zoom limits: smaller is unreadable, bigger leaves only a few cells in the window.
 const MIN_FONT_SIZE: f32 = 8.0;
@@ -35,6 +37,18 @@ const MAX_FONT_SIZE: f32 = 48.0;
 
 /// A letter already turned into pixels: its metrics and coverage map.
 type Glyph = (fontdue::Metrics, Vec<u8>);
+
+/// What Kel draws around the terminal: its title bar, with the tabs and the buttons.
+pub struct Chrome<'a> {
+    /// The tab names, left to right.
+    pub titles: &'a [String],
+    /// The tab on screen.
+    pub active: usize,
+    /// The window button under the mouse, drawn lit.
+    pub hovered: Option<WindowButton>,
+    /// The maximize button then shows "restore" (two squares).
+    pub maximized: bool,
+}
 
 /// Text in Kel's own UI, like the tab names: one size, its own glyph cache.
 struct UiText {
@@ -156,8 +170,7 @@ impl Renderer {
         &mut self,
         grid: &Grid,
         layout: &Layout,
-        titles: &[String],
-        active: usize,
+        chrome: &Chrome,
         selection: Option<Selection>,
         cursor_on: bool,
     ) {
@@ -204,11 +217,11 @@ impl Renderer {
             width,
             theme,
             layout,
-            titles,
-            active,
+            chrome,
             font,
             &mut self.ui,
         );
+        draw_window_buttons(&mut buffer, width, theme, layout, chrome);
 
         let (cursor_row, cursor_col) = grid.cursor();
         let (cell_w, cell_h) = (self.cell_w, self.cell_h);
@@ -281,17 +294,16 @@ impl Renderer {
 /// The tab bar. The tab on screen merges into the panel below it: the panel's
 /// color inside, the panel's outline around, and no line between them. The other
 /// tabs are only their names, dimmer, on the window's color.
-#[allow(clippy::too_many_arguments)]
 fn draw_tab_bar(
     pixels: &mut [u32],
     width: usize,
     theme: &Theme,
     layout: &Layout,
-    titles: &[String],
-    active: usize,
+    chrome: &Chrome,
     font: &fontdue::Font,
     ui: &mut UiText,
 ) {
+    let Chrome { titles, active, .. } = *chrome;
     // Halfway between the text color and the window's: muted, still readable.
     let dim = blend(theme.frame, theme.foreground, 128);
     let b = layout.border;
@@ -330,6 +342,72 @@ fn draw_tab_bar(
             draw_glyph(pixels, width, glyph, ui.ascent, color, left, y);
         }
     }
+}
+
+/// Minimize, maximize and close, top right. Plain icons in the window's colors;
+/// the one under the mouse gets a lighter background, close gets red.
+fn draw_window_buttons(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    chrome: &Chrome,
+) {
+    let dim = blend(theme.frame, theme.foreground, 160);
+    let lit = blend(theme.frame, theme.foreground, 40);
+    for (rect, button) in [
+        (layout.minimize, WindowButton::Minimize),
+        (layout.maximize, WindowButton::Maximize),
+        (layout.close, WindowButton::Close),
+    ] {
+        let (bg, fg) = match (button, chrome.hovered == Some(button)) {
+            (WindowButton::Close, true) => (CLOSE_HOVER, 0xffffff),
+            (_, true) => (lit, theme.foreground),
+            (_, false) => (theme.frame, dim),
+        };
+        fill_rect(pixels, width, rect.x, rect.y, rect.w, rect.h, bg);
+
+        // The icon: 10x10 pixels in the middle of the button.
+        let (x, y) = (
+            (rect.x + rect.w / 2).saturating_sub(5),
+            (rect.y + rect.h / 2).saturating_sub(5),
+        );
+        match button {
+            WindowButton::Minimize => fill_rect(pixels, width, x, y + 5, 10, 1, fg),
+            WindowButton::Maximize if chrome.maximized => {
+                // "Restore": a square, and the corner of another one behind it.
+                outline(
+                    pixels,
+                    width,
+                    Rect {
+                        x,
+                        y: y + 2,
+                        w: 8,
+                        h: 8,
+                    },
+                    fg,
+                );
+                fill_rect(pixels, width, x + 2, y, 8, 1, fg);
+                fill_rect(pixels, width, x + 9, y, 1, 8, fg);
+            }
+            WindowButton::Maximize => outline(pixels, width, Rect { x, y, w: 10, h: 10 }, fg),
+            WindowButton::Close => {
+                // An X: two diagonals, one pixel per row.
+                for i in 0..10 {
+                    fill_rect(pixels, width, x + i, y + i, 1, 1, fg);
+                    fill_rect(pixels, width, x + 9 - i, y + i, 1, 1, fg);
+                }
+            }
+        }
+    }
+}
+
+/// A rectangle's outline, one pixel thick.
+fn outline(pixels: &mut [u32], width: usize, r: Rect, color: u32) {
+    fill_rect(pixels, width, r.x, r.y, r.w, 1, color); // top
+    fill_rect(pixels, width, r.x, r.y + r.h - 1, r.w, 1, color); // bottom
+    fill_rect(pixels, width, r.x, r.y, 1, r.h, color); // left
+    fill_rect(pixels, width, r.x + r.w - 1, r.y, 1, r.h, color); // right
 }
 
 fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: usize, color: u32) {

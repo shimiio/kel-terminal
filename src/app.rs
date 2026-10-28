@@ -6,8 +6,8 @@
 
 use crate::config::{self, Config};
 use crate::keys::{self, Action};
-use crate::layout::Layout;
-use crate::renderer::{self, Fonts, Renderer};
+use crate::layout::{Layout, WindowButton};
+use crate::renderer::{self, Chrome, Fonts, Renderer};
 use crate::tab::{Tab, TabId};
 use crate::term::Terminal;
 use std::rc::Rc;
@@ -24,6 +24,8 @@ use winit::window::{Window, WindowId};
 // Starting size, in cells. After that, the size comes from the window (`on_resize`).
 const ROWS: usize = 24;
 const COLS: usize = 80;
+/// Two clicks closer than this are a double click (the Windows default).
+const DOUBLE_CLICK: Duration = Duration::from_millis(500);
 /// How long the cursor stays on, then off.
 const BLINK_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -103,6 +105,12 @@ pub struct App {
     fonts: Option<Fonts>,
     /// Where the panel and the text are in the window. Updated in `on_resize`.
     layout: Layout,
+    /// The window button under the mouse, if any.
+    hovered: Option<WindowButton>,
+    /// When the empty title bar was last clicked, to notice a double click.
+    last_click: Option<Instant>,
+    /// The close button was clicked: `about_to_wait` ends the event loop.
+    quit: bool,
 }
 
 impl App {
@@ -169,6 +177,9 @@ impl App {
             config_modified: config::modified(),
             fonts: Some(fonts),
             layout: Layout::default(),
+            hovered: None,
+            last_click: None,
+            quit: false,
         })
     }
 
@@ -425,7 +436,19 @@ impl ApplicationHandler<UserEvent> for App {
         let Some(fonts) = self.fonts.take() else {
             return; // already started
         };
-        let attrs = Window::default_attributes().with_title("Kel");
+        // No Windows title bar: Kel draws its own (the tabs, the buttons).
+        let attrs = Window::default_attributes()
+            .with_title("Kel") // still shown in the taskbar
+            .with_decorations(false);
+        #[cfg(target_os = "windows")]
+        let attrs = {
+            use winit::platform::windows::{CornerPreference, WindowAttributesExtWindows};
+            // Without the title bar, Windows also drops the window's shadow: ask for it
+            // back. And round corners, like other windows on Windows 11.
+            attrs
+                .with_undecorated_shadow(true)
+                .with_corner_preference(CornerPreference::Round)
+        };
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
         // The cell size comes from the font, which the renderer holds, and the renderer
         // needs the window. So: window first, then renderer, then the size for
@@ -472,6 +495,7 @@ impl ApplicationHandler<UserEvent> for App {
             }
             WindowEvent::MouseWheel { delta, .. } => self.on_mouse_wheel(delta),
             WindowEvent::CursorMoved { position, .. } => self.on_mouse_move(position),
+            WindowEvent::CursorLeft { .. } => self.set_hovered(None),
             WindowEvent::MouseInput {
                 state,
                 button: MouseButton::Left,
@@ -484,6 +508,10 @@ impl ApplicationHandler<UserEvent> for App {
     /// Called when winit has handled all events and is about to sleep.
     /// We use it as the timer for the blinking cursor.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.quit {
+            event_loop.exit();
+            return;
+        }
         if Instant::now() >= self.next_blink {
             self.cursor_on = !self.cursor_on;
             self.next_blink = Instant::now() + BLINK_INTERVAL;
@@ -509,12 +537,17 @@ impl App {
     /// Draws the grid (and the mouse selection) into the window.
     fn on_redraw(&mut self) {
         let titles: Vec<String> = self.tabs.iter().map(|tab| tab.title.clone()).collect();
+        let chrome = Chrome {
+            titles: &titles,
+            active: self.active,
+            hovered: self.hovered,
+            maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),
+        };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
                 &self.tabs[self.active].terminal.lock().unwrap().grid,
                 &self.layout,
-                &titles,
-                self.active,
+                &chrome,
                 self.selection,
                 self.cursor_on,
             );
@@ -605,6 +638,7 @@ impl App {
         let row = y.saturating_sub(text.y) / cell_h;
         self.mouse_pos = (x, y);
         self.mouse_cell = (row, col);
+        self.set_hovered(self.layout.button_at(x, y));
 
         if self.selecting {
             if let Some(selection) = &mut self.selection {
@@ -614,21 +648,59 @@ impl App {
         }
     }
 
+    /// The window button under the mouse changed: draw the buttons again.
+    fn set_hovered(&mut self, button: Option<WindowButton>) {
+        if self.hovered != button {
+            self.hovered = button;
+            self.request_redraw();
+        }
+    }
+
+    /// A click in the title bar: a window button, a tab, or the empty bar, which
+    /// moves the window (and maximizes it on a double click), like a Windows title bar.
+    fn on_title_bar_click(&mut self) {
+        let Some(window) = self.window.clone() else {
+            return;
+        };
+        let (x, y) = self.mouse_pos;
+        if let Some(button) = self.layout.button_at(x, y) {
+            match button {
+                WindowButton::Minimize => window.set_minimized(true),
+                WindowButton::Maximize => window.set_maximized(!window.is_maximized()),
+                WindowButton::Close => self.quit = true,
+            }
+            return;
+        }
+        let tabs = self.layout.tabs(self.tabs.len());
+        if let Some(index) = tabs.iter().position(|tab| tab.contains(x, y)) {
+            self.show_tab(index);
+            return;
+        }
+        let now = Instant::now();
+        let double = self
+            .last_click
+            .is_some_and(|last| now - last < DOUBLE_CLICK);
+        if double {
+            window.set_maximized(!window.is_maximized());
+            self.last_click = None;
+        } else {
+            self.last_click = Some(now);
+            // Windows moves the window with the mouse until the button is released.
+            let _ = window.drag_window();
+        }
+    }
+
     /// Left mouse button: pressing starts a new selection, releasing finishes it.
     fn on_left_button(&mut self, state: ElementState) {
         match state {
-            // In the tab bar: a click on a tab shows it. There's no text to select there.
+            // Above the panel: Kel's title bar. There's no text to select there.
             ElementState::Pressed
                 if self
                     .layout
-                    .tab_bar
+                    .title_bar
                     .contains(self.mouse_pos.0, self.mouse_pos.1) =>
             {
-                let (x, y) = self.mouse_pos;
-                let tabs = self.layout.tabs(self.tabs.len());
-                if let Some(index) = tabs.iter().position(|tab| tab.contains(x, y)) {
-                    self.show_tab(index);
-                }
+                self.on_title_bar_click()
             }
             ElementState::Pressed => {
                 self.selection = Some(Selection {
