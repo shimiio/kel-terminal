@@ -54,9 +54,9 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 
 - [x] Layout: the terminal is a panel inside the window (margins, frame color in the theme);
       mouse and grid size measured from the panel
-- [ ] `Tab` struct (terminal + PTY + title); `App` keeps a list and the active index
-- [ ] PTY events carry the tab id; shell exit closes the tab, not the window
-- [ ] Ctrl+Shift+T new, Ctrl+Shift+W close, Ctrl+Tab / Ctrl+Shift+Tab next / previous,
+- [x] `Tab` struct (terminal + PTY + title); `App` keeps a list and the active index
+- [x] PTY events carry the tab id; shell exit closes the tab, not the window
+- [x] Ctrl+Shift+T new, Ctrl+Shift+W close, Ctrl+Tab / Ctrl+Shift+Tab next / previous,
       Ctrl+1…9 go to tab N
 - [ ] Later: a config option for Ctrl+Tab order, by position or most recently used (like browsers)
 - [ ] Tab bar: the active tab merges into the panel, the others stay muted; clickable

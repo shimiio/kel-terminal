@@ -22,6 +22,11 @@ cargo build --release   # a fast build: target/release/kel-terminal.exe
 
 | Keys | What it does |
 |---|---|
+| Ctrl+Shift+T | New tab |
+| Ctrl+Shift+W | Close the tab (typing `exit` does the same) |
+| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
+| Ctrl+1 … Ctrl+8 | Tab 1 … 8 |
+| Ctrl+9 | The last tab |
 | Ctrl+= / Ctrl+- | Bigger / smaller font |
 | Ctrl+0 | Font size back to the one in the config |
 | Ctrl+, | Open the config file |
@@ -126,8 +131,11 @@ color schemes, don't use them.
 
 | File | What it does |
 |---|---|
-| `src/app.rs` | The window and all events: keys, mouse, resize. Owns everything else. |
+| `src/app.rs` | The window, the list of tabs, and all events: keys, mouse, resize |
+| `src/layout.rs` | Where the terminal panel goes in the window |
+| `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
 | `src/config.rs` | Reads `config.toml` |
+| `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |
 | `src/term/grid.rs` | The screen as a grid of cells, plus scrollback |

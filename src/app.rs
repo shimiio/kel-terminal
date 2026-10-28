@@ -1,25 +1,15 @@
-//! The application: owns the window, the shell and the terminal state,
-//! and reacts to every event.
+//! The application: owns the window and the tabs, and reacts to every event.
 //!
-//! Two threads:
-//! - the **main thread** runs the winit event loop: keys, mouse, resize, redraw.
-//! - the **reader thread** (`spawn_reader`) waits for shell output and parses it
-//!   into the grid, then sends `UserEvent::PtyOutput` so the main thread redraws.
-//!
-//! Both need the `Terminal`, so it lives in an `Arc<Mutex<..>>`:
-//! `Arc` lets both threads own it, `Mutex` lets only one use it at a time.
-//! Lock it, use it, let the lock go. Locking it twice at once freezes the app (deadlock).
+//! The **main thread** runs the winit event loop: keys, mouse, resize, redraw.
+//! Each tab has its own shell and two threads of its own (see `tab`), which
+//! report back with `UserEvent`s.
 
 use crate::config::{self, Config};
 use crate::layout::Layout;
-use crate::pty;
 use crate::renderer::{self, Fonts, Renderer};
+use crate::tab::{Tab, TabId};
 use crate::term::Terminal;
-use portable_pty::{Child, MasterPty, PtySize};
-use std::io::{Read, Write};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use vte::Parser;
 use winit::application::ApplicationHandler;
@@ -61,31 +51,32 @@ impl Selection {
     }
 }
 
-/// Custom events sent from other threads to wake up the event loop.
+/// Custom events sent from the tabs' threads to wake up the event loop.
+/// Each one says which tab it's about.
 #[derive(Debug)]
 pub enum UserEvent {
     /// The reader thread parsed new shell output into the grid.
-    PtyOutput,
+    PtyOutput(TabId),
     /// The program asked the terminal something; these bytes are the answer.
-    Reply(Vec<u8>),
-    /// The shell closed its output.
-    PtyExited,
+    Reply(TabId, Vec<u8>),
+    /// The shell ended.
+    PtyExited(TabId),
 }
 
 pub struct App {
     // Created in `resumed`, so they are `None` until the window exists.
     window: Option<Rc<Window>>,
     renderer: Option<Renderer>,
-    /// The screen state, shared with the reader thread.
-    terminal: Arc<Mutex<Terminal>>,
+    /// Never empty: closing the last tab closes Kel.
+    tabs: Vec<Tab>,
+    /// The tab on screen: its place in `tabs`.
+    active: usize,
+    /// The id the next new tab gets.
+    next_id: TabId,
+    /// Given to each new tab, so its threads can wake up the event loop.
+    proxy: EventLoopProxy<UserEvent>,
     /// Which of Shift/Ctrl/Alt are held right now (updated by `ModifiersChanged`).
     modifiers: ModifiersState,
-    /// Bytes written here reach the shell as if they were typed.
-    writer: Box<dyn Write + Send>,
-    /// Our end of the PTY; used to tell the shell about a new size.
-    master: Box<dyn MasterPty + Send>,
-    /// The shell process. Not used yet, but we keep its handle.
-    _child: Box<dyn Child + Send + Sync>,
 
     /// The cell under the mouse pointer, as (row, col).
     mouse_cell: (usize, usize),
@@ -113,8 +104,8 @@ pub struct App {
 }
 
 impl App {
-    /// Starts the shell and the reader thread. The window comes later, in `resumed`.
-    /// `proxy` is how the reader thread wakes up the event loop.
+    /// Starts the first tab. The window comes later, in `resumed`.
+    /// `proxy` is how the tabs' threads wake up the event loop.
     pub fn new(proxy: EventLoopProxy<UserEvent>) -> anyhow::Result<Self> {
         // A broken config or a missing shell shouldn't stop Kel: start with the
         // defaults and show what went wrong at the top of the screen.
@@ -130,36 +121,32 @@ impl App {
                 renderer::load_fonts(&Config::default().font)?
             }
         };
-        let (master, child) = match pty::spawn_shell(&config.shell, ROWS as u16, COLS as u16) {
-            Ok(pty) => pty,
+        // A screen with the problems so far in red. The shell starts below them:
+        // when ConPTY asks where the cursor is, the answer is the line after them.
+        let screen = |problems: &[String]| {
+            let mut terminal = Terminal::new(ROWS, COLS);
+            for problem in problems {
+                let text = format!("\x1b[31mkel: {problem}\x1b[m\n\n").replace('\n', "\r\n");
+                Parser::new().advance(&mut terminal, text.as_bytes());
+            }
+            terminal
+        };
+        let first = match Tab::spawn(0, &config.shell, screen(&problems), proxy.clone()) {
+            Ok(tab) => tab,
             Err(e) => {
                 problems.push(format!("can't start shell \"{}\": {e:#}", config.shell));
-                pty::spawn_shell(&Config::default().shell, ROWS as u16, COLS as u16)?
+                Tab::spawn(0, &Config::default().shell, screen(&problems), proxy.clone())?
             }
         };
-        let reader = master.try_clone_reader()?; // shell output comes out here
-        // Our keys go in here. At start, ConPTY asks "where is the cursor?" (`ESC[6n`)
-        // and shows nothing until the answer comes back through it (see `UserEvent::Reply`).
-        let writer = master.take_writer()?;
-
-        let mut terminal = Terminal::new(ROWS, COLS);
-        for problem in problems {
-            // Red text, then the shell starts below it: when ConPTY asks where the
-            // cursor is, the answer is the line after this message.
-            let text = format!("\x1b[31mkel: {problem}\x1b[m\n\n").replace('\n', "\r\n");
-            Parser::new().advance(&mut terminal, text.as_bytes());
-        }
-        let terminal = Arc::new(Mutex::new(terminal));
-        spawn_reader(reader, terminal.clone(), proxy);
 
         Ok(App {
             window: None,
             renderer: None,
-            terminal,
-            writer,
+            tabs: vec![first],
+            active: 0,
+            next_id: 1,
+            proxy,
             modifiers: ModifiersState::empty(),
-            master,
-            _child: child,
 
             mouse_cell: (0, 0),
             selection: None,
@@ -177,16 +164,97 @@ impl App {
         })
     }
 
-    /// Sends bytes to the shell, as if they were typed.
+    /// The tab on screen.
+    fn tab(&self) -> &Tab {
+        &self.tabs[self.active]
+    }
+
+    fn tab_mut(&mut self) -> &mut Tab {
+        &mut self.tabs[self.active]
+    }
+
+    /// Sends bytes to the shell of the tab on screen, as if they were typed.
     fn send_to_shell(&mut self, bytes: &[u8]) {
         // Anything sent to the shell can change the screen, so an old mouse
         // selection would point at the wrong text: remove it.
         if self.selection.take().is_some() {
             self.request_redraw();
         }
-        // If the shell is gone, the reader thread will report PtyExited.
-        let _ = self.writer.write_all(bytes);
-        let _ = self.writer.flush();
+        self.tab_mut().write(bytes);
+    }
+
+    /// Opens a new tab at the end, the same size as the others, and shows it.
+    fn new_tab(&mut self) {
+        let (rows, cols) = {
+            let terminal = self.tab().terminal.lock().unwrap();
+            (terminal.grid.rows(), terminal.grid.cols())
+        };
+        let id = self.next_id;
+        self.next_id += 1;
+        let screen = Terminal::new(rows, cols);
+        match Tab::spawn(id, &self.config.shell, screen, self.proxy.clone()) {
+            Ok(tab) => {
+                self.tabs.push(tab);
+                self.show_tab(self.tabs.len() - 1);
+            }
+            Err(e) => self.set_title(&format!("Kel - can't open a tab: {e:#}")),
+        }
+    }
+
+    /// The shell of tab `id` ended (`exit`, or Ctrl+Shift+W): the tab goes away.
+    /// The last one closes Kel.
+    fn remove_tab(&mut self, id: TabId, event_loop: &ActiveEventLoop) {
+        let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
+            return; // already gone
+        };
+        self.tabs.remove(index);
+        if self.tabs.is_empty() {
+            event_loop.exit();
+            return;
+        }
+        // Stay on the same tab. It moved one place left if the closed tab was
+        // before it. If the closed tab was the one on screen, its right neighbor
+        // took its place; if it was the last one, show the new last one.
+        if index < self.active || self.active == self.tabs.len() {
+            self.active -= 1;
+        }
+        self.show_tab(self.active);
+    }
+
+    /// Shows the tab at `index` (its place in the list).
+    fn show_tab(&mut self, index: usize) {
+        if index >= self.tabs.len() {
+            return;
+        }
+        self.active = index;
+        // The selection and the half-scrolled line belonged to the other tab.
+        self.selection = None;
+        self.scroll_rest = 0.0;
+        self.update_title();
+        self.request_redraw();
+    }
+
+    /// The tab after (`step` = 1) or before (-1) the one on screen,
+    /// going round from the last to the first.
+    fn next_tab(&mut self, step: isize) {
+        let count = self.tabs.len() as isize;
+        let index = (self.active as isize + step).rem_euclid(count);
+        self.show_tab(index as usize);
+    }
+
+    /// Until the tab bar exists: "Kel (2/3)" says which tab is on screen.
+    fn update_title(&self) {
+        if self.tabs.len() > 1 {
+            self.set_title(&format!("Kel ({}/{})", self.active + 1, self.tabs.len()));
+        } else {
+            self.set_title("Kel");
+        }
+    }
+
+    fn set_title(&self, title: &str) {
+        if let Some(window) = &self.window {
+            window.set_title(title);
+        }
     }
 
     /// Changes the font size, then the grid to match it (see `Renderer::set_font_size`).
@@ -224,14 +292,15 @@ impl App {
         }
         self.config_modified = modified;
 
-        let title = match config::load() {
+        // `Some`: something went wrong, and the title says what.
+        let error = match config::load() {
             Ok(new) => {
-                let mut title = "Kel".to_string();
+                let mut error = None;
                 // Only what changed, so saving another setting doesn't undo your zoom.
                 if new.font != self.config.font {
                     match renderer::load_fonts(&new.font) {
                         Ok(fonts) => self.set_fonts(fonts),
-                        Err(e) => title = format!("Kel - {e:#}"), // keeps the old font
+                        Err(e) => error = Some(format!("Kel - {e:#}")), // keeps the old font
                     }
                 }
                 if new.font_size != self.config.font_size {
@@ -248,7 +317,7 @@ impl App {
                     self.request_redraw();
                 }
                 self.config = new;
-                title
+                error
             }
             // The error has several lines: the place ("...config.toml: TOML parse error
             // at line 1, column 13"), a drawing of that line, and the reason
@@ -259,11 +328,12 @@ impl App {
                 let mut lines = error.lines();
                 let first = lines.next().unwrap_or("");
                 let last = lines.last().unwrap_or("");
-                format!("Kel - config error: {first} {last}")
+                Some(format!("Kel - config error: {first} {last}"))
             }
         };
-        if let Some(window) = &self.window {
-            window.set_title(&title);
+        match error {
+            Some(error) => self.set_title(&error),
+            None => self.update_title(),
         }
     }
 
@@ -273,43 +343,6 @@ impl App {
         self.next_blink = Instant::now() + BLINK_INTERVAL;
         self.request_redraw();
     }
-}
-
-/// Reads shell output on a background thread, feeds it to the parser,
-/// then wakes the event loop so it can redraw.
-fn spawn_reader(
-    mut reader: Box<dyn Read + Send>,
-    terminal: Arc<Mutex<Terminal>>,
-    proxy: EventLoopProxy<UserEvent>,
-) {
-    thread::spawn(move || {
-        let mut parser = Parser::new();
-        let mut buf = [0u8; 4096];
-        loop {
-            // `read` waits until the shell sends something, then gives `n` bytes.
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break, // the shell is gone
-                Ok(n) => {
-                    // The lock is held only while this chunk is parsed.
-                    let replies = {
-                        let mut terminal = terminal.lock().unwrap();
-                        parser.advance(&mut *terminal, &buf[..n]);
-                        // Take the answers out, leaving the list empty for the next chunk.
-                        std::mem::take(&mut terminal.replies)
-                    };
-                    // The writer belongs to the main thread, so the answers go there.
-                    // Err means the event loop has already shut down.
-                    if !replies.is_empty() && proxy.send_event(UserEvent::Reply(replies)).is_err() {
-                        return;
-                    }
-                    if proxy.send_event(UserEvent::PtyOutput).is_err() {
-                        return;
-                    }
-                }
-            }
-        }
-        let _ = proxy.send_event(UserEvent::PtyExited);
-    });
 }
 
 /// The bytes to send for pasted text.
@@ -429,20 +462,23 @@ impl ApplicationHandler<UserEvent> for App {
         self.on_resize();
     }
 
-    /// Our own events, sent by the reader thread.
+    /// Our own events, sent by the tabs' threads.
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
-            UserEvent::PtyOutput => {
-                if let Some(window) = &self.window {
-                    window.request_redraw();
+            // Only the tab on screen needs a redraw. The others keep their new
+            // output in their grids, ready for when you switch to them.
+            UserEvent::PtyOutput(id) => {
+                if id == self.tab().id {
+                    self.request_redraw();
                 }
             }
             // Not `send_to_shell`: an answer isn't typing, so the mouse selection stays.
-            UserEvent::Reply(bytes) => {
-                let _ = self.writer.write_all(&bytes);
-                let _ = self.writer.flush();
+            UserEvent::Reply(id, bytes) => {
+                if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) {
+                    tab.write(&bytes);
+                }
             }
-            UserEvent::PtyExited => event_loop.exit(),
+            UserEvent::PtyExited(id) => self.remove_tab(id, event_loop),
         }
     }
 
@@ -496,7 +532,7 @@ impl App {
     fn on_redraw(&mut self) {
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
-                &self.terminal.lock().unwrap().grid,
+                &self.tabs[self.active].terminal.lock().unwrap().grid,
                 &self.layout,
                 self.selection,
                 self.cursor_on,
@@ -518,16 +554,12 @@ impl App {
         let cols = self.layout.text.w / cell_w;
         let rows = self.layout.text.h / cell_h;
 
-        let mut terminal = self.terminal.lock().unwrap();
-        let changed = (rows, cols) != (terminal.grid.rows(), terminal.grid.cols());
-        if rows > 0 && cols > 0 && changed {
-            terminal.grid.resize(rows, cols);
-            let _ = self.master.resize(PtySize {
-                rows: rows as u16,
-                cols: cols as u16,
-                pixel_width: 0,
-                pixel_height: 0,
-            });
+        // All tabs, not only the one on screen: the others should already have
+        // the right size when you switch to them.
+        if rows > 0 && cols > 0 {
+            for tab in &mut self.tabs {
+                tab.resize(rows, cols);
+            }
         }
     }
 
@@ -543,7 +575,7 @@ impl App {
         // Ctrl+Shift+V: paste from the clipboard
         if ctrl && shift && event.physical_key == PhysicalKey::Code(KeyCode::KeyV) {
             if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-                let bracketed = self.terminal.lock().unwrap().bracketed_paste;
+                let bracketed = self.tab().terminal.lock().unwrap().bracketed_paste;
                 self.send_to_shell(&paste_bytes(&text, bracketed));
             }
             return;
@@ -553,12 +585,55 @@ impl App {
         if ctrl && shift && event.physical_key == PhysicalKey::Code(KeyCode::KeyC) {
             if let Some(selection) = self.selection {
                 let (start, end) = selection.ordered();
-                let text = self.terminal.lock().unwrap().grid.text_between(start, end);
+                let text = self.tab().terminal.lock().unwrap().grid.text_between(start, end);
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
                     let _ = clipboard.set_text(text);
                 }
                 self.selection = None;
                 self.request_redraw();
+                return;
+            }
+        }
+
+        // Tabs: Ctrl+Shift+T new, Ctrl+Shift+W close, Ctrl+Tab / Ctrl+Shift+Tab next /
+        // previous, Ctrl+1…8 tab 1…8, Ctrl+9 the last tab (like browsers).
+        if ctrl {
+            let digit = match event.physical_key {
+                PhysicalKey::Code(KeyCode::Digit1) => Some(1),
+                PhysicalKey::Code(KeyCode::Digit2) => Some(2),
+                PhysicalKey::Code(KeyCode::Digit3) => Some(3),
+                PhysicalKey::Code(KeyCode::Digit4) => Some(4),
+                PhysicalKey::Code(KeyCode::Digit5) => Some(5),
+                PhysicalKey::Code(KeyCode::Digit6) => Some(6),
+                PhysicalKey::Code(KeyCode::Digit7) => Some(7),
+                PhysicalKey::Code(KeyCode::Digit8) => Some(8),
+                PhysicalKey::Code(KeyCode::Digit9) => Some(9),
+                _ => None,
+            };
+            // `true`: it was a tab shortcut, so the shell doesn't get the key.
+            let handled = match (event.physical_key, shift, digit) {
+                (PhysicalKey::Code(KeyCode::KeyT), true, _) => {
+                    self.new_tab();
+                    true
+                }
+                // Only ends the shell; the tab goes when the shell is gone (`remove_tab`),
+                // the same way as after `exit`.
+                (PhysicalKey::Code(KeyCode::KeyW), true, _) => {
+                    self.tab_mut().kill();
+                    true
+                }
+                (PhysicalKey::Code(KeyCode::Tab), _, _) => {
+                    self.next_tab(if shift { -1 } else { 1 });
+                    true
+                }
+                (_, false, Some(n)) => {
+                    let index = if n == 9 { self.tabs.len() - 1 } else { n - 1 };
+                    self.show_tab(index);
+                    true
+                }
+                _ => false,
+            };
+            if handled {
                 return;
             }
         }
@@ -596,7 +671,7 @@ impl App {
         }
 
         // Any other key: jump back to the bottom, then translate it to bytes for the shell
-        self.terminal.lock().unwrap().grid.scroll_to_bottom();
+        self.tab().terminal.lock().unwrap().grid.scroll_to_bottom();
         if let Some(bytes) = key_to_bytes(&event.logical_key, event.text.as_deref(), self.modifiers)
         {
             self.send_to_shell(&bytes);
@@ -620,7 +695,7 @@ impl App {
         let whole = self.scroll_rest.trunc();
         self.scroll_rest -= whole;
         if whole != 0.0 {
-            self.terminal.lock().unwrap().grid.scroll_view(whole as i32);
+            self.tab().terminal.lock().unwrap().grid.scroll_view(whole as i32);
             self.request_redraw();
         }
     }
