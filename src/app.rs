@@ -19,7 +19,7 @@ use std::io::{Read, Write};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use vte::Parser;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
@@ -102,6 +102,8 @@ pub struct App {
     scroll_rest: f32,
 
     config: Config,
+    /// When the config file was saved, as of the last load (see `reload_config_if_changed`).
+    config_modified: Option<SystemTime>,
 }
 
 impl App {
@@ -156,6 +158,7 @@ impl App {
             scroll_rest: 0.0,
 
             config,
+            config_modified: config::modified(),
         })
     }
 
@@ -169,6 +172,53 @@ impl App {
         // If the shell is gone, the reader thread will report PtyExited.
         let _ = self.writer.write_all(bytes);
         let _ = self.writer.flush();
+    }
+
+    /// Changes the font size, then the grid to match it (see `Renderer::set_font_size`).
+    fn set_font_size(&mut self, size: f32) {
+        let Some(renderer) = &mut self.renderer else {
+            return;
+        };
+        renderer.set_font_size(size);
+        // The selection points at cells that move around when the grid changes size.
+        self.selection = None;
+        self.on_resize();
+        self.request_redraw();
+    }
+
+    /// Loads the config file again if it was saved since the last look, and applies it.
+    /// A broken file keeps the old settings and shows the error in the window title.
+    fn reload_config_if_changed(&mut self) {
+        let modified = config::modified();
+        if modified == self.config_modified {
+            return;
+        }
+        self.config_modified = modified;
+
+        let title = match config::load() {
+            Ok(new) => {
+                // Only what changed, so saving another setting doesn't undo your zoom.
+                if new.font_size != self.config.font_size {
+                    self.set_font_size(new.font_size);
+                }
+                self.config = new;
+                "Kel".to_string()
+            }
+            // The error has several lines: the place ("...config.toml: TOML parse error
+            // at line 1, column 13"), a drawing of that line, and the reason
+            // ("invalid type: string "big", expected f32"). A title fits one line,
+            // so it gets the first and the last.
+            Err(e) => {
+                let error = format!("{e:#}");
+                let mut lines = error.lines();
+                let first = lines.next().unwrap_or("");
+                let last = lines.last().unwrap_or("");
+                format!("Kel - config error: {first} {last}")
+            }
+        };
+        if let Some(window) = &self.window {
+            window.set_title(&title);
+        }
     }
 
     /// Shows the cursor and starts the blink over, so it doesn't vanish while you type.
@@ -372,6 +422,8 @@ impl ApplicationHandler<UserEvent> for App {
             self.cursor_on = !self.cursor_on;
             self.next_blink = Instant::now() + BLINK_INTERVAL;
             self.request_redraw();
+            // The same timer looks for a saved config file, twice a second.
+            self.reload_config_if_changed();
         }
         // Sleep until the next event, or until it's time to blink, whichever comes first.
         event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_blink));
@@ -457,7 +509,7 @@ impl App {
         }
 
         // Ctrl+= / Ctrl+- / Ctrl+0: font bigger, smaller, back to the size from the config
-        if ctrl && let Some(renderer) = &mut self.renderer {
+        if ctrl && let Some(renderer) = &self.renderer {
             let size = renderer.font_size();
             let new_size = match event.physical_key {
                 PhysicalKey::Code(KeyCode::Equal) => Some(size + 1.0),
@@ -466,13 +518,18 @@ impl App {
                 _ => None,
             };
             if let Some(new_size) = new_size {
-                renderer.set_font_size(new_size);
-                // The selection points at cells that move around when the grid changes size.
-                self.selection = None;
-                self.on_resize();
-                self.request_redraw();
+                self.set_font_size(new_size);
                 return;
             }
+        }
+
+        // Ctrl+,: open the config file in the app Windows uses for .toml files.
+        if ctrl && event.physical_key == PhysicalKey::Code(KeyCode::Comma) {
+            if let Ok(path) = config::path() {
+                // Explorer opens a file the same way as a double-click on it.
+                let _ = std::process::Command::new("explorer.exe").arg(path).spawn();
+            }
+            return;
         }
 
         // Ctrl+C: interrupt the running command.

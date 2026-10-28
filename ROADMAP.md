@@ -36,7 +36,7 @@ They are only needed if Kel runs on Linux/macOS someday.
 ## 3. Config, font, README
 
 - [x] `config.toml` in `%APPDATA%\kel` (font size, shell); errors shown in the window
-- [ ] Key to open the config; apply changes without a restart
+- [x] Key to open the config (Ctrl+,); apply changes without a restart
 - [ ] Pick the font by name; Nerd Font icons; fallback font for missing glyphs
 - [ ] Colors in the config (cells must remember "default color" / "palette color N",
       not the final RGB, so a new theme can recolor text already on screen)

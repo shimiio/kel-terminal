@@ -6,16 +6,19 @@
 use anyhow::Context;
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 /// The file Kel writes on the first start. Its values must match `Config::default()`
 /// (a test checks it).
 const DEFAULT_CONFIG: &str = r#"# Kel config. Lines starting with # are comments.
+# Ctrl+, opens this file. Saved changes apply right away, unless a setting says otherwise.
 # Delete a setting to go back to its default value.
 
 # Font size in pixels. Ctrl+= / Ctrl+- change it until Kel closes, Ctrl+0 comes back to this.
 font_size = 18
 
 # The program Kel starts, e.g. "pwsh.exe" for PowerShell 7, or "cmd.exe".
+# Applies after a restart.
 shell = "powershell.exe"
 "#;
 
@@ -40,6 +43,12 @@ impl Default for Config {
 pub fn path() -> anyhow::Result<PathBuf> {
     let appdata = std::env::var_os("APPDATA").context("APPDATA is not set")?;
     Ok(PathBuf::from(appdata).join("kel").join("config.toml"))
+}
+
+/// When the config file was last saved. `None` if there is no file.
+/// Kel compares it to the time from the last load to notice a new save.
+pub fn modified() -> Option<SystemTime> {
+    std::fs::metadata(path().ok()?).ok()?.modified().ok()
 }
 
 /// Reads the config file, writing the default one first if there is none yet.
