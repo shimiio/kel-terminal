@@ -32,8 +32,11 @@ const RESIZE_ECHO: Duration = Duration::from_millis(300);
 
 pub struct Tab {
     pub id: TabId,
-    /// The name in the tab bar.
+    /// The name in the tab bar: the program's title, made shorter (see `short_title`),
+    /// or the shell's name if the program gave none.
     pub title: String,
+    /// The shell's name, e.g. "powershell".
+    shell_name: String,
     /// New output since the tab was last on screen: a dot in the tab bar.
     pub activity: bool,
     /// When the grid last changed size (see `RESIZE_ECHO`).
@@ -68,15 +71,11 @@ impl Tab {
         let terminal = Arc::new(Mutex::new(terminal));
         spawn_reader(id, reader, terminal.clone(), proxy.clone());
         spawn_waiter(id, child, proxy);
-        // "powershell.exe" or "C:\...\pwsh.exe" → "powershell", "pwsh"
-        let title = std::path::Path::new(shell)
-            .file_stem()
-            .map_or(shell.to_string(), |name| {
-                name.to_string_lossy().into_owned()
-            });
+        let shell_name = short_title(shell);
         Ok(Tab {
             id,
-            title,
+            title: shell_name.clone(),
+            shell_name,
             activity: false,
             resized_at: Instant::now(),
             terminal,
@@ -109,6 +108,21 @@ impl Tab {
         });
     }
 
+    /// Takes the title the program sent, if it changed. Returns `true` if the
+    /// name in the tab bar is now different.
+    pub fn refresh_title(&mut self) -> bool {
+        let title = match self.terminal.lock().unwrap().title.as_deref() {
+            Some(title) if !title.trim().is_empty() => short_title(title),
+            // No title, or an empty one: back to the shell's name.
+            _ => self.shell_name.clone(),
+        };
+        if title == self.title {
+            return false;
+        }
+        self.title = title;
+        true
+    }
+
     /// The shell wrote something while the tab is not on screen: light the dot.
     /// Returns `true` if it just lit, so the tab bar needs a redraw.
     pub fn mark_activity(&mut self) -> bool {
@@ -131,6 +145,24 @@ impl Drop for Tab {
     /// A tab that goes away takes its shell with it, also when Kel closes.
     fn drop(&mut self) {
         self.kill();
+    }
+}
+
+/// A title made to fit in a tab: a program's path becomes its name, the rest stays.
+/// - `C:\WINDOWS\...\powershell.exe` → `powershell`
+/// - `C:\WINDOWS\system32\cmd.exe - ping localhost` → `cmd - ping localhost`
+/// - `Cargo.toml - Nvim` → as it is
+fn short_title(title: &str) -> String {
+    // The path ends at ".exe", in any case ("CMD.EXE"). Lowercase has the same
+    // byte length for these letters, so a position in it is one in `title` too.
+    match title.to_ascii_lowercase().find(".exe") {
+        Some(end) => {
+            let path = &title[..end];
+            // The name is after the last '\' or '/'.
+            let name = path.rsplit(['\\', '/']).next().unwrap_or(path);
+            format!("{name}{}", &title[end + 4..])
+        }
+        None => title.to_string(),
     }
 }
 
@@ -177,4 +209,25 @@ fn spawn_waiter(
         let _ = child.wait();
         let _ = proxy.send_event(UserEvent::PtyExited(id));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_titles() {
+        let powershell = r"C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe";
+        assert_eq!(short_title(powershell), "powershell");
+        assert_eq!(short_title("powershell.exe"), "powershell");
+        assert_eq!(
+            short_title(r"C:\Program Files\PowerShell\7\pwsh.exe"),
+            "pwsh"
+        );
+        assert_eq!(
+            short_title(r"C:\WINDOWS\system32\CMD.EXE - ping localhost"),
+            "CMD - ping localhost"
+        );
+        assert_eq!(short_title("Cargo.toml - Nvim"), "Cargo.toml - Nvim");
+    }
 }

@@ -257,10 +257,18 @@ impl App {
         }
         self.active = index;
         self.tabs[index].activity = false; // seen now
+        self.update_window_title();
         // The selection and the half-scrolled line belonged to the other tab.
         self.selection = None;
         self.scroll_rest = 0.0;
         self.request_redraw();
+    }
+
+    /// The window's own title, seen in the taskbar and in Alt+Tab: the tab on screen.
+    fn update_window_title(&self) {
+        if let Some(window) = &self.window {
+            window.set_title(&format!("{} - Kel", self.tab().title));
+        }
     }
 
     /// The tab after (`step` = 1) or before (-1) the one on screen,
@@ -467,11 +475,17 @@ impl ApplicationHandler<UserEvent> for App {
             // output in their grids, ready for when you switch to them, and
             // light a dot in the tab bar.
             UserEvent::PtyOutput(id) => {
-                if id == self.tab().id {
-                    self.request_redraw();
-                } else if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id)
-                    && tab.mark_activity()
-                {
+                let on_screen = id == self.tab().id;
+                let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+                    return;
+                };
+                // The output can hold a new title (`ESC]0;...`), for any tab.
+                let renamed = tab.refresh_title();
+                let lit = !on_screen && tab.mark_activity();
+                if on_screen && renamed {
+                    self.update_window_title();
+                }
+                if on_screen || renamed || lit {
                     self.request_redraw();
                 }
             }

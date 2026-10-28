@@ -6,6 +6,7 @@
 //! - `print`: a normal character to show
 //! - `execute`: a control byte like `\r` or `\n`
 //! - `csi_dispatch`: an `ESC[...` sequence, with its numbers (params) and final letter (action)
+//! - `osc_dispatch`: an `ESC]...` sequence, text for the terminal itself (the window title)
 //!
 //! Each method only decides which `Grid` function to call.
 
@@ -21,6 +22,8 @@ pub struct Terminal {
     pub replies: Vec<u8>,
     /// The program asked for pasted text to be marked (`ESC[?2004h`), see `paste_bytes`.
     pub bracketed_paste: bool,
+    /// The window title the program asked for (`ESC]0;title BEL`), as it came.
+    pub title: Option<String>,
 }
 
 impl Terminal {
@@ -29,6 +32,7 @@ impl Terminal {
             grid: Grid::new(rows, cols),
             replies: Vec::new(),
             bracketed_paste: false,
+            title: None,
         }
     }
 
@@ -193,6 +197,16 @@ impl Perform for Terminal {
             _ => {}
         }
     }
+
+    /// `ESC]0;title BEL` or `ESC]2;title BEL`: the program names the window, e.g.
+    /// PowerShell at start: `ESC]0;C:\WINDOWS\...\powershell.exe BEL`.
+    /// (`ESC]1;` names the window's icon, an old X11 idea: ignored.)
+    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
+        if let [b"0" | b"2", title @ ..] = params {
+            // vte splits at every ';', also inside the title: put them back.
+            self.title = Some(String::from_utf8_lossy(&title.join(&b';')).into_owned());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -205,6 +219,16 @@ mod tests {
         let mut terminal = Terminal::new(5, 10);
         Parser::new().advance(&mut terminal, input.as_bytes());
         terminal
+    }
+
+    #[test]
+    fn window_title() {
+        assert_eq!(feed("\x1b]0;hello\x07").title.as_deref(), Some("hello"));
+        assert_eq!(feed("\x1b]2;hello\x1b\\").title.as_deref(), Some("hello")); // ESC \ ends it too
+        assert_eq!(feed("\x1b]0;a;b\x07").title.as_deref(), Some("a;b"));
+        assert_eq!(feed("\x1b]1;icon\x07").title, None);
+        // The title is not text on the screen.
+        assert_eq!(feed("\x1b]0;hello\x07").grid.render(), "");
     }
 
     #[test]

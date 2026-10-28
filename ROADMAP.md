@@ -64,12 +64,17 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       what it did: drag to move, double-click to maximize, minimize/maximize/close buttons,
       resize at the edges, the window shadow. Config errors move into Kel's own UI
 - [x] Activity dot on a background tab with new output
-- [ ] Tab/window title from OSC 0/2
-- [ ] Ask before closing a tab with a running program
+- [x] Tab/window title from OSC 0/2
+- [ ] Tab icons: pixel art PNGs in `assets/icons/`, built into the binary, tinted with a color;
+      picked by the program in the title (nvim, cargo...)
 
 ## 5. Projects
 
 - [ ] Shell integration: PowerShell `prompt` reports the current folder (OSC 9;9), Kel remembers it
+- [ ] Shell integration also marks where a command starts and ends (OSC 133), so Kel knows
+      a tab is busy even when the program prints nothing (`cargo run` of a window app):
+  - [ ] "Busy" mark on the tab, and "done" when the command ends
+  - [ ] Ask before closing a tab with a running command
 - [ ] Project file: tabs with name, folder, startup command
 - [ ] Open a project: start each tab in its folder and type its command (`nvim .`, `cargo run`)
 - [ ] Save the last folder of each tab on close
