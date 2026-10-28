@@ -7,7 +7,7 @@
 use crate::config::{self, Config};
 use crate::keys::{self, Action};
 use crate::layout::{Layout, WindowButton};
-use crate::renderer::{self, Chrome, Fonts, Renderer};
+use crate::renderer::{self, Chrome, Fonts, Renderer, TabLabel};
 use crate::tab::{Tab, TabId};
 use crate::term::Terminal;
 use std::rc::Rc;
@@ -256,6 +256,7 @@ impl App {
             return;
         }
         self.active = index;
+        self.tabs[index].activity = false; // seen now
         // The selection and the half-scrolled line belonged to the other tab.
         self.selection = None;
         self.scroll_rest = 0.0;
@@ -463,9 +464,14 @@ impl ApplicationHandler<UserEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             // Only the tab on screen needs a redraw. The others keep their new
-            // output in their grids, ready for when you switch to them.
+            // output in their grids, ready for when you switch to them, and
+            // light a dot in the tab bar.
             UserEvent::PtyOutput(id) => {
                 if id == self.tab().id {
+                    self.request_redraw();
+                } else if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id)
+                    && tab.mark_activity()
+                {
                     self.request_redraw();
                 }
             }
@@ -532,9 +538,16 @@ impl App {
 
     /// Draws the grid (and the mouse selection) into the window.
     fn on_redraw(&mut self) {
-        let titles: Vec<String> = self.tabs.iter().map(|tab| tab.title.clone()).collect();
+        let labels: Vec<TabLabel> = self
+            .tabs
+            .iter()
+            .map(|tab| TabLabel {
+                title: &tab.title,
+                activity: tab.activity,
+            })
+            .collect();
         let chrome = Chrome {
-            titles: &titles,
+            tabs: &labels,
             active: self.active,
             hovered: self.hovered,
             maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),

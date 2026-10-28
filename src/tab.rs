@@ -20,15 +20,24 @@ use portable_pty::{Child, ChildKiller, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 use vte::Parser;
 use winit::event_loop::EventLoopProxy;
 
 pub type TabId = u64;
 
+/// After a resize, ConPTY sends the whole screen again: measured, 1 ms after it,
+/// ~270 bytes. Output this soon after a resize is that copy, not anything new.
+const RESIZE_ECHO: Duration = Duration::from_millis(300);
+
 pub struct Tab {
     pub id: TabId,
     /// The name in the tab bar.
     pub title: String,
+    /// New output since the tab was last on screen: a dot in the tab bar.
+    pub activity: bool,
+    /// When the grid last changed size (see `RESIZE_ECHO`).
+    resized_at: Instant,
     /// The screen state, shared with the reader thread.
     pub terminal: Arc<Mutex<Terminal>>,
     /// Bytes written here reach the shell as if they were typed.
@@ -68,6 +77,8 @@ impl Tab {
         Ok(Tab {
             id,
             title,
+            activity: false,
+            resized_at: Instant::now(),
             terminal,
             writer,
             master,
@@ -89,12 +100,23 @@ impl Tab {
             return;
         }
         terminal.grid.resize(rows, cols);
+        self.resized_at = Instant::now();
         let _ = self.master.resize(PtySize {
             rows: rows as u16,
             cols: cols as u16,
             pixel_width: 0,
             pixel_height: 0,
         });
+    }
+
+    /// The shell wrote something while the tab is not on screen: light the dot.
+    /// Returns `true` if it just lit, so the tab bar needs a redraw.
+    pub fn mark_activity(&mut self) -> bool {
+        if self.activity || self.resized_at.elapsed() < RESIZE_ECHO {
+            return false;
+        }
+        self.activity = true;
+        true
     }
 
     /// Ends the shell. The tab itself goes away when the waiter thread reports it.

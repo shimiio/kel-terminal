@@ -63,7 +63,7 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 - [x] Own title bar: no Windows title bar, the tab bar takes its place. Kel then does
       what it did: drag to move, double-click to maximize, minimize/maximize/close buttons,
       resize at the edges, the window shadow. Config errors move into Kel's own UI
-- [ ] Activity dot on a background tab with new output
+- [x] Activity dot on a background tab with new output
 - [ ] Tab/window title from OSC 0/2
 - [ ] Ask before closing a tab with a running program
 

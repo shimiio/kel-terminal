@@ -28,6 +28,8 @@ pub type Fonts = [fontdue::Font; 4];
 const UI_FONT_SIZE: f32 = 14.0;
 /// Space between a tab's edge and its name.
 const TAB_TEXT_PADDING: usize = 12;
+/// The activity dot on a tab: its radius, in pixels.
+const DOT_RADIUS: f32 = 3.0;
 /// The close button under the mouse: the red of Windows' own.
 const CLOSE_HOVER: u32 = 0xc42b1c;
 
@@ -38,10 +40,17 @@ const MAX_FONT_SIZE: f32 = 48.0;
 /// A letter already turned into pixels: its metrics and coverage map.
 type Glyph = (fontdue::Metrics, Vec<u8>);
 
+/// One tab, as the tab bar shows it.
+pub struct TabLabel<'a> {
+    pub title: &'a str,
+    /// New output since the tab was last on screen: a dot.
+    pub activity: bool,
+}
+
 /// What Kel draws around the terminal: its title bar, with the tabs and the buttons.
 pub struct Chrome<'a> {
-    /// The tab names, left to right.
-    pub titles: &'a [String],
+    /// The tabs, left to right.
+    pub tabs: &'a [TabLabel<'a>],
     /// The tab on screen.
     pub active: usize,
     /// The window button under the mouse, drawn lit.
@@ -306,7 +315,8 @@ impl Renderer {
 
 /// The tab bar. The tab on screen merges into the panel below it: the panel's
 /// color inside, the panel's outline around, and no line between them. The other
-/// tabs are only their names, dimmer, on the window's color.
+/// tabs are only their names, dimmer, on the window's color. A tab with new
+/// output gets a dot at its right end.
 fn draw_tab_bar(
     pixels: &mut [u32],
     width: usize,
@@ -316,11 +326,11 @@ fn draw_tab_bar(
     font: &fontdue::Font,
     ui: &mut UiText,
 ) {
-    let Chrome { titles, active, .. } = *chrome;
+    let Chrome { tabs, active, .. } = *chrome;
     // Halfway between the text color and the window's: muted, still readable.
     let dim = blend(theme.frame, theme.foreground, 128);
     let b = layout.border;
-    for (i, (tab, title)) in layout.tabs(titles.len()).iter().zip(titles).enumerate() {
+    for (i, (tab, label)) in layout.tabs(tabs.len()).iter().zip(tabs).enumerate() {
         let color = if i == active {
             // The outline, reaching `b` pixels down over the panel's top line…
             fill_rect(pixels, width, tab.x, tab.y, tab.w, tab.h + b, theme.border);
@@ -339,11 +349,19 @@ fn draw_tab_bar(
         } else {
             dim
         };
+        let mut max_w = tab.w.saturating_sub(2 * TAB_TEXT_PADDING);
+        // The dot: at the right end, in the text's full color.
+        if label.activity {
+            let cx = (tab.x + tab.w - TAB_TEXT_PADDING) as f32 - DOT_RADIUS;
+            let cy = tab.y as f32 + tab.h as f32 / 2.0;
+            fill_circle(pixels, width, cx, cy, DOT_RADIUS, theme.foreground);
+            // A long name stops before the dot, with a dot's width between them.
+            max_w = max_w.saturating_sub((4.0 * DOT_RADIUS) as usize);
+        }
         // The name, in the middle from top to bottom, cut off where the tab ends.
         let x = tab.x + TAB_TEXT_PADDING;
         let y = tab.y + tab.h.saturating_sub(ui.line_h) / 2;
-        let max_w = tab.w.saturating_sub(2 * TAB_TEXT_PADDING);
-        for (n, ch) in title.chars().enumerate() {
+        for (n, ch) in label.title.chars().enumerate() {
             let left = x + n * ui.advance;
             if left + ui.advance > x + max_w {
                 break;
@@ -469,6 +487,31 @@ fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: 
     for py in y..(y + h).min(height) {
         for px in x..(x + w).min(width) {
             pixels[py * width + px] = color;
+        }
+    }
+}
+
+/// A filled circle around (cx, cy), with soft edges: a pixel that is half inside
+/// gets half the color. e.g. r = 3: a dot 7 pixels across.
+fn fill_circle(pixels: &mut [u32], width: usize, cx: f32, cy: f32, r: f32, color: u32) {
+    let height = pixels.len() / width;
+    let x0 = (cx - r - 1.0).max(0.0) as usize;
+    let y0 = (cy - r - 1.0).max(0.0) as usize;
+    let x1 = ((cx + r + 1.0) as usize).min(width);
+    let y1 = ((cy + r + 1.0) as usize).min(height);
+    for py in y0..y1 {
+        for px in x0..x1 {
+            // From the middle of the pixel to the middle of the circle.
+            let dx = px as f32 + 0.5 - cx;
+            let dy = py as f32 + 0.5 - cy;
+            let distance = (dx * dx + dy * dy).sqrt();
+            // Half a pixel inside the edge or more: 1, all color. Half a pixel
+            // outside or more: 0, none. Right on the edge: 0.5.
+            let cover = (r + 0.5 - distance).clamp(0.0, 1.0);
+            if cover > 0.0 {
+                let pixel = &mut pixels[py * width + px];
+                *pixel = blend(*pixel, color, (cover * 255.0) as u32);
+            }
         }
     }
 }
