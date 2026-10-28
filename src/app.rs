@@ -79,7 +79,8 @@ pub struct App {
     /// Which of Shift/Ctrl/Alt are held right now (updated by `ModifiersChanged`).
     modifiers: ModifiersState,
 
-    /// The cell under the mouse pointer, as (row, col).
+    /// Where the mouse pointer is, in pixels, and the cell under it as (row, col).
+    mouse_pos: (usize, usize),
     mouse_cell: (usize, usize),
     /// The mouse selection, if any. Screen positions, so it doesn't follow scrolling.
     selection: Option<Selection>,
@@ -136,7 +137,12 @@ impl App {
             Ok(tab) => tab,
             Err(e) => {
                 problems.push(format!("can't start shell \"{}\": {e:#}", config.shell));
-                Tab::spawn(0, &Config::default().shell, screen(&problems), proxy.clone())?
+                Tab::spawn(
+                    0,
+                    &Config::default().shell,
+                    screen(&problems),
+                    proxy.clone(),
+                )?
             }
         };
 
@@ -149,6 +155,7 @@ impl App {
             proxy,
             modifiers: ModifiersState::empty(),
 
+            mouse_pos: (0, 0),
             mouse_cell: (0, 0),
             selection: None,
             selecting: false,
@@ -235,7 +242,6 @@ impl App {
         // The selection and the half-scrolled line belonged to the other tab.
         self.selection = None;
         self.scroll_rest = 0.0;
-        self.update_title();
         self.request_redraw();
     }
 
@@ -245,15 +251,6 @@ impl App {
         let count = self.tabs.len() as isize;
         let index = (self.active as isize + step).rem_euclid(count);
         self.show_tab(index as usize);
-    }
-
-    /// Until the tab bar exists: "Kel (2/3)" says which tab is on screen.
-    fn update_title(&self) {
-        if self.tabs.len() > 1 {
-            self.set_title(&format!("Kel ({}/{})", self.active + 1, self.tabs.len()));
-        } else {
-            self.set_title("Kel");
-        }
     }
 
     fn set_title(&self, title: &str) {
@@ -342,7 +339,7 @@ impl App {
         };
         match error {
             Some(error) => self.set_title(&error),
-            None => self.update_title(),
+            None => self.set_title("Kel"),
         }
     }
 
@@ -392,7 +389,13 @@ impl App {
             return;
         };
         let (start, end) = selection.ordered();
-        let text = self.tab().terminal.lock().unwrap().grid.text_between(start, end);
+        let text = self
+            .tab()
+            .terminal
+            .lock()
+            .unwrap()
+            .grid
+            .text_between(start, end);
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             let _ = clipboard.set_text(text);
         }
@@ -505,10 +508,13 @@ impl App {
 
     /// Draws the grid (and the mouse selection) into the window.
     fn on_redraw(&mut self) {
+        let titles: Vec<String> = self.tabs.iter().map(|tab| tab.title.clone()).collect();
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
                 &self.tabs[self.active].terminal.lock().unwrap().grid,
                 &self.layout,
+                &titles,
+                self.active,
                 self.selection,
                 self.cursor_on,
             );
@@ -522,7 +528,10 @@ impl App {
             return;
         };
         let size = window.inner_size();
-        self.layout = self.config.layout.layout(size.width as usize, size.height as usize);
+        self.layout = self
+            .config
+            .layout
+            .layout(size.width as usize, size.height as usize);
         // The grid gets as many cells as fit in the text area,
         // e.g. 970x670 pixels with 11x24 cells: 88 cols, 27 rows.
         let (cell_w, cell_h) = renderer.cell_size();
@@ -571,7 +580,12 @@ impl App {
         let whole = self.scroll_rest.trunc();
         self.scroll_rest -= whole;
         if whole != 0.0 {
-            self.tab().terminal.lock().unwrap().grid.scroll_view(whole as i32);
+            self.tab()
+                .terminal
+                .lock()
+                .unwrap()
+                .grid
+                .scroll_view(whole as i32);
             self.request_redraw();
         }
     }
@@ -585,9 +599,11 @@ impl App {
         // Pixels to cells, counted from where the text starts. e.g. the text at
         // (15, 15), the mouse at (100, 60), 11x24 cells: (85, 45) → col 7, row 1.
         // Left of or above the text, `saturating_sub` gives 0: the first col/row.
+        let (x, y) = (position.x as usize, position.y as usize);
         let text = self.layout.text;
-        let col = (position.x as usize).saturating_sub(text.x) / cell_w;
-        let row = (position.y as usize).saturating_sub(text.y) / cell_h;
+        let col = x.saturating_sub(text.x) / cell_w;
+        let row = y.saturating_sub(text.y) / cell_h;
+        self.mouse_pos = (x, y);
         self.mouse_cell = (row, col);
 
         if self.selecting {
@@ -601,6 +617,19 @@ impl App {
     /// Left mouse button: pressing starts a new selection, releasing finishes it.
     fn on_left_button(&mut self, state: ElementState) {
         match state {
+            // In the tab bar: a click on a tab shows it. There's no text to select there.
+            ElementState::Pressed
+                if self
+                    .layout
+                    .tab_bar
+                    .contains(self.mouse_pos.0, self.mouse_pos.1) =>
+            {
+                let (x, y) = self.mouse_pos;
+                let tabs = self.layout.tabs(self.tabs.len());
+                if let Some(index) = tabs.iter().position(|tab| tab.contains(x, y)) {
+                    self.show_tab(index);
+                }
+            }
             ElementState::Pressed => {
                 self.selection = Some(Selection {
                     start: self.mouse_cell,

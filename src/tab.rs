@@ -27,6 +27,8 @@ pub type TabId = u64;
 
 pub struct Tab {
     pub id: TabId,
+    /// The name in the tab bar.
+    pub title: String,
     /// The screen state, shared with the reader thread.
     pub terminal: Arc<Mutex<Terminal>>,
     /// Bytes written here reach the shell as if they were typed.
@@ -57,8 +59,15 @@ impl Tab {
         let terminal = Arc::new(Mutex::new(terminal));
         spawn_reader(id, reader, terminal.clone(), proxy.clone());
         spawn_waiter(id, child, proxy);
+        // "powershell.exe" or "C:\...\pwsh.exe" → "powershell", "pwsh"
+        let title = std::path::Path::new(shell)
+            .file_stem()
+            .map_or(shell.to_string(), |name| {
+                name.to_string_lossy().into_owned()
+            });
         Ok(Tab {
             id,
+            title,
             terminal,
             writer,
             master,
@@ -137,7 +146,11 @@ fn spawn_reader(
 }
 
 /// Waits on a background thread for the shell to end, then tells the event loop.
-fn spawn_waiter(id: TabId, mut child: Box<dyn Child + Send + Sync>, proxy: EventLoopProxy<UserEvent>) {
+fn spawn_waiter(
+    id: TabId,
+    mut child: Box<dyn Child + Send + Sync>,
+    proxy: EventLoopProxy<UserEvent>,
+) {
     thread::spawn(move || {
         let _ = child.wait();
         let _ = proxy.send_event(UserEvent::PtyExited(id));

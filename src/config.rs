@@ -36,6 +36,8 @@ shell = "powershell.exe"
 margin = 8
 border = 1
 padding = 6
+tab_height = 32   # the tab bar above the panel
+tab_width = 180   # narrower when there are many tabs
 
 # Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
 # Programs that pick exact colors themselves (like nvim color schemes) don't use them.
@@ -106,7 +108,10 @@ mod tests {
 
     #[test]
     fn default_file_matches_defaults() {
-        assert_eq!(toml::from_str::<Config>(DEFAULT_CONFIG).unwrap(), Config::default());
+        assert_eq!(
+            toml::from_str::<Config>(DEFAULT_CONFIG).unwrap(),
+            Config::default()
+        );
     }
 
     #[test]

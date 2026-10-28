@@ -1,12 +1,13 @@
 //! Where things go in the window: plain rectangles, no pixels.
 //!
-//! The window holds a panel, and the panel holds the terminal's text:
+//! The window holds the tab bar and a panel below it; the panel holds the terminal's text:
 //!
 //! ```text
 //! ┌ window ─────────────────────────┐
 //! │  margin                         │
-//! │  ┌ panel (border) ────────────┐ │
-//! │  │  padding                   │ │
+//! │  ┌ tab ┐  tab     tab           │  ← tab bar, tab_height tall
+//! │  ┌┘   └──────────────────────┐ │
+//! │  │ panel (border)  padding    │ │
 //! │  │  ┌ text: the grid ───────┐ │ │
 //! │  │  └───────────────────────┘ │ │
 //! │  └────────────────────────────┘ │
@@ -38,6 +39,11 @@ impl Rect {
             h: self.h.saturating_sub(2 * by),
         }
     }
+
+    /// Is the point (x, y) inside?
+    pub fn contains(&self, x: usize, y: usize) -> bool {
+        (self.x..self.x + self.w).contains(&x) && (self.y..self.y + self.h).contains(&y)
+    }
 }
 
 /// The spaces around the terminal, in pixels: the `[layout]` part of the config.
@@ -50,6 +56,10 @@ pub struct Spacing {
     pub border: usize,
     /// Between the panel's border and the text.
     pub padding: usize,
+    /// The tab bar's height.
+    pub tab_height: usize,
+    /// A tab's width. With many tabs, they get narrower to fit.
+    pub tab_width: usize,
 }
 
 impl Default for Spacing {
@@ -58,6 +68,8 @@ impl Default for Spacing {
             margin: 8,
             border: 1,
             padding: 6,
+            tab_height: 32,
+            tab_width: 180,
         }
     }
 }
@@ -65,12 +77,17 @@ impl Default for Spacing {
 /// Where everything is, for one window size.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Layout {
+    /// The strip above the panel where the tabs are.
+    pub tab_bar: Rect,
     /// The panel, with its border.
     pub panel: Rect,
     /// The panel inside its border: the terminal's background.
     pub inside: Rect,
     /// Where the grid of cells starts. Its size says how many cells fit.
     pub text: Rect,
+    /// The panel's border line, in pixels (the active tab draws its own the same).
+    pub border: usize,
+    tab_width: usize,
 }
 
 impl Spacing {
@@ -82,20 +99,51 @@ impl Spacing {
             w: width,
             h: height,
         };
-        let panel = window.shrink(self.margin);
+        // Inside the margin: the tab bar on top, the panel below it.
+        let area = window.shrink(self.margin);
+        let tab_bar = Rect {
+            h: self.tab_height.min(area.h),
+            ..area
+        };
+        let panel = Rect {
+            y: area.y + tab_bar.h,
+            h: area.h - tab_bar.h,
+            ..area
+        };
         let inside = panel.shrink(self.border);
         let text = inside.shrink(self.padding);
         Layout {
+            tab_bar,
             panel,
             inside,
             text,
+            border: self.border,
+            tab_width: self.tab_width,
         }
     }
 
     /// The window size that leaves exactly `text_w` x `text_h` pixels for the text.
     pub fn window_size(&self, text_w: usize, text_h: usize) -> (usize, usize) {
         let edge = self.margin + self.border + self.padding;
-        (text_w + 2 * edge, text_h + 2 * edge)
+        (text_w + 2 * edge, text_h + 2 * edge + self.tab_height)
+    }
+}
+
+impl Layout {
+    /// Where each of `count` tabs is, left to right in the tab bar.
+    /// e.g. a 984-pixel bar: 3 tabs are 180 wide each; 10 tabs get 98 each.
+    pub fn tabs(&self, count: usize) -> Vec<Rect> {
+        if count == 0 {
+            return Vec::new();
+        }
+        let w = self.tab_width.min(self.tab_bar.w / count);
+        (0..count)
+            .map(|i| Rect {
+                x: self.tab_bar.x + i * w,
+                w,
+                ..self.tab_bar
+            })
+            .collect()
     }
 }
 
@@ -104,12 +152,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn panel_and_text_inside_the_window() {
+    fn tab_bar_panel_and_text_inside_the_window() {
         let layout = Spacing::default().layout(1000, 700);
-        // margin 8
-        assert_eq!(layout.panel, Rect { x: 8, y: 8, w: 984, h: 684 });
-        // + border 1 + padding 6 = 15 from the window's edge
-        assert_eq!(layout.text, Rect { x: 15, y: 15, w: 970, h: 670 });
+        // margin 8, then the tab bar, 32 tall
+        assert_eq!(
+            layout.tab_bar,
+            Rect {
+                x: 8,
+                y: 8,
+                w: 984,
+                h: 32
+            }
+        );
+        // the panel right below it: y = 8 + 32 = 40
+        assert_eq!(
+            layout.panel,
+            Rect {
+                x: 8,
+                y: 40,
+                w: 984,
+                h: 652
+            }
+        );
+        // + border 1 + padding 6 = 7 more on every side
+        assert_eq!(
+            layout.text,
+            Rect {
+                x: 15,
+                y: 47,
+                w: 970,
+                h: 638
+            }
+        );
+    }
+
+    #[test]
+    fn tabs_side_by_side() {
+        let layout = Spacing::default().layout(1000, 700);
+        let tabs = layout.tabs(3);
+        assert_eq!(
+            tabs[0],
+            Rect {
+                x: 8,
+                y: 8,
+                w: 180,
+                h: 32
+            }
+        );
+        assert_eq!(tabs[2].x, 8 + 2 * 180);
+        // Too many for 180 each: 984 / 10 = 98
+        assert_eq!(layout.tabs(10)[0].w, 98);
+        // A click at (200, 20) is on the second tab.
+        assert!(tabs[1].contains(200, 20));
+        assert!(!tabs[1].contains(200, 45)); // below the bar: the panel
     }
 
     #[test]

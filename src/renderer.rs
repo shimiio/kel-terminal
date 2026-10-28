@@ -23,12 +23,40 @@ const CURSOR_HEIGHT: usize = 4;
 /// 0 = regular, 1 = bold, 2 = italic, 3 = bold italic.
 pub type Fonts = [fontdue::Font; 4];
 
+/// The size of the text in Kel's own UI (tab names), in pixels.
+/// It doesn't follow the terminal's zoom.
+const UI_FONT_SIZE: f32 = 14.0;
+/// Space between a tab's edge and its name.
+const TAB_TEXT_PADDING: usize = 12;
+
 /// Zoom limits: smaller is unreadable, bigger leaves only a few cells in the window.
 const MIN_FONT_SIZE: f32 = 8.0;
 const MAX_FONT_SIZE: f32 = 48.0;
 
 /// A letter already turned into pixels: its metrics and coverage map.
 type Glyph = (fontdue::Metrics, Vec<u8>);
+
+/// Text in Kel's own UI, like the tab names: one size, its own glyph cache.
+struct UiText {
+    /// How far each letter moves the pen (the font is monospaced).
+    advance: usize,
+    /// One line of text, top to bottom.
+    line_h: usize,
+    ascent: i32,
+    glyphs: HashMap<char, Glyph>,
+}
+
+impl UiText {
+    fn new(font: &fontdue::Font) -> anyhow::Result<UiText> {
+        let (advance, line_h, ascent) = measure_cell(font, UI_FONT_SIZE)?;
+        Ok(UiText {
+            advance,
+            line_h,
+            ascent,
+            glyphs: HashMap::new(),
+        })
+    }
+}
 
 pub struct Renderer {
     window: Rc<Window>,
@@ -48,6 +76,7 @@ pub struct Renderer {
     glyphs: HashMap<(char, usize), Glyph>,
     /// Turns the colors in the cells into pixels.
     theme: Theme,
+    ui: UiText,
 }
 
 impl Renderer {
@@ -65,6 +94,7 @@ impl Renderer {
         // All 4 styles share the same sizes, so measuring the regular one is enough.
         let font_size = font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], font_size)?;
+        let ui = UiText::new(&fonts[0])?;
 
         Ok(Renderer {
             window,
@@ -76,6 +106,7 @@ impl Renderer {
             ascent,
             glyphs: HashMap::new(),
             theme,
+            ui,
         })
     }
 
@@ -111,6 +142,9 @@ impl Renderer {
     }
 
     pub fn set_fonts(&mut self, fonts: Fonts) {
+        if let Ok(ui) = UiText::new(&fonts[0]) {
+            self.ui = ui;
+        }
         self.fonts = fonts;
         self.glyphs.clear(); // letters of the old font
         self.set_font_size(self.font_size);
@@ -122,6 +156,8 @@ impl Renderer {
         &mut self,
         grid: &Grid,
         layout: &Layout,
+        titles: &[String],
+        active: usize,
         selection: Option<Selection>,
         cursor_on: bool,
     ) {
@@ -137,9 +173,42 @@ impl Renderer {
         // The window around the panel, the panel's border, the panel's background.
         // Each one is painted over the one before, smaller.
         buffer.fill(theme.frame);
-        let Layout { panel, inside, text } = *layout;
-        fill_rect(&mut buffer, width, panel.x, panel.y, panel.w, panel.h, theme.border);
-        fill_rect(&mut buffer, width, inside.x, inside.y, inside.w, inside.h, theme.background);
+        let Layout {
+            panel,
+            inside,
+            text,
+            ..
+        } = *layout;
+        fill_rect(
+            &mut buffer,
+            width,
+            panel.x,
+            panel.y,
+            panel.w,
+            panel.h,
+            theme.border,
+        );
+        fill_rect(
+            &mut buffer,
+            width,
+            inside.x,
+            inside.y,
+            inside.w,
+            inside.h,
+            theme.background,
+        );
+        // After the panel: the tab on screen covers a piece of the panel's top line.
+        let font = &self.fonts[0];
+        draw_tab_bar(
+            &mut buffer,
+            width,
+            theme,
+            layout,
+            titles,
+            active,
+            font,
+            &mut self.ui,
+        );
 
         let (cursor_row, cursor_col) = grid.cursor();
         let (cell_w, cell_h) = (self.cell_w, self.cell_h);
@@ -206,6 +275,60 @@ impl Renderer {
         }
 
         buffer.present().unwrap();
+    }
+}
+
+/// The tab bar. The tab on screen merges into the panel below it: the panel's
+/// color inside, the panel's outline around, and no line between them. The other
+/// tabs are only their names, dimmer, on the window's color.
+#[allow(clippy::too_many_arguments)]
+fn draw_tab_bar(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    titles: &[String],
+    active: usize,
+    font: &fontdue::Font,
+    ui: &mut UiText,
+) {
+    // Halfway between the text color and the window's: muted, still readable.
+    let dim = blend(theme.frame, theme.foreground, 128);
+    let b = layout.border;
+    for (i, (tab, title)) in layout.tabs(titles.len()).iter().zip(titles).enumerate() {
+        let color = if i == active {
+            // The outline, reaching `b` pixels down over the panel's top line…
+            fill_rect(pixels, width, tab.x, tab.y, tab.w, tab.h + b, theme.border);
+            // …and the inside, in the panel's color, covering that line: one shape.
+            let inner_w = tab.w.saturating_sub(2 * b);
+            fill_rect(
+                pixels,
+                width,
+                tab.x + b,
+                tab.y + b,
+                inner_w,
+                tab.h,
+                theme.background,
+            );
+            theme.foreground
+        } else {
+            dim
+        };
+        // The name, in the middle from top to bottom, cut off where the tab ends.
+        let x = tab.x + TAB_TEXT_PADDING;
+        let y = tab.y + tab.h.saturating_sub(ui.line_h) / 2;
+        let max_w = tab.w.saturating_sub(2 * TAB_TEXT_PADDING);
+        for (n, ch) in title.chars().enumerate() {
+            let left = x + n * ui.advance;
+            if left + ui.advance > x + max_w {
+                break;
+            }
+            let glyph = ui
+                .glyphs
+                .entry(ch)
+                .or_insert_with(|| font.rasterize(ch, UI_FONT_SIZE));
+            draw_glyph(pixels, width, glyph, ui.ascent, color, left, y);
+        }
     }
 }
 
