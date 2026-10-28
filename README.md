@@ -1,0 +1,98 @@
+# Kel
+
+A terminal emulator written in Rust, built to be a daily work tool.
+
+The goal: tabs, and **projects**, saved sets of tabs that remember their name, folder
+and startup command (say `nvim .` in one tab and `cargo run` in another), so a whole
+workspace opens in one go. See [ROADMAP.md](ROADMAP.md) for what's done and what's next.
+
+Kel runs on Windows for now. Linux and macOS are planned.
+
+## Build and run
+
+Needs Rust 1.88 or newer ([rustup.rs](https://rustup.rs)).
+
+```sh
+cargo run            # start Kel
+cargo test           # run the tests
+cargo build --release   # a fast build: target/release/kel-terminal.exe
+```
+
+## Shortcuts
+
+| Keys | What it does |
+|---|---|
+| Ctrl+= / Ctrl+- | Bigger / smaller font |
+| Ctrl+0 | Font size back to the one in the config |
+| Ctrl+, | Open the config file |
+| Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C) |
+| Ctrl+Shift+V | Paste |
+| Ctrl+C | Stop the running command |
+| Mouse drag | Select text |
+| Mouse wheel | Scroll back through earlier output |
+
+## Config
+
+The config file is `%APPDATA%\kel\config.toml`
+(e.g. `C:\Users\you\AppData\Roaming\kel\config.toml`).
+Kel creates it on the first start, with a comment for every setting.
+**Ctrl+,** opens it. Saved changes apply right away, unless the setting says otherwise.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `font` | `"Consolas"` | Font name, as Windows shows it in Settings > Fonts |
+| `font_size` | `18` | Font size in pixels |
+| `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
+
+A setting missing from the file keeps its default, so deleting a line resets it.
+To get the original file back with all its comments, delete it and restart Kel.
+
+### Use another font
+
+1. Install the font in Windows (open the `.ttf` file, click **Install**).
+2. Press **Ctrl+,** and set its name:
+   ```toml
+   font = "JetBrainsMono Nerd Font"
+   ```
+3. Save. The font changes at once.
+
+For the icons that nvim plugins show (file types, git), pick a
+[Nerd Font](https://www.nerdfonts.com). In kickstart.nvim, also set
+`vim.g.have_nerd_font = true` in `init.lua`.
+
+### Use another shell
+
+```toml
+shell = "pwsh.exe"   # PowerShell 7
+shell = "cmd.exe"
+```
+
+Then restart Kel.
+
+### When something is wrong
+
+- **At start:** Kel uses the default settings and shows the error in red at the top
+  of the window, e.g. a missing font or shell, or a typo in the file.
+- **After saving:** Kel keeps the settings it had and shows the error in the window
+  title, with the line and the reason. Fix the file and save again.
+
+## How the code is laid out
+
+```text
+ keyboard/mouse ──> app ──bytes──> pty (ConPTY) ──> powershell.exe
+                                                        │
+ window <── renderer <── term::Grid <── term::Terminal <┘ bytes (text + escape codes)
+           (pixels)      (cells)        (escape codes → Grid calls)
+```
+
+| File | What it does |
+|---|---|
+| `src/app.rs` | The window and all events: keys, mouse, resize. Owns everything else. |
+| `src/config.rs` | Reads `config.toml` |
+| `src/pty.rs` | Starts the shell inside a pseudo-terminal |
+| `src/term/terminal.rs` | Understands the escape codes the shell sends |
+| `src/term/grid.rs` | The screen as a grid of cells, plus scrollback |
+| `src/renderer.rs` | Turns the grid into pixels |
+| `examples/` | Small tools that print the raw bytes a program sends: `cargo run --example probe_nvim` |
+
+Each file starts with a comment that explains it in more detail.
