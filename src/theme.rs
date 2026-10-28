@@ -113,8 +113,9 @@ fn hex_palette<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[u32; 16], 
     let texts = <[String; 16]>::deserialize(deserializer)?;
     let mut palette = [0; 16];
     for (color, text) in palette.iter_mut().zip(&texts) {
-        *color = parse_hex(text)
-            .ok_or_else(|| D::Error::custom(format!("\"{text}\" is not a color like \"#ff8000\"")))?;
+        *color = parse_hex(text).ok_or_else(|| {
+            D::Error::custom(format!("\"{text}\" is not a color like \"#ff8000\""))
+        })?;
     }
     Ok(palette)
 }

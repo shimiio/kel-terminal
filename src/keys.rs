@@ -183,10 +183,19 @@ mod tests {
 
     #[test]
     fn tab_shortcuts() {
-        assert_eq!(shortcut(key(KeyCode::KeyT), CTRL_SHIFT), Some(Action::NewTab));
+        assert_eq!(
+            shortcut(key(KeyCode::KeyT), CTRL_SHIFT),
+            Some(Action::NewTab)
+        );
         assert_eq!(shortcut(key(KeyCode::Tab), CTRL), Some(Action::NextTab));
-        assert_eq!(shortcut(key(KeyCode::Tab), CTRL_SHIFT), Some(Action::PreviousTab));
-        assert_eq!(shortcut(key(KeyCode::Digit3), CTRL), Some(Action::GoToTab(3)));
+        assert_eq!(
+            shortcut(key(KeyCode::Tab), CTRL_SHIFT),
+            Some(Action::PreviousTab)
+        );
+        assert_eq!(
+            shortcut(key(KeyCode::Digit3), CTRL),
+            Some(Action::GoToTab(3))
+        );
         assert_eq!(shortcut(key(KeyCode::Digit9), CTRL), Some(Action::LastTab));
     }
 
@@ -203,7 +212,10 @@ mod tests {
         // Ctrl+T without Shift goes to the shell too (it has its own meaning there).
         assert_eq!(shortcut(key(KeyCode::KeyT), CTRL), None);
         // AltGr (Ctrl+Alt) types letters, it's never a shortcut.
-        assert_eq!(shortcut(key(KeyCode::KeyC), CTRL | ModifiersState::ALT), None);
+        assert_eq!(
+            shortcut(key(KeyCode::KeyC), CTRL | ModifiersState::ALT),
+            None
+        );
     }
 
     #[test]
@@ -212,7 +224,10 @@ mod tests {
         assert_eq!(paste_bytes("a\nb", true), b"\x1b[200~a\rb\x1b[201~");
         // A hidden end marker would let `rm -rf ~` run as if typed: it's removed.
         let evil = "echo hi\x1b[201~rm -rf ~\n";
-        assert_eq!(paste_bytes(evil, true), b"\x1b[200~echo hirm -rf ~\r\x1b[201~");
+        assert_eq!(
+            paste_bytes(evil, true),
+            b"\x1b[200~echo hirm -rf ~\r\x1b[201~"
+        );
     }
 
     #[test]
@@ -222,7 +237,10 @@ mod tests {
         assert_eq!(send(NamedKey::Backspace, ModifiersState::ALT), "\x1b\x7f");
         // Ctrl+Alt is AltGr: the typed letter goes as it is.
         let altgr = ModifiersState::ALT | ModifiersState::CONTROL;
-        assert_eq!(key_to_bytes(&Key::Character("@".into()), Some("@"), altgr).unwrap(), b"@");
+        assert_eq!(
+            key_to_bytes(&Key::Character("@".into()), Some("@"), altgr).unwrap(),
+            b"@"
+        );
         // Arrows already carry Alt in their number, no extra ESC.
         assert_eq!(send(NamedKey::ArrowUp, ModifiersState::ALT), "\x1b[1;3A");
     }
