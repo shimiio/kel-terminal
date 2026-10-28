@@ -43,7 +43,8 @@ Kel creates it on the first start, with a comment for every setting.
 | `font` | `"Consolas"` | Font name, as Windows shows it in Settings > Fonts |
 | `font_size` | `18` | Font size in pixels |
 | `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
-| `[colors]` | dark gray theme | Text, background, cursor, selection and the 16 basic colors |
+| `[layout]` | `margin = 8`, `border = 1`, `padding = 6` | Spaces around the terminal panel, in pixels |
+| `[colors]` | dark gray theme | Text, background, cursor, selection, frame, border and the 16 basic colors |
 
 A setting missing from the file keeps its default, so deleting a line resets it.
 To get the original file back with all its comments, delete it and restart Kel.
@@ -69,6 +70,21 @@ shell = "cmd.exe"
 ```
 
 Then restart Kel.
+
+### Change the spaces around the terminal
+
+The terminal is a panel inside the window. Three numbers, in pixels, set the spaces:
+
+```toml
+[layout]
+margin = 8    # window edge → panel
+border = 1    # the panel's line
+padding = 6   # panel's line → text
+```
+
+All three at `0`: the text fills the window, like a plain terminal.
+The colors of the window around the panel and of the line are `frame` and `border`
+in `[colors]`.
 
 ### Change the colors
 

@@ -11,6 +11,7 @@
 //! Lock it, use it, let the lock go. Locking it twice at once freezes the app (deadlock).
 
 use crate::config::{self, Config};
+use crate::layout::Layout;
 use crate::pty;
 use crate::renderer::{self, Fonts, Renderer};
 use crate::term::Terminal;
@@ -107,6 +108,8 @@ pub struct App {
     /// Loaded in `new`, so a font problem can be shown with the others;
     /// handed to the renderer in `resumed`.
     fonts: Option<Fonts>,
+    /// Where the panel and the text are in the window. Updated in `on_resize`.
+    layout: Layout,
 }
 
 impl App {
@@ -170,6 +173,7 @@ impl App {
             config,
             config_modified: config::modified(),
             fonts: Some(fonts),
+            layout: Layout::default(),
         })
     }
 
@@ -232,6 +236,10 @@ impl App {
                 }
                 if new.font_size != self.config.font_size {
                     self.set_font_size(new.font_size);
+                }
+                if new.layout != self.config.layout {
+                    self.config.layout = new.layout.clone();
+                    self.cell_size_changed(); // not the cell, but the room for cells
                 }
                 if new.colors != self.config.colors
                     && let Some(renderer) = &mut self.renderer
@@ -409,14 +417,16 @@ impl ApplicationHandler<UserEvent> for App {
         let attrs = Window::default_attributes().with_title("Kel");
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
         // The cell size comes from the font, which the renderer holds, and the renderer
-        // needs the window. So: window first, then renderer, then the 80x24 size.
+        // needs the window. So: window first, then renderer, then the size for
+        // 80x24 cells plus the spaces around them.
         let theme = self.config.colors.clone();
         let renderer = Renderer::new(window.clone(), fonts, self.config.font_size, theme).unwrap();
         let (cell_w, cell_h) = renderer.cell_size();
-        let size = PhysicalSize::new((COLS * cell_w) as u32, (ROWS * cell_h) as u32);
-        let _ = window.request_inner_size(size);
+        let (w, h) = self.config.layout.window_size(COLS * cell_w, ROWS * cell_h);
+        let _ = window.request_inner_size(PhysicalSize::new(w as u32, h as u32));
         self.renderer = Some(renderer);
         self.window = Some(window);
+        self.on_resize();
     }
 
     /// Our own events, sent by the reader thread.
@@ -487,6 +497,7 @@ impl App {
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
                 &self.terminal.lock().unwrap().grid,
+                &self.layout,
                 self.selection,
                 self.cursor_on,
             );
@@ -499,11 +510,13 @@ impl App {
         let (Some(renderer), Some(window)) = (&self.renderer, &self.window) else {
             return;
         };
-        // e.g. an 800x480 window with 10x20 cells: 80 cols, 24 rows.
         let size = window.inner_size();
+        self.layout = self.config.layout.layout(size.width as usize, size.height as usize);
+        // The grid gets as many cells as fit in the text area,
+        // e.g. 970x670 pixels with 11x24 cells: 88 cols, 27 rows.
         let (cell_w, cell_h) = renderer.cell_size();
-        let cols = size.width as usize / cell_w;
-        let rows = size.height as usize / cell_h;
+        let cols = self.layout.text.w / cell_w;
+        let rows = self.layout.text.h / cell_h;
 
         let mut terminal = self.terminal.lock().unwrap();
         let changed = (rows, cols) != (terminal.grid.rows(), terminal.grid.cols());
@@ -618,9 +631,12 @@ impl App {
             return;
         };
         let (cell_w, cell_h) = renderer.cell_size();
-        // Pixels to cells, e.g. x=235, y=47 with 10x21 cells: col 23, row 2.
-        let col = position.x as usize / cell_w;
-        let row = position.y as usize / cell_h;
+        // Pixels to cells, counted from where the text starts. e.g. the text at
+        // (15, 15), the mouse at (100, 60), 11x24 cells: (85, 45) → col 7, row 1.
+        // Left of or above the text, `saturating_sub` gives 0: the first col/row.
+        let text = self.layout.text;
+        let col = (position.x as usize).saturating_sub(text.x) / cell_w;
+        let row = (position.y as usize).saturating_sub(text.y) / cell_h;
         self.mouse_cell = (row, col);
 
         if self.selecting {

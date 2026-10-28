@@ -3,6 +3,7 @@
 //! On the first start Kel writes the default file, with a comment for every setting.
 //! A setting missing from the file keeps its default value.
 
+use crate::layout::Spacing;
 use crate::theme::Theme;
 use anyhow::Context;
 use serde::Deserialize;
@@ -28,6 +29,14 @@ font_size = 18
 # Applies after a restart.
 shell = "powershell.exe"
 
+# Spaces around the terminal, in pixels. The terminal is a panel inside the window:
+# margin (window edge → panel), border (the panel's line), padding (line → text).
+# All 0: the text fills the window, like a plain terminal.
+[layout]
+margin = 8
+border = 1
+padding = 6
+
 # Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
 # Programs that pick exact colors themselves (like nvim color schemes) don't use them.
 [colors]
@@ -35,6 +44,8 @@ foreground = "#d4d4d4"
 background = "#1e1e1e"
 cursor = "#808080"
 selection = "#264f78"
+frame = "#141414"    # the window around the panel
+border = "#333333"   # the panel's border line
 # 16 colors: black, red, green, yellow, blue, magenta, cyan, white,
 # then the bright versions of the same 8.
 palette = [
@@ -50,6 +61,7 @@ pub struct Config {
     pub font: String,
     pub font_size: f32,
     pub shell: String,
+    pub layout: Spacing,
     pub colors: Theme,
 }
 
@@ -59,6 +71,7 @@ impl Default for Config {
             font: "Consolas".to_string(),
             font_size: 18.0,
             shell: "powershell.exe".to_string(),
+            layout: Spacing::default(),
             colors: Theme::default(),
         }
     }

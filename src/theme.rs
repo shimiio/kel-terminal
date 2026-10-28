@@ -33,6 +33,12 @@ pub struct Theme {
     pub cursor: u32,
     #[serde(deserialize_with = "hex_color")]
     pub selection: u32,
+    /// The window around the terminal panel.
+    #[serde(deserialize_with = "hex_color")]
+    pub frame: u32,
+    /// The panel's border line.
+    #[serde(deserialize_with = "hex_color")]
+    pub border: u32,
     /// The 16 basic colors: 0-7 normal (codes 30-37), 8-15 bright (codes 90-97).
     #[serde(deserialize_with = "hex_palette")]
     pub palette: [u32; 16],
@@ -45,6 +51,8 @@ impl Default for Theme {
             background: 0x1e1e1e, // dark gray
             cursor: 0x808080,
             selection: 0x264f78, // blue
+            frame: 0x141414,     // a bit darker than the background
+            border: 0x333333,    // a bit lighter
             palette: [
                 0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00, 0x0037da, 0x881798, 0x3a96dd, 0xcccccc,
                 0x767676, 0xe74856, 0x16c60c, 0xf9f1a5, 0x3b78ff, 0xb4009e, 0x61d6d6, 0xf2f2f2,

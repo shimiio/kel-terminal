@@ -7,6 +7,7 @@
 //! - Every frame redraws everything: backgrounds, letters, cursor.
 
 use crate::app::Selection;
+use crate::layout::Layout;
 use crate::term::{CursorShape, Grid};
 use crate::theme::Theme;
 use anyhow::Context;
@@ -117,7 +118,13 @@ impl Renderer {
 
     /// Draws one frame. For each cell: 1. background (or selection blue),
     /// 2. the letter on top, 3. the cursor line on top of that.
-    pub fn draw(&mut self, grid: &Grid, selection: Option<Selection>, cursor_on: bool) {
+    pub fn draw(
+        &mut self,
+        grid: &Grid,
+        layout: &Layout,
+        selection: Option<Selection>,
+        cursor_on: bool,
+    ) {
         let size = self.window.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
@@ -125,8 +132,14 @@ impl Renderer {
         self.surface.resize(w, h).unwrap();
         let mut buffer = self.surface.buffer_mut().unwrap();
         let theme = &self.theme;
-        buffer.fill(theme.background);
         let width = size.width as usize;
+
+        // The window around the panel, the panel's border, the panel's background.
+        // Each one is painted over the one before, smaller.
+        buffer.fill(theme.frame);
+        let Layout { panel, inside, text } = *layout;
+        fill_rect(&mut buffer, width, panel.x, panel.y, panel.w, panel.h, theme.border);
+        fill_rect(&mut buffer, width, inside.x, inside.y, inside.w, inside.h, theme.background);
 
         let (cursor_row, cursor_col) = grid.cursor();
         let (cell_w, cell_h) = (self.cell_w, self.cell_h);
@@ -136,9 +149,9 @@ impl Renderer {
         // pass, the next cell's background would be painted over its right part.
         for backgrounds in [true, false] {
             for row in 0..grid.rows() {
-                let y = row * cell_h;
+                let y = text.y + row * cell_h;
                 for col in 0..grid.cols() {
-                    let x = col * cell_w;
+                    let x = text.x + col * cell_w;
 
                     let selected = selection.is_some_and(|s| s.contains(row, col));
                     let cell = grid.visible_cell(row, col);
@@ -197,8 +210,11 @@ impl Renderer {
 }
 
 fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: usize, color: u32) {
-    for py in y..y + h {
-        for px in x..x + w {
+    // Only the part inside the window: in a very small window the panel or the
+    // grid can stick out, and a pixel past the edge would land on the next row.
+    let height = pixels.len() / width;
+    for py in y..(y + h).min(height) {
+        for px in x..(x + w).min(width) {
             pixels[py * width + px] = color;
         }
     }
