@@ -26,6 +26,8 @@ pub struct Terminal {
     /// Answers to the program's questions (e.g. "where is the cursor?"), waiting
     /// to be sent back to it. The reader thread takes them after each chunk.
     pub replies: Vec<u8>,
+    /// The program asked for pasted text to be marked (`ESC[?2004h`), see `paste_bytes`.
+    pub bracketed_paste: bool,
 }
 
 impl Terminal {
@@ -33,6 +35,7 @@ impl Terminal {
         Terminal {
             grid: Grid::new(rows, cols),
             replies: Vec::new(),
+            bracketed_paste: false,
         }
     }
 
@@ -162,6 +165,8 @@ impl Perform for Terminal {
                 ('h', 25) => self.grid.cursor_visible = true,
                 ('h', 1049) => self.grid.enter_alt_screen(),
                 ('l', 1049) => self.grid.leave_alt_screen(),
+                ('h', 2004) => self.bracketed_paste = true,
+                ('l', 2004) => self.bracketed_paste = false,
                 _ => {}
             }
             return;
@@ -238,6 +243,13 @@ mod tests {
         assert_eq!(feed("\x1b[2;5H\x1b[6n").replies, b"\x1b[2;5R");
         assert_eq!(feed("\x1b[5n").replies, b"\x1b[0n");
         assert!(feed("hello").replies.is_empty());
+    }
+
+    #[test]
+    fn bracketed_paste_mode() {
+        assert!(!feed("").bracketed_paste);
+        assert!(feed("\x1b[?2004h").bracketed_paste);
+        assert!(!feed("\x1b[?2004h\x1b[?2004l").bracketed_paste);
     }
 
     #[test]

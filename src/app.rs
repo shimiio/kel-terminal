@@ -191,6 +191,21 @@ fn spawn_reader(
     });
 }
 
+/// The bytes to send for pasted text.
+/// - Every line break becomes `\r`, because the shell treats `\r` as Enter.
+/// - With bracketed paste on, the text goes between `ESC[200~` and `ESC[201~`, so the
+///   program knows it's pasted, not typed: it won't run the lines or indent them.
+///   An end marker hidden inside the text is removed, so it can't end the paste early.
+fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
+    let text = text.replace("\r\n", "\r").replace('\n', "\r");
+    if bracketed {
+        let text = text.replace("\x1b[201~", "");
+        format!("\x1b[200~{text}\x1b[201~").into_bytes()
+    } else {
+        text.into_bytes()
+    }
+}
+
 /// Translates a key press into the bytes a terminal would send to the shell.
 /// `None` means the key sends nothing (e.g. Shift alone).
 fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<Vec<u8>> {
@@ -396,9 +411,8 @@ impl App {
         // Ctrl+Shift+V: paste from the clipboard
         if ctrl && shift && event.physical_key == PhysicalKey::Code(KeyCode::KeyV) {
             if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-                // The shell treats `\r` as Enter, so every line break becomes `\r`.
-                let text = text.replace("\r\n", "\r").replace('\n', "\r");
-                self.send_to_shell(text.as_bytes());
+                let bracketed = self.terminal.lock().unwrap().bracketed_paste;
+                self.send_to_shell(&paste_bytes(&text, bracketed));
             }
             return;
         }
@@ -524,6 +538,15 @@ mod tests {
     fn send(key: NamedKey, mods: ModifiersState) -> String {
         let bytes = key_to_bytes(&Key::Named(key), None, mods).unwrap();
         String::from_utf8(bytes).unwrap()
+    }
+
+    #[test]
+    fn paste() {
+        assert_eq!(paste_bytes("a\r\nb\nc", false), b"a\rb\rc");
+        assert_eq!(paste_bytes("a\nb", true), b"\x1b[200~a\rb\x1b[201~");
+        // A hidden end marker would let `rm -rf ~` run as if typed: it's removed.
+        let evil = "echo hi\x1b[201~rm -rf ~\n";
+        assert_eq!(paste_bytes(evil, true), b"\x1b[200~echo hirm -rf ~\r\x1b[201~");
     }
 
     #[test]
