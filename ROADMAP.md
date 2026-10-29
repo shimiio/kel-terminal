@@ -67,6 +67,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 - [x] Tab/window title from OSC 0/2
 - [x] Tab icons: pixel art PNGs in `assets/icons/`, built into the binary, tinted with a color;
       picked by the program in the title (nvim, cargo...)
+- [x] Display scaling: the UI and the font follow Windows' scale (100%, 150%...),
+      `ui_scale` in the config on top; pixel art only at whole steps (×1, ×2, ×3)
 
 ## 5. Projects
 
@@ -111,8 +113,6 @@ Not decided, each one gets tried on screen first:
 - Pixel-art tab icons (made in Aseprite, PNG), outlines filled with the accent color
 - Pixel font for the UI: the Kel logo, the project name
 - Sidebar on the left (hover with a short delay, or a key): dims the rest, lists projects
-- Display scaling (DPI): font and pixel art must follow Windows' 125% / 150%;
-  pixel art only at whole steps (×2, ×3), or its pixels get uneven
 
 ## Fonts (to decide)
 

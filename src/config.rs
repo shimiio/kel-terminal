@@ -29,6 +29,11 @@ font_size = 18
 # Applies after a restart.
 shell = "powershell.exe"
 
+# The size of Kel's own UI (tabs, buttons, the spaces below), on top of Windows'
+# display scale (Settings > Display > Scale). e.g. 1.25: a quarter bigger.
+# The terminal's text has font_size for that.
+ui_scale = 1
+
 # Spaces around the terminal, in pixels. The terminal is a panel inside the window:
 # margin (window edge → panel), border (the panel's line), padding (line → text).
 # All 0: the text fills the window, like a plain terminal.
@@ -64,6 +69,7 @@ pub struct Config {
     pub font: String,
     pub font_size: f32,
     pub shell: String,
+    pub ui_scale: f32,
     pub layout: Spacing,
     pub colors: Theme,
 }
@@ -74,6 +80,7 @@ impl Default for Config {
             font: "Consolas".to_string(),
             font_size: 18.0,
             shell: "powershell.exe".to_string(),
+            ui_scale: 1.0,
             layout: Spacing::default(),
             colors: Theme::default(),
         }

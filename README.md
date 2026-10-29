@@ -51,6 +51,7 @@ Kel creates it on the first start, with a comment for every setting.
 | `font` | `"Consolas"` | Font name, as Windows shows it in Settings > Fonts |
 | `font_size` | `18` | Font size in pixels |
 | `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
+| `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
 | `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |
 | `[colors]` | dark gray theme | Text, background, cursor, selection, frame, border, the tab icons (`accent`) and the 16 basic colors |
 

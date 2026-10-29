@@ -8,7 +8,7 @@
 
 use crate::app::Selection;
 use crate::icons::{Icon, Icons};
-use crate::layout::{Layout, Rect, WindowButton};
+use crate::layout::{Layout, Rect, WindowButton, scaled};
 use crate::term::{CursorShape, Grid};
 use crate::theme::Theme;
 use anyhow::Context;
@@ -24,8 +24,9 @@ const CURSOR_HEIGHT: usize = 4;
 /// 0 = regular, 1 = bold, 2 = italic, 3 = bold italic.
 pub type Fonts = [fontdue::Font; 4];
 
-/// The size of the text in Kel's own UI (tab names), in pixels.
-/// It doesn't follow the terminal's zoom.
+/// The size of the text in Kel's own UI (tab names), in pixels at 100%.
+/// It doesn't follow the terminal's zoom. Sizes here are for 100% too; the UI's
+/// scale multiplies them (see `Ui::px`).
 const UI_FONT_SIZE: f32 = 14.0;
 /// Space between a tab's edge and its icon.
 const TAB_TEXT_PADDING: usize = 12;
@@ -68,6 +69,10 @@ pub struct Chrome<'a> {
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
 struct Ui {
+    /// The UI's scale, the same as the layout's.
+    scale: f32,
+    /// The icons' pixel art only grows by whole steps (see `set_scale`).
+    icon_scale: usize,
     /// How far each letter moves the pen (the font is monospaced).
     advance: usize,
     /// One line of text, top to bottom.
@@ -80,6 +85,8 @@ struct Ui {
 impl Ui {
     fn new(font: &fontdue::Font) -> anyhow::Result<Ui> {
         let mut ui = Ui {
+            scale: 1.0,
+            icon_scale: 1,
             advance: 0,
             line_h: 0,
             ascent: 0,
@@ -92,9 +99,29 @@ impl Ui {
 
     /// Measures the text for another font. The letters of the old one go.
     fn set_font(&mut self, font: &fontdue::Font) -> anyhow::Result<()> {
-        (self.advance, self.line_h, self.ascent) = measure_cell(font, UI_FONT_SIZE)?;
+        (self.advance, self.line_h, self.ascent) = measure_cell(font, self.font_size())?;
         self.glyphs.clear();
         Ok(())
+    }
+
+    /// A new scale: the text is measured again at its new size.
+    fn set_scale(&mut self, font: &fontdue::Font, scale: f32) -> anyhow::Result<()> {
+        self.scale = scale;
+        // Pixel art gets uneven at 1.5: of 16 pixels, every other one would be
+        // 2 wide and the rest 1. So whole steps only, rounded down: ×1 up to
+        // 199%, ×2 from 200%, ×3 from 300%.
+        self.icon_scale = (scale.floor() as usize).max(1);
+        self.set_font(font)
+    }
+
+    /// The UI text's size in pixels, e.g. 14 at 100%, 21 at 150%.
+    fn font_size(&self) -> f32 {
+        UI_FONT_SIZE * self.scale
+    }
+
+    /// `n` pixels at 100%, at this scale.
+    fn px(&self, n: usize) -> usize {
+        scaled(n, self.scale)
     }
 }
 
@@ -103,7 +130,11 @@ pub struct Renderer {
     /// The window's pixels, which we draw into.
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
     fonts: Fonts,
+    /// The terminal's font size at 100%: the config's, or zoomed.
     font_size: f32,
+    /// Windows' display scale, e.g. 1.5 at 150%. The font is drawn
+    /// `font_size * text_scale` pixels big, so it looks the same size on any display.
+    text_scale: f32,
     /// One cell in pixels.
     cell_w: usize,
     cell_h: usize,
@@ -124,6 +155,7 @@ impl Renderer {
         window: Rc<Window>,
         fonts: Fonts,
         font_size: f32,
+        text_scale: f32,
         theme: Theme,
     ) -> anyhow::Result<Self> {
         let context =
@@ -133,7 +165,7 @@ impl Renderer {
 
         // All 4 styles share the same sizes, so measuring the regular one is enough.
         let font_size = font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
-        let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], font_size)?;
+        let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], font_size * text_scale)?;
         let ui = Ui::new(&fonts[0])?;
 
         Ok(Renderer {
@@ -141,6 +173,7 @@ impl Renderer {
             surface,
             fonts,
             font_size,
+            text_scale,
             cell_w,
             cell_h,
             ascent,
@@ -163,7 +196,7 @@ impl Renderer {
     pub fn set_font_size(&mut self, size: f32) {
         let size = size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         // Can only fail for a font without line metrics, and `new` already checked that.
-        if let Ok((cell_w, cell_h, ascent)) = measure_cell(&self.fonts[0], size) {
+        if let Ok((cell_w, cell_h, ascent)) = measure_cell(&self.fonts[0], size * self.text_scale) {
             self.font_size = size;
             self.cell_w = cell_w;
             self.cell_h = cell_h;
@@ -171,6 +204,13 @@ impl Renderer {
             // The cached letters have the old size.
             self.glyphs.clear();
         }
+    }
+
+    /// A new display scale (the window moved to another display, or Windows'
+    /// setting changed). Like a size change: call `App::on_resize` after this.
+    pub fn set_text_scale(&mut self, scale: f32) {
+        self.text_scale = scale;
+        self.set_font_size(self.font_size);
     }
 
     /// New colors. The cells keep which color they want, so the next frame
@@ -203,6 +243,10 @@ impl Renderer {
             return;
         };
         self.surface.resize(w, h).unwrap();
+        // The UI follows the layout's scale, which `App::on_resize` sets.
+        if layout.scale != self.ui.scale {
+            let _ = self.ui.set_scale(&self.fonts[0], layout.scale);
+        }
         let mut buffer = self.surface.buffer_mut().unwrap();
         let theme = &self.theme;
         let width = size.width as usize;
@@ -260,6 +304,9 @@ impl Renderer {
 
         let (cursor_row, cursor_col) = grid.cursor();
         let (cell_w, cell_h) = (self.cell_w, self.cell_h);
+        // Lines around the text (underline, cursor) grow with the text.
+        let text_scale = self.text_scale;
+        let text_px = |n: usize| scaled(n, text_scale);
 
         // Two passes over the grid: first all backgrounds, then all letters on top.
         // A letter can be wider than its cell (Nerd Font icons are ~1.5 cells). In one
@@ -296,7 +343,7 @@ impl Renderer {
                     if cell.ch != ' ' {
                         let style = cell.bold as usize + 2 * cell.italic as usize;
                         let font = &self.fonts[style];
-                        let size = self.font_size;
+                        let size = self.font_size * self.text_scale;
                         // Already in the cache: take it. Not yet: rasterize, store, take.
                         let glyph = self
                             .glyphs
@@ -306,14 +353,14 @@ impl Renderer {
                     }
 
                     if cell.underline {
-                        let underline_y = y + self.ascent as usize + 2;
-                        fill_rect(&mut buffer, width, x, underline_y, cell_w, 1, fg);
+                        let underline_y = y + self.ascent as usize + text_px(2);
+                        fill_rect(&mut buffer, width, x, underline_y, cell_w, text_px(1), fg);
                     }
 
                     if is_cursor {
                         let (w, h) = match grid.cursor_shape {
-                            CursorShape::Underline => (cell_w, CURSOR_HEIGHT),
-                            CursorShape::Bar => (2, cell_h),
+                            CursorShape::Underline => (cell_w, text_px(CURSOR_HEIGHT)),
+                            CursorShape::Bar => (text_px(2), cell_h),
                             CursorShape::Block => continue, // drawn: the swapped colors above
                         };
                         fill_rect(&mut buffer, width, x, y + cell_h - h, w, h, theme.cursor);
@@ -367,29 +414,32 @@ fn draw_tab_bar(
         // the accent color (or its own colors); a muted tab, in the muted gray
         // of its name.
         let icon = ui.icons.get(label.icon);
-        let icon_x = tab.x + TAB_TEXT_PADDING;
-        let icon_y = tab.y + tab.h.saturating_sub(icon.h) / 2;
+        let (icon_w, icon_h) = (icon.w * ui.icon_scale, icon.h * ui.icon_scale);
+        let padding = ui.px(TAB_TEXT_PADDING);
+        let icon_x = tab.x + padding;
+        let icon_y = tab.y + tab.h.saturating_sub(icon_h) / 2;
         let tint = match (on_screen, icon.tinted) {
             (true, true) => Some(theme.accent),
             (true, false) => None,
             (false, _) => Some(dim),
         };
-        draw_icon(pixels, width, icon, tint, icon_x, icon_y);
+        draw_icon(pixels, width, icon, ui.icon_scale, tint, icon_x, icon_y);
 
-        let mut max_w = tab
-            .w
-            .saturating_sub(2 * TAB_TEXT_PADDING + icon.w + ICON_GAP);
+        let gap = ui.px(ICON_GAP);
+        let mut max_w = tab.w.saturating_sub(2 * padding + icon_w + gap);
         // The dot: at the right end, in the text's full color.
         if label.activity {
-            let cx = (tab.x + tab.w - TAB_TEXT_PADDING) as f32 - DOT_RADIUS;
+            let radius = DOT_RADIUS * ui.scale;
+            let cx = (tab.x + tab.w - padding) as f32 - radius;
             let cy = tab.y as f32 + tab.h as f32 / 2.0;
-            fill_circle(pixels, width, cx, cy, DOT_RADIUS, theme.foreground);
+            fill_circle(pixels, width, cx, cy, radius, theme.foreground);
             // A long name stops before the dot, with a dot's width between them.
-            max_w = max_w.saturating_sub((4.0 * DOT_RADIUS) as usize);
+            max_w = max_w.saturating_sub((4.0 * radius) as usize);
         }
         // The name, in the middle from top to bottom, cut off where the tab ends.
-        let x = icon_x + icon.w + ICON_GAP;
+        let x = icon_x + icon_w + gap;
         let y = tab.y + tab.h.saturating_sub(ui.line_h) / 2;
+        let size = ui.font_size();
         for (n, ch) in label.title.chars().enumerate() {
             let left = x + n * ui.advance;
             if left + ui.advance > x + max_w {
@@ -398,7 +448,7 @@ fn draw_tab_bar(
             let glyph = ui
                 .glyphs
                 .entry(ch)
-                .or_insert_with(|| font.rasterize(ch, UI_FONT_SIZE));
+                .or_insert_with(|| font.rasterize(ch, size));
             draw_glyph(pixels, width, glyph, ui.ascent, color, left, y);
         }
     }
@@ -427,35 +477,35 @@ fn draw_window_buttons(
         };
         fill_rect(pixels, width, rect.x, rect.y, rect.w, rect.h, bg);
 
-        // The icon: 10x10 pixels in the middle of the button.
+        // The icon: 10x10 pixels at 100%, in the middle of the button, with
+        // lines `t` thick (1 pixel at 100%, 2 at 200%).
+        let s = |n: usize| scaled(n, layout.scale);
+        let (n, t) = (s(10), s(1));
         let (x, y) = (
-            (rect.x + rect.w / 2).saturating_sub(5),
-            (rect.y + rect.h / 2).saturating_sub(5),
+            (rect.x + rect.w / 2).saturating_sub(n / 2),
+            (rect.y + rect.h / 2).saturating_sub(n / 2),
         );
         match button {
-            WindowButton::Minimize => fill_rect(pixels, width, x, y + 5, 10, 1, fg),
+            WindowButton::Minimize => fill_rect(pixels, width, x, y + n / 2, n, t, fg),
             WindowButton::Maximize if chrome.maximized => {
                 // "Restore": a square, and the corner of another one behind it.
-                outline(
-                    pixels,
-                    width,
-                    Rect {
-                        x,
-                        y: y + 2,
-                        w: 8,
-                        h: 8,
-                    },
-                    fg,
-                );
-                fill_rect(pixels, width, x + 2, y, 8, 1, fg);
-                fill_rect(pixels, width, x + 9, y, 1, 8, fg);
+                let (offset, side) = (s(2), s(8));
+                let front = Rect {
+                    x,
+                    y: y + offset,
+                    w: side,
+                    h: side,
+                };
+                outline(pixels, width, front, t, fg);
+                fill_rect(pixels, width, x + offset, y, side, t, fg);
+                fill_rect(pixels, width, x + n - t, y, t, side, fg);
             }
-            WindowButton::Maximize => outline(pixels, width, Rect { x, y, w: 10, h: 10 }, fg),
+            WindowButton::Maximize => outline(pixels, width, Rect { x, y, w: n, h: n }, t, fg),
             WindowButton::Close => {
-                // An X: two diagonals, one pixel per row.
-                for i in 0..10 {
-                    fill_rect(pixels, width, x + i, y + i, 1, 1, fg);
-                    fill_rect(pixels, width, x + 9 - i, y + i, 1, 1, fg);
+                // An X: two diagonals, a t x t square per row.
+                for i in 0..=(n - t) {
+                    fill_rect(pixels, width, x + i, y + i, t, t, fg);
+                    fill_rect(pixels, width, x + n - t - i, y + i, t, t, fg);
                 }
             }
         }
@@ -481,14 +531,15 @@ fn draw_status(
     let end = bar.x + bar.w;
     let x = end.saturating_sub(text_w);
     // The window's color behind it, so tabs under it don't show through.
-    let back = x.saturating_sub(TAB_TEXT_PADDING);
+    let back = x.saturating_sub(ui.px(TAB_TEXT_PADDING));
     fill_rect(pixels, width, back, bar.y, end - back, bar.h, theme.frame);
     let y = bar.y + bar.h.saturating_sub(ui.line_h) / 2;
+    let size = ui.font_size();
     for (n, ch) in shown.chars().enumerate() {
         let glyph = ui
             .glyphs
             .entry(ch)
-            .or_insert_with(|| font.rasterize(ch, UI_FONT_SIZE));
+            .or_insert_with(|| font.rasterize(ch, size));
         draw_glyph(
             pixels,
             width,
@@ -501,12 +552,12 @@ fn draw_status(
     }
 }
 
-/// A rectangle's outline, one pixel thick.
-fn outline(pixels: &mut [u32], width: usize, r: Rect, color: u32) {
-    fill_rect(pixels, width, r.x, r.y, r.w, 1, color); // top
-    fill_rect(pixels, width, r.x, r.y + r.h - 1, r.w, 1, color); // bottom
-    fill_rect(pixels, width, r.x, r.y, 1, r.h, color); // left
-    fill_rect(pixels, width, r.x + r.w - 1, r.y, 1, r.h, color); // right
+/// A rectangle's outline, `t` pixels thick.
+fn outline(pixels: &mut [u32], width: usize, r: Rect, t: usize, color: u32) {
+    fill_rect(pixels, width, r.x, r.y, r.w, t, color); // top
+    fill_rect(pixels, width, r.x, r.y + r.h - t, r.w, t, color); // bottom
+    fill_rect(pixels, width, r.x, r.y, t, r.h, color); // left
+    fill_rect(pixels, width, r.x + r.w - t, r.y, t, r.h, color); // right
 }
 
 fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: usize, color: u32) {
@@ -521,14 +572,28 @@ fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: 
 }
 
 /// Draws `icon` with its top-left corner at (x, y), tinted (see `Icon::pixel`).
-fn draw_icon(pixels: &mut [u32], width: usize, icon: &Icon, tint: Option<u32>, x: usize, y: usize) {
+/// Each of its pixels becomes a `k` x `k` square: at ×2, a 16x16 icon is 32x32.
+fn draw_icon(
+    pixels: &mut [u32],
+    width: usize,
+    icon: &Icon,
+    k: usize,
+    tint: Option<u32>,
+    x: usize,
+    y: usize,
+) {
     let height = pixels.len() / width;
-    for iy in 0..icon.h.min(height.saturating_sub(y)) {
-        for ix in 0..icon.w.min(width.saturating_sub(x)) {
+    for iy in 0..icon.h {
+        for ix in 0..icon.w {
             let (color, alpha) = icon.pixel(ix, iy, tint);
-            if alpha > 0 {
-                let pixel = &mut pixels[(y + iy) * width + x + ix];
-                *pixel = blend(*pixel, color, alpha as u32);
+            if alpha == 0 {
+                continue;
+            }
+            for py in (y + iy * k..y + (iy + 1) * k).take_while(|&py| py < height) {
+                for px in (x + ix * k..x + (ix + 1) * k).take_while(|&px| px < width) {
+                    let pixel = &mut pixels[py * width + px];
+                    *pixel = blend(*pixel, color, alpha as u32);
+                }
             }
         }
     }

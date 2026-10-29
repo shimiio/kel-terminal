@@ -157,6 +157,8 @@ impl App {
                 )?
             }
         };
+        // No window yet: the real layout comes with the first `on_resize`.
+        let layout = config.layout.layout(0, 0, 1.0);
 
         Ok(App {
             window: None,
@@ -180,7 +182,7 @@ impl App {
             config,
             config_modified: config::modified(),
             fonts: Some(fonts),
-            layout: Layout::default(),
+            layout,
             hovered: None,
             last_click: None,
             quit: false,
@@ -309,6 +311,16 @@ impl App {
         self.cell_size_changed();
     }
 
+    /// The UI's scale: Windows' display scale times the config's `ui_scale`,
+    /// e.g. 1.5 (150%) x 1 = 1.5. Kept between a quarter and 4 times the size.
+    fn ui_scale(&self) -> f32 {
+        let display = self
+            .window
+            .as_ref()
+            .map_or(1.0, |w| w.scale_factor() as f32);
+        (display * self.config.ui_scale).clamp(0.25, 4.0)
+    }
+
     /// After the cell got a new size: fit the grid to the window again.
     fn cell_size_changed(&mut self) {
         // The selection points at cells that move around when the grid changes size.
@@ -340,8 +352,9 @@ impl App {
                 if new.font_size != self.config.font_size {
                     self.set_font_size(new.font_size);
                 }
-                if new.layout != self.config.layout {
+                if new.layout != self.config.layout || new.ui_scale != self.config.ui_scale {
                     self.config.layout = new.layout.clone();
+                    self.config.ui_scale = new.ui_scale;
                     self.cell_size_changed(); // not the cell, but the room for cells
                 }
                 if new.colors != self.config.colors
@@ -459,12 +472,18 @@ impl ApplicationHandler<UserEvent> for App {
         // needs the window. So: window first, then renderer, then the size for
         // 80x24 cells plus the spaces around them.
         let theme = self.config.colors.clone();
-        let renderer = Renderer::new(window.clone(), fonts, self.config.font_size, theme).unwrap();
+        let text_scale = window.scale_factor() as f32;
+        let font_size = self.config.font_size;
+        let renderer = Renderer::new(window.clone(), fonts, font_size, text_scale, theme).unwrap();
         let (cell_w, cell_h) = renderer.cell_size();
-        let (w, h) = self.config.layout.window_size(COLS * cell_w, ROWS * cell_h);
+        self.window = Some(window.clone());
+        let ui_scale = self.ui_scale();
+        let (w, h) = self
+            .config
+            .layout
+            .window_size(COLS * cell_w, ROWS * cell_h, ui_scale);
         let _ = window.request_inner_size(PhysicalSize::new(w as u32, h as u32));
         self.renderer = Some(renderer);
-        self.window = Some(window);
         self.on_resize();
     }
 
@@ -505,6 +524,14 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => self.on_redraw(),
             WindowEvent::Resized(_) => self.on_resize(),
+            // The window moved to a display with another scale (or the setting changed).
+            // Windows then resizes the window too, and `Resized` follows.
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.set_text_scale(scale_factor as f32);
+                }
+                self.cell_size_changed();
+            }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 self.on_key(event)
@@ -586,10 +613,11 @@ impl App {
             return;
         };
         let size = window.inner_size();
+        let scale = self.ui_scale();
         self.layout = self
             .config
             .layout
-            .layout(size.width as usize, size.height as usize);
+            .layout(size.width as usize, size.height as usize, scale);
         // The grid gets as many cells as fit in the text area,
         // e.g. 970x670 pixels with 11x24 cells: 88 cols, 27 rows.
         let (cell_w, cell_h) = renderer.cell_size();

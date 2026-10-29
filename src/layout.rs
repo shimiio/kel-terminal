@@ -16,6 +16,9 @@
 //!
 //! The sizes come from the `[layout]` part of the config, so trying another look
 //! means changing numbers there.
+//!
+//! All sizes are for a 100% display. The layout multiplies them by the UI's scale
+//! (see `scaled`): at Windows' 150%, a 32-pixel tab bar is 48 pixels tall.
 
 use serde::Deserialize;
 use winit::window::ResizeDirection;
@@ -29,6 +32,15 @@ const RESIZE_CORNER: usize = 12;
 const BUTTON_WIDTH: usize = 46;
 /// Space between the last tab and the window buttons.
 const BUTTONS_GAP: usize = 8;
+
+/// `n` pixels of a 100% display at `scale`, e.g. 32 at 1.5 → 48. Never thinner
+/// than one pixel: a 1-pixel line at 0.75 stays 1, not 0.
+pub fn scaled(n: usize, scale: f32) -> usize {
+    if n == 0 {
+        return 0;
+    }
+    ((n as f32 * scale).round() as usize).max(1)
+}
 
 /// The buttons in the top-right corner, in place of the Windows title bar's.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -94,8 +106,11 @@ impl Default for Spacing {
 }
 
 /// Where everything is, for one window size.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Layout {
+    /// The UI's scale: Windows' display scale times `ui_scale` from the config.
+    /// The renderer sizes its own things (tab names, icons) by it too.
+    pub scale: f32,
     /// The whole window.
     pub window: Rect,
     /// Everything above the panel, from the window's top edge: Kel's own title bar.
@@ -119,8 +134,11 @@ pub struct Layout {
 }
 
 impl Spacing {
-    /// The layout for a window of `width` x `height` pixels.
-    pub fn layout(&self, width: usize, height: usize) -> Layout {
+    /// The layout for a window of `width` x `height` pixels, at `scale`.
+    pub fn layout(&self, width: usize, height: usize, scale: f32) -> Layout {
+        let s = |n: usize| scaled(n, scale);
+        let (margin, border, padding) = (s(self.margin), s(self.border), s(self.padding));
+        let tab_height = s(self.tab_height);
         let window = Rect {
             x: 0,
             y: 0,
@@ -128,25 +146,26 @@ impl Spacing {
             h: height,
         };
         // Inside the margin: the tab bar on top, the panel below it.
-        let area = window.shrink(self.margin);
+        let area = window.shrink(margin);
 
         // The title bar: from the window's top edge to the panel.
         let title_bar = Rect {
-            h: (self.margin + self.tab_height).min(height),
+            h: (margin + tab_height).min(height),
             ..window
         };
         // The buttons fill its right end, right up to the window's corner
         // (easy to hit: the mouse stops at the screen's edge).
+        let button_w = s(BUTTON_WIDTH);
         let button = |n: usize| Rect {
-            x: width.saturating_sub(n * BUTTON_WIDTH),
-            w: BUTTON_WIDTH,
+            x: width.saturating_sub(n * button_w),
+            w: button_w,
             ..title_bar
         };
         let (minimize, maximize, close) = (button(3), button(2), button(1));
         // The tabs get the rest, up to a small gap before the buttons.
         let tab_bar = Rect {
-            w: minimize.x.saturating_sub(BUTTONS_GAP + area.x),
-            h: self.tab_height.min(area.h),
+            w: minimize.x.saturating_sub(s(BUTTONS_GAP) + area.x),
+            h: tab_height.min(area.h),
             ..area
         };
         let panel = Rect {
@@ -154,9 +173,10 @@ impl Spacing {
             h: area.h - tab_bar.h,
             ..area
         };
-        let inside = panel.shrink(self.border);
-        let text = inside.shrink(self.padding);
+        let inside = panel.shrink(border);
+        let text = inside.shrink(padding);
         Layout {
+            scale,
             window,
             title_bar,
             tab_bar,
@@ -166,15 +186,16 @@ impl Spacing {
             panel,
             inside,
             text,
-            border: self.border,
-            tab_width: self.tab_width,
+            border,
+            tab_width: s(self.tab_width),
         }
     }
 
     /// The window size that leaves exactly `text_w` x `text_h` pixels for the text.
-    pub fn window_size(&self, text_w: usize, text_h: usize) -> (usize, usize) {
-        let edge = self.margin + self.border + self.padding;
-        (text_w + 2 * edge, text_h + 2 * edge + self.tab_height)
+    pub fn window_size(&self, text_w: usize, text_h: usize, scale: f32) -> (usize, usize) {
+        let s = |n: usize| scaled(n, scale);
+        let edge = s(self.margin) + s(self.border) + s(self.padding);
+        (text_w + 2 * edge, text_h + 2 * edge + s(self.tab_height))
     }
 }
 
@@ -182,25 +203,28 @@ impl Layout {
     /// Which way the window resizes when dragged at (x, y): near an edge or a
     /// corner, `Some`. Without the Windows title bar, Kel decides this itself.
     pub fn resize_edge(&self, x: usize, y: usize) -> Option<ResizeDirection> {
+        let (edge, corner_size) = (
+            scaled(RESIZE_EDGE, self.scale),
+            scaled(RESIZE_CORNER, self.scale),
+        );
         // How far the mouse is from each edge, in pixels.
         let left = x;
         let top = y;
         let right = self.window.w.saturating_sub(x + 1);
         let bottom = self.window.h.saturating_sub(y + 1);
         // Close to one edge, and not far along the other: a corner.
-        let corner = |a: usize, b: usize| {
-            a < RESIZE_CORNER && b < RESIZE_CORNER && (a < RESIZE_EDGE || b < RESIZE_EDGE)
-        };
+        let corner =
+            |a: usize, b: usize| a < corner_size && b < corner_size && (a < edge || b < edge);
         use ResizeDirection::*;
         Some(match () {
             _ if corner(top, left) => NorthWest,
             _ if corner(top, right) => NorthEast,
             _ if corner(bottom, left) => SouthWest,
             _ if corner(bottom, right) => SouthEast,
-            _ if top < RESIZE_EDGE => North,
-            _ if bottom < RESIZE_EDGE => South,
-            _ if left < RESIZE_EDGE => West,
-            _ if right < RESIZE_EDGE => East,
+            _ if top < edge => North,
+            _ if bottom < edge => South,
+            _ if left < edge => West,
+            _ if right < edge => East,
             _ => return None,
         })
     }
@@ -240,7 +264,7 @@ mod tests {
 
     #[test]
     fn tab_bar_panel_and_text_inside_the_window() {
-        let layout = Spacing::default().layout(1000, 700);
+        let layout = Spacing::default().layout(1000, 700, 1.0);
         // margin 8, then the tab bar, 32 tall. It ends 8 pixels before the
         // 3 buttons (3 x 46 = 138): 1000 - 138 - 8 - 8 = 846 wide.
         assert_eq!(
@@ -285,8 +309,26 @@ mod tests {
     }
 
     #[test]
+    fn everything_bigger_at_150_percent() {
+        let layout = Spacing::default().layout(1500, 1050, 1.5);
+        // margin 8 → 12, tab bar 32 → 48, buttons 46 → 69 wide
+        assert_eq!((layout.tab_bar.y, layout.tab_bar.h), (12, 48));
+        assert_eq!(layout.close.w, 69);
+        // border 1 → 2 (1.5 rounds up), padding 6 → 9: text at 12 + 2 + 9 = 23
+        assert_eq!(layout.text.x, 23);
+        assert_eq!(layout.tabs(1)[0].w, 270); // 180 → 270
+    }
+
+    #[test]
+    fn scaled_lines_stay_visible() {
+        assert_eq!(scaled(1, 0.75), 1);
+        assert_eq!(scaled(0, 2.0), 0);
+        assert_eq!(scaled(32, 1.25), 40);
+    }
+
+    #[test]
     fn tabs_side_by_side() {
-        let layout = Spacing::default().layout(1000, 700);
+        let layout = Spacing::default().layout(1000, 700, 1.0);
         let tabs = layout.tabs(3);
         assert_eq!(
             tabs[0],
@@ -307,7 +349,7 @@ mod tests {
 
     #[test]
     fn resize_edges() {
-        let layout = Spacing::default().layout(1000, 700);
+        let layout = Spacing::default().layout(1000, 700, 1.0);
         assert_eq!(layout.resize_edge(0, 300), Some(ResizeDirection::West));
         assert_eq!(layout.resize_edge(999, 300), Some(ResizeDirection::East));
         assert_eq!(layout.resize_edge(500, 698), Some(ResizeDirection::South));
@@ -320,7 +362,7 @@ mod tests {
 
     #[test]
     fn window_buttons() {
-        let layout = Spacing::default().layout(1000, 700);
+        let layout = Spacing::default().layout(1000, 700, 1.0);
         assert_eq!(layout.button_at(990, 5), Some(WindowButton::Close));
         assert_eq!(layout.button_at(940, 20), Some(WindowButton::Maximize));
         assert_eq!(layout.button_at(870, 20), Some(WindowButton::Minimize));
@@ -331,14 +373,16 @@ mod tests {
     #[test]
     fn window_size_fits_the_text() {
         let spacing = Spacing::default();
-        let (w, h) = spacing.window_size(800, 480);
-        assert_eq!(spacing.layout(w, h).text.w, 800);
-        assert_eq!(spacing.layout(w, h).text.h, 480);
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let (w, h) = spacing.window_size(800, 480, scale);
+            let text = spacing.layout(w, h, scale).text;
+            assert_eq!((text.w, text.h), (800, 480), "at {scale}");
+        }
     }
 
     #[test]
     fn tiny_window_gives_empty_text() {
-        let layout = Spacing::default().layout(20, 20);
+        let layout = Spacing::default().layout(20, 20, 1.0);
         assert_eq!((layout.text.w, layout.text.h), (0, 0));
     }
 }
