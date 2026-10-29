@@ -15,6 +15,7 @@ arboard = "3.7.0"
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.1.8"
 fontdb = "0.24.0"
+png = "0.18.1"
 
 # Debug builds: optimize the libraries (fontdue rasterizing was ~35x slower without it),
 # keep our own code lightly optimized so it still compiles fast.

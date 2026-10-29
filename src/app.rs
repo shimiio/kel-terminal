@@ -557,6 +557,7 @@ impl App {
             .iter()
             .map(|tab| TabLabel {
                 title: &tab.title,
+                icon: tab.icon,
                 activity: tab.activity,
             })
             .collect();

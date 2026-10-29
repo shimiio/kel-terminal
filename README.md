@@ -52,7 +52,7 @@ Kel creates it on the first start, with a comment for every setting.
 | `font_size` | `18` | Font size in pixels |
 | `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
 | `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |
-| `[colors]` | dark gray theme | Text, background, cursor, selection, frame, border and the 16 basic colors |
+| `[colors]` | dark gray theme | Text, background, cursor, selection, frame, border, the tab icons (`accent`) and the 16 basic colors |
 
 A setting missing from the file keeps its default, so deleting a line resets it.
 To get the original file back with all its comments, delete it and restart Kel.
@@ -143,6 +143,7 @@ color schemes, don't use them.
 | `src/layout.rs` | Where the terminal panel goes in the window |
 | `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
 | `src/config.rs` | Reads `config.toml` |
+| `src/icons.rs` | The tab icons (`assets/icons/*.png`, built into the .exe) and which tab gets which |
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |

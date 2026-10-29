@@ -773,6 +773,7 @@ dependencies = [
  "arboard",
  "fontdb",
  "fontdue",
+ "png",
  "portable-pty",
  "serde",
  "softbuffer",

@@ -7,6 +7,7 @@
 //! - Every frame redraws everything: backgrounds, letters, cursor.
 
 use crate::app::Selection;
+use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, WindowButton};
 use crate::term::{CursorShape, Grid};
 use crate::theme::Theme;
@@ -26,8 +27,10 @@ pub type Fonts = [fontdue::Font; 4];
 /// The size of the text in Kel's own UI (tab names), in pixels.
 /// It doesn't follow the terminal's zoom.
 const UI_FONT_SIZE: f32 = 14.0;
-/// Space between a tab's edge and its name.
+/// Space between a tab's edge and its icon.
 const TAB_TEXT_PADDING: usize = 12;
+/// Space between a tab's icon and its name.
+const ICON_GAP: usize = 8;
 /// The activity dot on a tab: its radius, in pixels.
 const DOT_RADIUS: f32 = 3.0;
 /// The close button under the mouse: the red of Windows' own.
@@ -43,6 +46,8 @@ type Glyph = (fontdue::Metrics, Vec<u8>);
 /// One tab, as the tab bar shows it.
 pub struct TabLabel<'a> {
     pub title: &'a str,
+    /// The icon's name, see `icons::for_title`.
+    pub icon: &'a str,
     /// New output since the tab was last on screen: a dot.
     pub activity: bool,
 }
@@ -61,25 +66,35 @@ pub struct Chrome<'a> {
     pub status: Option<&'a str>,
 }
 
-/// Text in Kel's own UI, like the tab names: one size, its own glyph cache.
-struct UiText {
+/// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
+struct Ui {
     /// How far each letter moves the pen (the font is monospaced).
     advance: usize,
     /// One line of text, top to bottom.
     line_h: usize,
     ascent: i32,
     glyphs: HashMap<char, Glyph>,
+    icons: Icons,
 }
 
-impl UiText {
-    fn new(font: &fontdue::Font) -> anyhow::Result<UiText> {
-        let (advance, line_h, ascent) = measure_cell(font, UI_FONT_SIZE)?;
-        Ok(UiText {
-            advance,
-            line_h,
-            ascent,
+impl Ui {
+    fn new(font: &fontdue::Font) -> anyhow::Result<Ui> {
+        let mut ui = Ui {
+            advance: 0,
+            line_h: 0,
+            ascent: 0,
             glyphs: HashMap::new(),
-        })
+            icons: Icons::load(),
+        };
+        ui.set_font(font)?;
+        Ok(ui)
+    }
+
+    /// Measures the text for another font. The letters of the old one go.
+    fn set_font(&mut self, font: &fontdue::Font) -> anyhow::Result<()> {
+        (self.advance, self.line_h, self.ascent) = measure_cell(font, UI_FONT_SIZE)?;
+        self.glyphs.clear();
+        Ok(())
     }
 }
 
@@ -101,7 +116,7 @@ pub struct Renderer {
     glyphs: HashMap<(char, usize), Glyph>,
     /// Turns the colors in the cells into pixels.
     theme: Theme,
-    ui: UiText,
+    ui: Ui,
 }
 
 impl Renderer {
@@ -119,7 +134,7 @@ impl Renderer {
         // All 4 styles share the same sizes, so measuring the regular one is enough.
         let font_size = font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], font_size)?;
-        let ui = UiText::new(&fonts[0])?;
+        let ui = Ui::new(&fonts[0])?;
 
         Ok(Renderer {
             window,
@@ -158,18 +173,16 @@ impl Renderer {
         }
     }
 
-    /// Switches to another font family. Like a size change, the cell is measured
-    /// again: call `App::on_resize` after this.
     /// New colors. The cells keep which color they want, so the next frame
     /// shows everything in the new theme, even text that is already there.
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
 
+    /// Switches to another font family. Like a size change, the cell is measured
+    /// again: call `App::on_resize` after this.
     pub fn set_fonts(&mut self, fonts: Fonts) {
-        if let Ok(ui) = UiText::new(&fonts[0]) {
-            self.ui = ui;
-        }
+        let _ = self.ui.set_font(&fonts[0]);
         self.fonts = fonts;
         self.glyphs.clear(); // letters of the old font
         self.set_font_size(self.font_size);
@@ -315,8 +328,8 @@ impl Renderer {
 
 /// The tab bar. The tab on screen merges into the panel below it: the panel's
 /// color inside, the panel's outline around, and no line between them. The other
-/// tabs are only their names, dimmer, on the window's color. A tab with new
-/// output gets a dot at its right end.
+/// tabs are only their names, dimmer, on the window's color. Each tab has an
+/// icon before its name, and a dot at its right end when it has new output.
 fn draw_tab_bar(
     pixels: &mut [u32],
     width: usize,
@@ -324,14 +337,15 @@ fn draw_tab_bar(
     layout: &Layout,
     chrome: &Chrome,
     font: &fontdue::Font,
-    ui: &mut UiText,
+    ui: &mut Ui,
 ) {
     let Chrome { tabs, active, .. } = *chrome;
     // Halfway between the text color and the window's: muted, still readable.
     let dim = blend(theme.frame, theme.foreground, 128);
     let b = layout.border;
     for (i, (tab, label)) in layout.tabs(tabs.len()).iter().zip(tabs).enumerate() {
-        let color = if i == active {
+        let on_screen = i == active;
+        let color = if on_screen {
             // The outline, reaching `b` pixels down over the panel's top line…
             fill_rect(pixels, width, tab.x, tab.y, tab.w, tab.h + b, theme.border);
             // …and the inside, in the panel's color, covering that line: one shape.
@@ -349,7 +363,22 @@ fn draw_tab_bar(
         } else {
             dim
         };
-        let mut max_w = tab.w.saturating_sub(2 * TAB_TEXT_PADDING);
+        // The icon, in the middle from top to bottom. The tab on screen has it in
+        // the accent color (or its own colors); a muted tab, in the muted gray
+        // of its name.
+        let icon = ui.icons.get(label.icon);
+        let icon_x = tab.x + TAB_TEXT_PADDING;
+        let icon_y = tab.y + tab.h.saturating_sub(icon.h) / 2;
+        let tint = match (on_screen, icon.tinted) {
+            (true, true) => Some(theme.accent),
+            (true, false) => None,
+            (false, _) => Some(dim),
+        };
+        draw_icon(pixels, width, icon, tint, icon_x, icon_y);
+
+        let mut max_w = tab
+            .w
+            .saturating_sub(2 * TAB_TEXT_PADDING + icon.w + ICON_GAP);
         // The dot: at the right end, in the text's full color.
         if label.activity {
             let cx = (tab.x + tab.w - TAB_TEXT_PADDING) as f32 - DOT_RADIUS;
@@ -359,7 +388,7 @@ fn draw_tab_bar(
             max_w = max_w.saturating_sub((4.0 * DOT_RADIUS) as usize);
         }
         // The name, in the middle from top to bottom, cut off where the tab ends.
-        let x = tab.x + TAB_TEXT_PADDING;
+        let x = icon_x + icon.w + ICON_GAP;
         let y = tab.y + tab.h.saturating_sub(ui.line_h) / 2;
         for (n, ch) in label.title.chars().enumerate() {
             let left = x + n * ui.advance;
@@ -442,7 +471,7 @@ fn draw_status(
     layout: &Layout,
     status: &str,
     font: &fontdue::Font,
-    ui: &mut UiText,
+    ui: &mut Ui,
 ) {
     let bar = layout.tab_bar;
     // At most the right half of the bar; a longer message is cut.
@@ -487,6 +516,20 @@ fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: 
     for py in y..(y + h).min(height) {
         for px in x..(x + w).min(width) {
             pixels[py * width + px] = color;
+        }
+    }
+}
+
+/// Draws `icon` with its top-left corner at (x, y), tinted (see `Icon::pixel`).
+fn draw_icon(pixels: &mut [u32], width: usize, icon: &Icon, tint: Option<u32>, x: usize, y: usize) {
+    let height = pixels.len() / width;
+    for iy in 0..icon.h.min(height.saturating_sub(y)) {
+        for ix in 0..icon.w.min(width.saturating_sub(x)) {
+            let (color, alpha) = icon.pixel(ix, iy, tint);
+            if alpha > 0 {
+                let pixel = &mut pixels[(y + iy) * width + x + ix];
+                *pixel = blend(*pixel, color, alpha as u32);
+            }
         }
     }
 }

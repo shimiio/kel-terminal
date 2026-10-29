@@ -65,7 +65,7 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       resize at the edges, the window shadow. Config errors move into Kel's own UI
 - [x] Activity dot on a background tab with new output
 - [x] Tab/window title from OSC 0/2
-- [ ] Tab icons: pixel art PNGs in `assets/icons/`, built into the binary, tinted with a color;
+- [x] Tab icons: pixel art PNGs in `assets/icons/`, built into the binary, tinted with a color;
       picked by the program in the title (nvim, cargo...)
 
 ## 5. Projects

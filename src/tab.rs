@@ -14,6 +14,7 @@
 //! time. Lock it, use it, let the lock go. Locking it twice at once freezes the app.
 
 use crate::app::UserEvent;
+use crate::icons;
 use crate::pty;
 use crate::term::Terminal;
 use portable_pty::{Child, ChildKiller, MasterPty, PtySize};
@@ -37,6 +38,8 @@ pub struct Tab {
     pub title: String,
     /// The shell's name, e.g. "powershell".
     shell_name: String,
+    /// The icon's name, picked by the title (see `icons::for_title`).
+    pub icon: &'static str,
     /// New output since the tab was last on screen: a dot in the tab bar.
     pub activity: bool,
     /// When the grid last changed size (see `RESIZE_ECHO`).
@@ -75,6 +78,7 @@ impl Tab {
         Ok(Tab {
             id,
             title: shell_name.clone(),
+            icon: icons::for_title(&shell_name),
             shell_name,
             activity: false,
             resized_at: Instant::now(),
@@ -119,6 +123,7 @@ impl Tab {
         if title == self.title {
             return false;
         }
+        self.icon = icons::for_title(&title);
         self.title = title;
         true
     }
