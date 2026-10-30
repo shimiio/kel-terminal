@@ -6,7 +6,8 @@
 //! - `print`: a normal character to show
 //! - `execute`: a control byte like `\r` or `\n`
 //! - `csi_dispatch`: an `ESC[...` sequence, with its numbers (params) and final letter (action)
-//! - `osc_dispatch`: an `ESC]...` sequence, text for the terminal itself (the window title)
+//! - `osc_dispatch`: an `ESC]...` sequence, text for the terminal itself (the window
+//!   title, the shell's folder)
 //!
 //! Each method only decides which `Grid` function to call.
 
@@ -24,6 +25,8 @@ pub struct Terminal {
     pub bracketed_paste: bool,
     /// The window title the program asked for (`ESC]0;title BEL`), as it came.
     pub title: Option<String>,
+    /// The shell's current folder, if it says (see `shell_integration`).
+    pub cwd: Option<String>,
 }
 
 impl Terminal {
@@ -33,6 +36,7 @@ impl Terminal {
             replies: Vec::new(),
             bracketed_paste: false,
             title: None,
+            cwd: None,
         }
     }
 
@@ -201,10 +205,20 @@ impl Perform for Terminal {
     /// `ESC]0;title BEL` or `ESC]2;title BEL`: the program names the window, e.g.
     /// PowerShell at start: `ESC]0;C:\WINDOWS\...\powershell.exe BEL`.
     /// (`ESC]1;` names the window's icon, an old X11 idea: ignored.)
+    ///
+    /// `ESC]9;9;C:\folder ESC\`: the shell's current folder, sent before each prompt.
     fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
-        if let [b"0" | b"2", title @ ..] = params {
-            // vte splits at every ';', also inside the title: put them back.
-            self.title = Some(String::from_utf8_lossy(&title.join(&b';')).into_owned());
+        // vte splits at every ';', also inside the text: put them back.
+        let text = |parts: &[&[u8]]| String::from_utf8_lossy(&parts.join(&b';')).into_owned();
+        match params {
+            [b"0" | b"2", title @ ..] => self.title = Some(text(title)),
+            [b"9", b"9", folder @ ..] => {
+                // Some shells send it in quotes (Windows Terminal's docs do).
+                let folder = text(folder);
+                let folder = folder.trim_matches('"');
+                self.cwd = Some(folder.to_string());
+            }
+            _ => {}
         }
     }
 }
@@ -229,6 +243,19 @@ mod tests {
         assert_eq!(feed("\x1b]1;icon\x07").title, None);
         // The title is not text on the screen.
         assert_eq!(feed("\x1b]0;hello\x07").grid.render(), "");
+    }
+
+    #[test]
+    fn current_folder() {
+        let cwd = |input| feed(input).cwd;
+        assert_eq!(
+            cwd("\x1b]9;9;C:\\Windows\x1b\\").as_deref(),
+            Some("C:\\Windows")
+        );
+        assert_eq!(cwd("\x1b]9;9;\"C:\\a b\"\x07").as_deref(), Some("C:\\a b"));
+        assert_eq!(cwd("\x1b]9;9;C:\\a;b\x07").as_deref(), Some("C:\\a;b"));
+        assert_eq!(cwd("\x1b]9;4;1;50\x07"), None); // 9;4 is a progress bar, not this
+        assert_eq!(feed("\x1b]9;9;C:\\Windows\x07").grid.render(), "");
     }
 
     #[test]

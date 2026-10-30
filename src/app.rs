@@ -145,13 +145,14 @@ impl App {
             }
             terminal
         };
-        let first = match Tab::spawn(0, &config.shell, screen(&problems), proxy.clone()) {
+        let first = match Tab::spawn(0, &config.shell, None, screen(&problems), proxy.clone()) {
             Ok(tab) => tab,
             Err(e) => {
                 problems.push(format!("can't start shell \"{}\": {e:#}", config.shell));
                 Tab::spawn(
                     0,
                     &Config::default().shell,
+                    None,
                     screen(&problems),
                     proxy.clone(),
                 )?
@@ -214,7 +215,8 @@ impl App {
         self.tab_mut().write(bytes);
     }
 
-    /// Opens a new tab at the end, the same size as the others, and shows it.
+    /// Opens a new tab at the end, the same size as the others and in the current
+    /// tab's folder, and shows it.
     fn new_tab(&mut self) {
         let (rows, cols) = {
             let terminal = self.tab().terminal.lock().unwrap();
@@ -223,7 +225,14 @@ impl App {
         let id = self.next_id;
         self.next_id += 1;
         let screen = Terminal::new(rows, cols);
-        match Tab::spawn(id, &self.config.shell, screen, self.proxy.clone()) {
+        let cwd = self.tab().cwd();
+        match Tab::spawn(
+            id,
+            &self.config.shell,
+            cwd.as_deref(),
+            screen,
+            self.proxy.clone(),
+        ) {
             Ok(tab) => {
                 self.tabs.push(tab);
                 self.show_tab(self.tabs.len() - 1);

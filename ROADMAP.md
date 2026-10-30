@@ -72,7 +72,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 
 ## 5. Projects
 
-- [ ] Shell integration: PowerShell `prompt` reports the current folder (OSC 9;9), Kel remembers it
+- [x] Shell integration: PowerShell and cmd report the current folder (OSC 9;9), Kel remembers it;
+      a new tab opens in the current tab's folder
 - [ ] Shell integration also marks where a command starts and ends (OSC 133), so Kel knows
       a tab is busy even when the program prints nothing (`cargo run` of a window app):
   - [ ] "Busy" mark on the tab, and "done" when the command ends

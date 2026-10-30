@@ -22,7 +22,7 @@ cargo build --release   # a fast build: target/release/kel-terminal.exe
 
 | Keys | What it does |
 |---|---|
-| Ctrl+Shift+T | New tab |
+| Ctrl+Shift+T | New tab, in the current tab's folder |
 | Ctrl+Shift+W | Close the tab (typing `exit` does the same) |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
 | Ctrl+1 … Ctrl+8 | Tab 1 … 8 |
@@ -79,6 +79,10 @@ shell = "cmd.exe"
 ```
 
 Then restart Kel.
+
+Kel knows each tab's folder because the shell tells it before each prompt (shell
+integration, see `src/shell_integration.rs`). PowerShell and cmd do it on their
+own; other shells don't, so their new tabs start in Kel's folder.
 
 ### Change the spaces around the terminal
 
@@ -147,6 +151,7 @@ color schemes, don't use them.
 | `src/icons.rs` | The tab icons (`assets/icons/*.png`, built into the .exe) and which tab gets which |
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |
+| `src/shell_integration.rs` | Makes the shell tell Kel its current folder |
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |
 | `src/term/grid.rs` | The screen as a grid of cells, plus scrollback |
 | `src/renderer.rs` | Turns the grid into pixels |
