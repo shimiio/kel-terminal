@@ -16,7 +16,8 @@ Needs Rust 1.88 or newer ([rustup.rs](https://rustup.rs)).
 cargo run            # start Kel
 cargo run -- kel     # open the project "kel" (see Projects)
 cargo test           # run the tests
-cargo build --release   # a fast build: target/release/kel-terminal.exe
+cargo build --release   # a fast build: target/release/kel.exe
+.\install.ps1        # build it and put it on the PATH: `kel` in any shell
 ```
 
 ## Shortcuts
@@ -144,8 +145,14 @@ color schemes, don't use them.
 ## Projects
 
 A project is a file in `%APPDATA%\kel\projects`, a recipe for a set of tabs. The
-file's name is the project's: `projects\kel.toml` opens with `kel-terminal.exe kel`
-(or `cargo run -- kel`).
+file's name is the project's: `projects\kel.toml` opens with `kel kel`
+(or `cargo run -- kel`). Each `kel` opens a new window.
+
+`kel` works in any shell after `.\install.ps1`: it builds Kel and copies `kel.exe` to
+`~\.cargo\bin`, the folder where cargo puts programs. Installing Rust put that folder
+on the PATH, so there's nothing to add by hand. Run it again after changes: it works
+while Kel is open (Windows doesn't let a running exe be written over, so the old one
+is renamed first, and removed once no Kel runs it).
 
 ```toml
 folder = 'C:\code\kel-terminal'   # single quotes, so a '\' stays a '\'

@@ -3,6 +3,11 @@ name = "kel-terminal"
 version = "0.1.0"
 edition = "2024"
 
+# The program is `kel.exe`: `kel <project>` (see install.ps1).
+[[bin]]
+name = "kel"
+path = "src/main.rs"
+
 [dependencies]
 portable-pty = "0.9.0"
 anyhow = "1"

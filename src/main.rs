@@ -1,3 +1,8 @@
+// A window program, not a console one: a shell that starts `kel` doesn't wait
+// for it to close, and Explorer doesn't open a black console window next to it.
+// Debug builds (`cargo run`) stay console ones, to show panics and `dbg!`.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use kel_terminal::app::{App, UserEvent};
 use winit::event_loop::EventLoop;
 

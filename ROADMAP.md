@@ -82,9 +82,9 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
         within 3 seconds
 - [x] Project file: tabs with name, folder, startup command
 - [x] Open a project: start each tab in its folder and type its command (`nvim .`, `cargo run`),
-      by name: `kel-terminal.exe <name>`
+      by name: `kel <name>`
 - [x] Save the project when the window closes: its tabs, each in its last folder
-- [ ] `kel` from any shell: the exe named `kel.exe` and on the PATH, so `kel <project>` works
+- [x] `kel` from any shell: the exe is `kel.exe`, and `install.ps1` puts it on the PATH
 
 ## 6. nvim polish
 
