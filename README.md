@@ -84,6 +84,11 @@ Kel knows each tab's folder because the shell tells it before each prompt (shell
 integration, see `src/shell_integration.rs`). PowerShell and cmd do it on their
 own; other shells don't, so their new tabs start in Kel's folder.
 
+PowerShell also tells Kel when a command starts and ends. A tab with a running
+command (longer than half a second) has a ring at its right end; one whose command
+ended while you were in another tab, a green dot (it worked) or a red one (it failed).
+cmd can't say this, so its tabs never show them.
+
 ### Change the spaces around the terminal
 
 The terminal is a panel inside the window. Three numbers, in pixels, set the spaces:
@@ -151,7 +156,7 @@ color schemes, don't use them.
 | `src/icons.rs` | The tab icons (`assets/icons/*.png`, built into the .exe) and which tab gets which |
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |
-| `src/shell_integration.rs` | Makes the shell tell Kel its current folder |
+| `src/shell_integration.rs` | Makes the shell tell Kel its folder, and when a command starts and ends |
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |
 | `src/term/grid.rs` | The screen as a grid of cells, plus scrollback |
 | `src/renderer.rs` | Turns the grid into pixels |

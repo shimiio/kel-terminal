@@ -9,4 +9,4 @@ mod grid;
 mod terminal;
 
 pub use grid::{Cell, CursorShape, Grid};
-pub use terminal::Terminal;
+pub use terminal::{Mark, Terminal};

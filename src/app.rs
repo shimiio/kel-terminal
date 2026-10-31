@@ -267,7 +267,9 @@ impl App {
             return;
         }
         self.active = index;
-        self.tabs[index].activity = false; // seen now
+        // Seen now.
+        self.tabs[index].activity = false;
+        self.tabs[index].command.done = None;
         self.update_window_title();
         // The selection and the half-scrolled line belonged to the other tab.
         self.selection = None;
@@ -509,11 +511,13 @@ impl ApplicationHandler<UserEvent> for App {
                 };
                 // The output can hold a new title (`ESC]0;...`), for any tab.
                 let renamed = tab.refresh_title();
+                // And command marks (`ESC]133;...`).
+                let marked = tab.refresh_command(on_screen);
                 let lit = !on_screen && tab.mark_activity();
                 if on_screen && renamed {
                     self.update_window_title();
                 }
-                if on_screen || renamed || lit {
+                if on_screen || renamed || marked || lit {
                     self.request_redraw();
                 }
             }
@@ -587,6 +591,8 @@ impl App {
     }
 
     /// Draws the grid (and the mouse selection) into the window.
+    /// The blink timer redraws twice a second, so a ring for a busy tab shows up
+    /// at most half a second after `BUSY_DELAY`, without a timer of its own.
     fn on_redraw(&mut self) {
         let labels: Vec<TabLabel> = self
             .tabs
@@ -595,6 +601,8 @@ impl App {
                 title: &tab.title,
                 icon: tab.icon,
                 activity: tab.activity,
+                busy: tab.command.busy(),
+                done: tab.command.done,
             })
             .collect();
         let chrome = Chrome {

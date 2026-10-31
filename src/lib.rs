@@ -17,7 +17,8 @@
 //! - `pty`: starts the shell inside a pseudo-terminal.
 //! - `term`: understands what the shell sends and keeps the screen as a grid of cells.
 //! - `renderer`: turns that grid into pixels.
-//! - `shell_integration`: makes the shell tell Kel its current folder.
+//! - `shell_integration`: makes the shell tell Kel its folder, and when a command
+//!   starts and ends.
 //! - `tab`: one shell with its screen; `app` keeps a list of them.
 //! - `theme`: colors as programs ask for them, and the theme that turns them into pixels.
 

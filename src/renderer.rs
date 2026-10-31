@@ -32,8 +32,10 @@ const UI_FONT_SIZE: f32 = 14.0;
 const TAB_TEXT_PADDING: usize = 12;
 /// Space between a tab's icon and its name.
 const ICON_GAP: usize = 8;
-/// The activity dot on a tab: its radius, in pixels.
+/// The mark on a tab (activity dot, busy ring): its radius, in pixels.
 const DOT_RADIUS: f32 = 3.0;
+/// The busy ring's line.
+const RING_WIDTH: f32 = 1.5;
 /// The close button under the mouse: the red of Windows' own.
 const CLOSE_HOVER: u32 = 0xc42b1c;
 
@@ -51,6 +53,10 @@ pub struct TabLabel<'a> {
     pub icon: &'a str,
     /// New output since the tab was last on screen: a dot.
     pub activity: bool,
+    /// A command runs: a ring.
+    pub busy: bool,
+    /// A command ended unseen: a green dot if it worked, red if not.
+    pub done: Option<bool>,
 }
 
 /// What Kel draws around the terminal: its title bar, with the tabs and the buttons.
@@ -427,13 +433,28 @@ fn draw_tab_bar(
 
         let gap = ui.px(ICON_GAP);
         let mut max_w = tab.w.saturating_sub(2 * padding + icon_w + gap);
-        // The dot: at the right end, in the text's full color.
-        if label.activity {
+        // The mark at the right end, one at a time: a running command's ring
+        // says the most, then how one ended, then plain new output.
+        let mark = match (label.busy, label.done) {
+            (true, _) => Some((theme.foreground, RING_WIDTH)),
+            // Bright green and bright red, so they follow the theme.
+            (false, Some(true)) => Some((theme.palette[10], 0.0)),
+            (false, Some(false)) => Some((theme.palette[9], 0.0)),
+            (false, None) if label.activity => Some((theme.foreground, 0.0)),
+            _ => None,
+        };
+        if let Some((mark_color, ring)) = mark {
             let radius = DOT_RADIUS * ui.scale;
             let cx = (tab.x + tab.w - padding) as f32 - radius;
             let cy = tab.y as f32 + tab.h as f32 / 2.0;
-            fill_circle(pixels, width, cx, cy, radius, theme.foreground);
-            // A long name stops before the dot, with a dot's width between them.
+            // A ring is the dot with a hole: the line is `ring` wide.
+            let hole = if ring > 0.0 {
+                radius - ring * ui.scale
+            } else {
+                0.0
+            };
+            fill_circle(pixels, width, cx, cy, radius, hole, mark_color);
+            // A long name stops before the mark, with a mark's width between them.
             max_w = max_w.saturating_sub((4.0 * radius) as usize);
         }
         // The name, in the middle from top to bottom, cut off where the tab ends.
@@ -600,8 +621,9 @@ fn draw_icon(
 }
 
 /// A filled circle around (cx, cy), with soft edges: a pixel that is half inside
-/// gets half the color. e.g. r = 3: a dot 7 pixels across.
-fn fill_circle(pixels: &mut [u32], width: usize, cx: f32, cy: f32, r: f32, color: u32) {
+/// gets half the color. e.g. r = 3: a dot 7 pixels across. A `hole` above 0 leaves
+/// a hole of that radius in the middle: a ring.
+fn fill_circle(pixels: &mut [u32], width: usize, cx: f32, cy: f32, r: f32, hole: f32, color: u32) {
     let height = pixels.len() / width;
     let x0 = (cx - r - 1.0).max(0.0) as usize;
     let y0 = (cy - r - 1.0).max(0.0) as usize;
@@ -615,7 +637,11 @@ fn fill_circle(pixels: &mut [u32], width: usize, cx: f32, cy: f32, r: f32, color
             let distance = (dx * dx + dy * dy).sqrt();
             // Half a pixel inside the edge or more: 1, all color. Half a pixel
             // outside or more: 0, none. Right on the edge: 0.5.
-            let cover = (r + 0.5 - distance).clamp(0.0, 1.0);
+            let mut cover = (r + 0.5 - distance).clamp(0.0, 1.0);
+            if hole > 0.0 {
+                // Minus the hole, the same way.
+                cover -= (hole + 0.5 - distance).clamp(0.0, 1.0);
+            }
             if cover > 0.0 {
                 let pixel = &mut pixels[py * width + px];
                 *pixel = blend(*pixel, color, (cover * 255.0) as u32);

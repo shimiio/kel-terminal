@@ -1,33 +1,58 @@
 //! Shell integration: the shell tells Kel things only it knows.
 //!
 //! Kel sees bytes, not what they mean: after `cd C:\Windows` the folder changed inside
-//! the shell, and nothing in the output says so. So Kel asks the shell to say it: before
-//! each prompt, the shell sends `ESC]9;9;<folder> ESC\` (the same code Windows Terminal
-//! uses). It's an `ESC]` code like the title, so it doesn't show on the screen.
+//! the shell, and nothing in the output says so. So Kel asks the shell to say it, with
+//! `ESC]` codes like the title's, which don't show on the screen:
+//!
+//! | Code | When | Kel then |
+//! |---|---|---|
+//! | `ESC]9;9;<folder> ESC\` | before each prompt | opens new tabs there |
+//! | `ESC]133;C ESC\` | Enter, a command starts | knows the tab is busy |
+//! | `ESC]133;D;<0 or 1> ESC\` | before the next prompt: it ended, 0 if it worked | not busy |
+//!
+//! The same codes as Windows Terminal and VS Code.
 //!
 //! - **PowerShell** (`powershell.exe`, `pwsh.exe`): Kel starts it with `-NoExit -Command`
-//!   and a script that wraps the `prompt` function. Your profile runs first, so a
-//!   prompt of your own (oh-my-posh, starship) stays, the code goes before it.
+//!   and a script that wraps two functions: `prompt` (it makes the prompt's text) and
+//!   `PSConsoleHostReadLine` (it reads what you type, until Enter). Your profile runs
+//!   first, so a prompt of your own (oh-my-posh, starship) stays, the codes go before it.
 //!   A side effect of `-Command`: PowerShell doesn't print its logo at start.
 //! - **cmd**: its prompt comes from the `PROMPT` variable, where `$e` is ESC and `$P`
 //!   the folder. Kel sets it for every shell, so a `cmd` started from PowerShell
-//!   reports its folder too.
+//!   reports its folder too. cmd can't say when a command starts: never busy.
 //! - Other shells: nothing; Kel just doesn't know their folder.
 
 use portable_pty::CommandBuilder;
 use std::path::Path;
 
-/// Wraps `prompt`: its text, with the folder's code before it. Only a real folder:
-/// in `HKLM:` (the registry) or `Env:` PowerShell isn't in one.
+/// The new `prompt`: "the command ended" (from `$?`, did the last one work), then
+/// the folder, then the old prompt's text. Only a real folder: in `HKLM:` (the
+/// registry) or `Env:` PowerShell isn't in one. Every line resets `$?`, so it's read
+/// first, and set back to "failed" for the old prompt, which may show it.
+///
+/// The new `PSConsoleHostReadLine`: the old one reads the line; once it's done
+/// (Enter, and the input is whole: no `{` left open), "the command starts".
+/// Not for an empty line: nothing starts.
 ///
 /// No `"` anywhere: Windows hands the script over inside `"..."`, and PowerShell 5
 /// mixes up `"` inside it. Hence `[char]27` (ESC) and single quotes.
 const POWERSHELL: &str = r"$global:__kel_prompt = $function:prompt
 function global:prompt {
+  $ok = $global:?
+  $e = [string][char]27
+  $out = $e + ']133;D;' + [int](-not $ok) + $e + '\'
   $loc = $executionContext.SessionState.Path.CurrentLocation
-  $osc = ''
-  if ($loc.Provider.Name -eq 'FileSystem') { $osc = [char]27 + ']9;9;' + $loc.ProviderPath + [char]27 + '\' }
-  $osc + (& $global:__kel_prompt)
+  if ($loc.Provider.Name -eq 'FileSystem') { $out += $e + ']9;9;' + $loc.ProviderPath + $e + '\' }
+  if (-not $ok) { Write-Error failure -ErrorAction Ignore }
+  $out + (& $global:__kel_prompt)
+}
+if (Test-Path Function:\PSConsoleHostReadLine) {
+  $global:__kel_readline = $function:PSConsoleHostReadLine
+  function global:PSConsoleHostReadLine {
+    $line = & $global:__kel_readline
+    if ([string]$line -match '\S') { [Console]::Write([string][char]27 + ']133;C' + [char]27 + '\') }
+    $line
+  }
 }";
 
 /// cmd's code for the folder, before its prompt.

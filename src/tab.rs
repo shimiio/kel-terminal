@@ -16,7 +16,7 @@
 use crate::app::UserEvent;
 use crate::icons;
 use crate::pty;
-use crate::term::Terminal;
+use crate::term::{Mark, Terminal};
 use portable_pty::{Child, ChildKiller, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -32,6 +32,44 @@ pub type TabId = u64;
 /// ~270 bytes. Output this soon after a resize is that copy, not anything new.
 const RESIZE_ECHO: Duration = Duration::from_millis(300);
 
+/// A command shows as running only after this long: `cd` or `ls` end sooner,
+/// and their mark would only blink.
+const BUSY_DELAY: Duration = Duration::from_millis(500);
+
+/// What a tab knows about its shell's commands, from the marks (see `shell_integration`).
+#[derive(Default)]
+pub struct CommandState {
+    /// Since when a command runs, if one does.
+    running_since: Option<Instant>,
+    /// A command ended while the tab was not on screen: did it work? A green
+    /// or red dot, until the tab is seen.
+    pub done: Option<bool>,
+}
+
+impl CommandState {
+    fn apply(&mut self, mark: Mark, on_screen: bool) {
+        match mark {
+            Mark::Started => {
+                self.running_since = Some(Instant::now());
+                self.done = None;
+            }
+            // Only after a start: the first prompt, or Enter on an empty line,
+            // send "ended" too.
+            Mark::Ended(ok) => {
+                if self.running_since.take().is_some() && !on_screen {
+                    self.done = Some(ok);
+                }
+            }
+        }
+    }
+
+    /// A command runs, for longer than `BUSY_DELAY`: a ring on the tab.
+    pub fn busy(&self) -> bool {
+        self.running_since
+            .is_some_and(|since| since.elapsed() >= BUSY_DELAY)
+    }
+}
+
 pub struct Tab {
     pub id: TabId,
     /// The name in the tab bar: the program's title, made shorter (see `short_title`),
@@ -45,6 +83,8 @@ pub struct Tab {
     pub activity: bool,
     /// When the grid last changed size (see `RESIZE_ECHO`).
     resized_at: Instant,
+    /// Whether a command runs, and how the last one ended.
+    pub command: CommandState,
     /// The screen state, shared with the reader thread.
     pub terminal: Arc<Mutex<Terminal>>,
     /// Bytes written here reach the shell as if they were typed.
@@ -85,6 +125,7 @@ impl Tab {
             shell_name,
             activity: false,
             resized_at: Instant::now(),
+            command: CommandState::default(),
             terminal,
             writer,
             master,
@@ -129,6 +170,17 @@ impl Tab {
         self.icon = icons::for_title(&title);
         self.title = title;
         true
+    }
+
+    /// Takes the shell's command marks that came since the last call. Returns
+    /// `true` if the tab bar shows something else now.
+    pub fn refresh_command(&mut self, on_screen: bool) -> bool {
+        let marks = std::mem::take(&mut self.terminal.lock().unwrap().marks);
+        let before = (self.command.busy(), self.command.done);
+        for mark in marks {
+            self.command.apply(mark, on_screen);
+        }
+        (self.command.busy(), self.command.done) != before
     }
 
     /// The shell's current folder, as it last said (see `shell_integration`).
@@ -232,6 +284,38 @@ fn spawn_waiter(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_ended_unseen() {
+        let mut command = CommandState::default();
+        command.apply(Mark::Started, false);
+        command.apply(Mark::Ended(false), false);
+        assert_eq!(command.done, Some(false));
+        // A new command clears it.
+        command.apply(Mark::Started, false);
+        assert_eq!(command.done, None);
+    }
+
+    #[test]
+    fn command_ended_on_screen_or_never_started() {
+        let mut command = CommandState::default();
+        command.apply(Mark::Ended(true), false); // the first prompt
+        assert_eq!(command.done, None);
+        command.apply(Mark::Started, true);
+        command.apply(Mark::Ended(true), true); // seen as it happened
+        assert_eq!(command.done, None);
+    }
+
+    #[test]
+    fn busy_after_a_moment() {
+        let mut command = CommandState::default();
+        command.apply(Mark::Started, true);
+        assert!(!command.busy());
+        command.running_since = Some(Instant::now() - BUSY_DELAY);
+        assert!(command.busy());
+        command.apply(Mark::Ended(true), true);
+        assert!(!command.busy());
+    }
 
     #[test]
     fn short_titles() {

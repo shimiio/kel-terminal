@@ -76,7 +76,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       a new tab opens in the current tab's folder
 - [ ] Shell integration also marks where a command starts and ends (OSC 133), so Kel knows
       a tab is busy even when the program prints nothing (`cargo run` of a window app):
-  - [ ] "Busy" mark on the tab, and "done" when the command ends
+  - [x] "Busy" mark on the tab (a ring), and "done" when the command ends unseen
+        (a green or red dot, by the exit code)
   - [ ] Ask before closing a tab with a running command
 - [ ] Project file: tabs with name, folder, startup command
 - [ ] Open a project: start each tab in its folder and type its command (`nvim .`, `cargo run`)

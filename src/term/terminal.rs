@@ -7,7 +7,7 @@
 //! - `execute`: a control byte like `\r` or `\n`
 //! - `csi_dispatch`: an `ESC[...` sequence, with its numbers (params) and final letter (action)
 //! - `osc_dispatch`: an `ESC]...` sequence, text for the terminal itself (the window
-//!   title, the shell's folder)
+//!   title, the shell's folder, where its commands start and end)
 //!
 //! Each method only decides which `Grid` function to call.
 
@@ -15,6 +15,15 @@ use super::Grid;
 use super::grid::CursorShape;
 use crate::theme::Color;
 use vte::Perform;
+
+/// The shell's word about a command (`ESC]133;...`, see `shell_integration`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Mark {
+    /// `ESC]133;C`: Enter was pressed, the command runs.
+    Started,
+    /// `ESC]133;D;0`: the command ended; `true` if it worked (code 0, or none given).
+    Ended(bool),
+}
 
 pub struct Terminal {
     pub grid: Grid,
@@ -27,6 +36,8 @@ pub struct Terminal {
     pub title: Option<String>,
     /// The shell's current folder, if it says (see `shell_integration`).
     pub cwd: Option<String>,
+    /// Command marks, in the order they came. The tab takes them after each chunk.
+    pub marks: Vec<Mark>,
 }
 
 impl Terminal {
@@ -37,6 +48,7 @@ impl Terminal {
             bracketed_paste: false,
             title: None,
             cwd: None,
+            marks: Vec::new(),
         }
     }
 
@@ -207,6 +219,9 @@ impl Perform for Terminal {
     /// (`ESC]1;` names the window's icon, an old X11 idea: ignored.)
     ///
     /// `ESC]9;9;C:\folder ESC\`: the shell's current folder, sent before each prompt.
+    ///
+    /// `ESC]133;C` / `ESC]133;D;code`: a command started / ended (see `Mark`).
+    /// `133;A` and `133;B` (where the prompt starts and ends) say nothing Kel needs.
     fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
         // vte splits at every ';', also inside the text: put them back.
         let text = |parts: &[&[u8]]| String::from_utf8_lossy(&parts.join(&b';')).into_owned();
@@ -217,6 +232,11 @@ impl Perform for Terminal {
                 let folder = text(folder);
                 let folder = folder.trim_matches('"');
                 self.cwd = Some(folder.to_string());
+            }
+            [b"133", b"C", ..] => self.marks.push(Mark::Started),
+            [b"133", b"D", code @ ..] => {
+                let ok = matches!(code, [] | [b"0", ..]);
+                self.marks.push(Mark::Ended(ok));
             }
             _ => {}
         }
@@ -256,6 +276,22 @@ mod tests {
         assert_eq!(cwd("\x1b]9;9;C:\\a;b\x07").as_deref(), Some("C:\\a;b"));
         assert_eq!(cwd("\x1b]9;4;1;50\x07"), None); // 9;4 is a progress bar, not this
         assert_eq!(feed("\x1b]9;9;C:\\Windows\x07").grid.render(), "");
+    }
+
+    #[test]
+    fn command_marks() {
+        use Mark::*;
+        let marks = |input| feed(input).marks;
+        assert_eq!(marks("\x1b]133;C\x1b\\"), [Started]);
+        assert_eq!(marks("\x1b]133;D;0\x1b\\"), [Ended(true)]);
+        assert_eq!(marks("\x1b]133;D;1\x07"), [Ended(false)]);
+        assert_eq!(marks("\x1b]133;D\x07"), [Ended(true)]);
+        assert_eq!(marks("\x1b]133;A\x07\x1b]133;B\x07"), []);
+        // Both in one chunk, in order: a quick command.
+        assert_eq!(
+            marks("\x1b]133;C\x07ok\r\n\x1b]133;D;0\x07"),
+            [Started, Ended(true)]
+        );
     }
 
     #[test]
