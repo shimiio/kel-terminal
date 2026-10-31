@@ -7,6 +7,7 @@
 use crate::config::{self, Config};
 use crate::keys::{self, Action};
 use crate::layout::{Layout, WindowButton};
+use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{self, Chrome, Fonts, Renderer, TabLabel};
 use crate::tab::{Tab, TabId};
 use crate::term::Terminal;
@@ -135,12 +136,18 @@ pub struct App {
     resize_edge: Option<ResizeDirection>,
     /// Something went wrong (a config error...), shown in the tab bar until it's fixed.
     status: Option<String>,
+    /// The open project's name, if Kel was started with one (`kel <name>`).
+    project: Option<String>,
 }
 
 impl App {
-    /// Starts the first tab. The window comes later, in `resumed`.
+    /// Starts the tabs: the project's, if `project_name` is given, else one.
+    /// The window comes later, in `resumed`.
     /// `proxy` is how the tabs' threads wake up the event loop.
-    pub fn new(proxy: EventLoopProxy<UserEvent>) -> anyhow::Result<Self> {
+    pub fn new(
+        proxy: EventLoopProxy<UserEvent>,
+        project_name: Option<String>,
+    ) -> anyhow::Result<Self> {
         // A broken config or a missing shell shouldn't stop Kel: start with the
         // defaults and show what went wrong at the top of the screen.
         let mut problems = Vec::new();
@@ -165,28 +172,70 @@ impl App {
             }
             terminal
         };
-        let first = match Tab::spawn(0, &config.shell, None, screen(&problems), proxy.clone()) {
+        // A project that can't be read: say why, and open a plain tab.
+        let project = project_name.as_deref().and_then(|name| {
+            project::load(name)
+                .map_err(|e| problems.push(format!("{e:#}")))
+                .ok()
+        });
+        let recipes = project
+            .as_ref()
+            .map_or_else(|| vec![TabRecipe::default()], Project::tabs);
+        // Without a project: where Kel runs.
+        let folder_of = |recipe: &TabRecipe| project.as_ref().map(|p| p.folder_of(recipe));
+
+        // The first tab shows the problems. A shell that doesn't start is one more,
+        // and all tabs get the default shell instead.
+        let mut shell = config.shell.clone();
+        let folder = folder_of(&recipes[0]);
+        let first = match Tab::spawn(
+            0,
+            &shell,
+            folder.as_deref(),
+            screen(&problems),
+            proxy.clone(),
+        ) {
             Ok(tab) => tab,
             Err(e) => {
-                problems.push(format!("can't start shell \"{}\": {e:#}", config.shell));
+                problems.push(format!("can't start shell \"{shell}\": {e:#}"));
+                shell = Config::default().shell;
                 Tab::spawn(
                     0,
-                    &Config::default().shell,
-                    None,
+                    &shell,
+                    folder.as_deref(),
                     screen(&problems),
                     proxy.clone(),
                 )?
             }
         };
+        let mut tabs = vec![first];
+        let mut status = None;
+        for (id, recipe) in (1..).zip(&recipes[1..]) {
+            let folder = folder_of(recipe);
+            let screen = Terminal::new(ROWS, COLS);
+            match Tab::spawn(id, &shell, folder.as_deref(), screen, proxy.clone()) {
+                Ok(tab) => tabs.push(tab),
+                Err(e) => status = Some(format!("can't open a tab: {e:#}")),
+            }
+        }
+        // Each tab's name and command, by its id: a tab that failed has no place.
+        for tab in &mut tabs {
+            let recipe = &recipes[tab.id as usize];
+            tab.name = recipe.name.clone();
+            if let Some(command) = &recipe.command {
+                tab.type_at_start(command, &shell);
+            }
+        }
+        let next_id = recipes.len() as TabId;
         // No window yet: the real layout comes with the first `on_resize`.
         let layout = config.layout.layout(0, 0, 1.0);
 
         Ok(App {
             window: None,
             renderer: None,
-            tabs: vec![first],
+            tabs,
             active: 0,
-            next_id: 1,
+            next_id,
             proxy,
             modifiers: ModifiersState::empty(),
 
@@ -209,7 +258,8 @@ impl App {
             quit: false,
             pending_close: None,
             resize_edge: None,
-            status: None,
+            status,
+            project: project.and(project_name),
         })
     }
 
@@ -350,7 +400,11 @@ impl App {
     /// The window's own title, seen in the taskbar and in Alt+Tab: the tab on screen.
     fn update_window_title(&self) {
         if let Some(window) = &self.window {
-            window.set_title(&format!("{} - Kel", self.tab().title));
+            let title = match &self.project {
+                Some(project) => format!("{} - {project} - Kel", self.tab().label()),
+                None => format!("{} - Kel", self.tab().label()),
+            };
+            window.set_title(&title);
         }
     }
 
@@ -579,6 +633,8 @@ impl ApplicationHandler<UserEvent> for App {
                 };
                 // The output can hold a new title (`ESC]0;...`), for any tab.
                 let renamed = tab.refresh_title();
+                // A project's command waits for the shell's first prompt.
+                tab.type_startup_when_ready();
                 // And command marks (`ESC]133;...`).
                 let marked = tab.refresh_command(on_screen);
                 let lit = !on_screen && tab.mark_activity();
@@ -675,7 +731,7 @@ impl App {
             .tabs
             .iter()
             .map(|tab| TabLabel {
-                title: &tab.title,
+                title: tab.label(),
                 icon: tab.icon,
                 activity: tab.activity,
                 busy: tab.command.busy(),

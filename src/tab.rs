@@ -16,6 +16,7 @@
 use crate::app::UserEvent;
 use crate::icons;
 use crate::pty;
+use crate::shell_integration;
 use crate::term::{Mark, Terminal};
 use portable_pty::{Child, ChildKiller, MasterPty, PtySize};
 use std::io::{Read, Write};
@@ -80,8 +81,12 @@ pub struct Tab {
     /// The name in the tab bar: the program's title, made shorter (see `short_title`),
     /// or the shell's name if the program gave none.
     pub title: String,
+    /// The project's name for the tab: shown instead of `title` (see `label`).
+    pub name: Option<String>,
     /// The shell's name, e.g. "powershell".
     shell_name: String,
+    /// A project's command, waiting for the shell to be ready (see `type_at_start`).
+    startup: Option<String>,
     /// The icon's name, picked by the title (see `icons::for_title`).
     pub icon: &'static str,
     /// New output since the tab was last on screen: a dot in the tab bar.
@@ -127,7 +132,9 @@ impl Tab {
             id,
             title: shell_name.clone(),
             icon: icons::for_title(&shell_name),
+            name: None,
             shell_name,
+            startup: None,
             activity: false,
             resized_at: Instant::now(),
             command: CommandState::default(),
@@ -143,6 +150,34 @@ impl Tab {
         // If the shell is gone, the waiter thread reports PtyExited.
         let _ = self.writer.write_all(bytes);
         let _ = self.writer.flush();
+    }
+
+    /// What the tab bar shows: the project's name for the tab, else the title.
+    pub fn label(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.title)
+    }
+
+    /// Types `command` and Enter into the shell, once it's ready for typing: at
+    /// its first prompt. Typed sooner, it would reach ConPTY while it still sets
+    /// up. The first prompt is when shell integration first reports the folder;
+    /// a shell without it gets the command at once.
+    pub fn type_at_start(&mut self, command: &str, shell: &str) {
+        if shell_integration::reports_folder(shell) {
+            self.startup = Some(command.to_string());
+        } else {
+            self.write(format!("{command}\r").as_bytes());
+        }
+    }
+
+    /// Called on new output: if the shell is ready now, types the waiting command.
+    pub fn type_startup_when_ready(&mut self) {
+        if self.startup.is_none() {
+            return;
+        }
+        let ready = self.terminal.lock().unwrap().cwd.is_some();
+        if let Some(command) = self.startup.take_if(|_| ready) {
+            self.write(format!("{command}\r").as_bytes());
+        }
     }
 
     /// Fits the grid to `rows` x `cols` cells and tells the shell, which then redraws.

@@ -60,13 +60,23 @@ const CMD_PROMPT: &str = "$e]9;9;$P$e\\";
 
 /// Adds shell integration to the command that starts `shell`.
 pub fn add(cmd: &mut CommandBuilder, shell: &str) {
-    let name = Path::new(shell)
-        .file_stem()
-        .map(|stem| stem.to_string_lossy().to_ascii_lowercase());
-    if let Some("powershell" | "pwsh") = name.as_deref() {
+    if let Some("powershell" | "pwsh") = name(shell).as_deref() {
         cmd.args(["-NoExit", "-Command", POWERSHELL]);
     }
     cmd.env("PROMPT", cmd_prompt(std::env::var("PROMPT").ok()));
+}
+
+/// Whether `shell` reports its folder at each prompt, so Kel can tell when it's
+/// ready for typing (see `Tab::type_at_start`).
+pub fn reports_folder(shell: &str) -> bool {
+    matches!(name(shell).as_deref(), Some("powershell" | "pwsh" | "cmd"))
+}
+
+/// The shell's name in lowercase: `C:\...\PowerShell.exe` → `powershell`.
+fn name(shell: &str) -> Option<String> {
+    Path::new(shell)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_ascii_lowercase())
 }
 
 /// cmd's prompt: the folder's code, then the prompt it had (`$P$G`, "C:\Windows>",
@@ -90,6 +100,14 @@ mod tests {
         assert_eq!(cmd_prompt(Some("$P$_$G".into())), "$e]9;9;$P$e\\$P$_$G");
         let already = cmd_prompt(None);
         assert_eq!(cmd_prompt(Some(already.clone())), already);
+    }
+
+    #[test]
+    fn shells_that_report_their_folder() {
+        assert!(reports_folder("powershell.exe"));
+        assert!(reports_folder(r"C:\Program Files\PowerShell\7\pwsh.exe"));
+        assert!(reports_folder("CMD.EXE"));
+        assert!(!reports_folder("nu.exe"));
     }
 
     #[test]

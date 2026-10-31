@@ -80,10 +80,11 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
         (a green or red dot, by the exit code)
   - [x] Ask before closing a tab (or the window) with a running command: do it again
         within 3 seconds
-- [ ] Project file: tabs with name, folder, startup command
-- [ ] Open a project: start each tab in its folder and type its command (`nvim .`, `cargo run`)
+- [x] Project file: tabs with name, folder, startup command
+- [x] Open a project: start each tab in its folder and type its command (`nvim .`, `cargo run`),
+      by name: `kel-terminal.exe <name>`
 - [ ] Save the last folder of each tab on close
-- [ ] Open by name: `kel <project>`
+- [ ] `kel` from any shell: the exe named `kel.exe` and on the PATH, so `kel <project>` works
 
 ## 6. nvim polish
 

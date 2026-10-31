@@ -14,6 +14,7 @@ Needs Rust 1.88 or newer ([rustup.rs](https://rustup.rs)).
 
 ```sh
 cargo run            # start Kel
+cargo run -- kel     # open the project "kel" (see Projects)
 cargo test           # run the tests
 cargo build --release   # a fast build: target/release/kel-terminal.exe
 ```
@@ -140,6 +141,31 @@ color schemes, don't use them.
   `config.toml, line 3: invalid type: string "big", expected f32`.
   Fix the file and save again: the message goes away.
 
+## Projects
+
+A project is a file in `%APPDATA%\kel\projects`, a recipe for a set of tabs. The
+file's name is the project's: `projects\kel.toml` opens with `kel-terminal.exe kel`
+(or `cargo run -- kel`).
+
+```toml
+folder = 'C:\code\kel-terminal'   # single quotes, so a '\' stays a '\'
+
+[[tab]]
+name = "editor"      # shown in the tab bar instead of the program's title
+command = "nvim ."   # typed into the shell once it's ready, as if you did
+
+[[tab]]
+name = "run"
+command = "cargo run"
+
+[[tab]]
+folder = "docs"      # inside the project's folder; a full path works too
+```
+
+Every line of a `[[tab]]` is optional: `[[tab]]` alone is a shell in the project's
+folder. A file without any is one such tab. The running programs aren't saved, they
+can't be: opening the project starts them again.
+
 ## How the code is laid out
 
 ```text
@@ -158,6 +184,7 @@ color schemes, don't use them.
 | `src/config.rs` | Reads `config.toml` |
 | `src/icons.rs` | The tab icons (`assets/icons/*.png`, built into the .exe) and which tab gets which |
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
+| `src/project.rs` | Reads a project file: the tabs, their folders and commands |
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |
 | `src/shell_integration.rs` | Makes the shell tell Kel its folder, and when a command starts and ends |
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |

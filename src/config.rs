@@ -7,6 +7,7 @@ use crate::layout::Spacing;
 use crate::theme::Theme;
 use anyhow::Context;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -87,10 +88,15 @@ impl Default for Config {
     }
 }
 
+/// Kel's folder, e.g. `C:\Users\you\AppData\Roaming\kel`.
+pub fn dir() -> anyhow::Result<PathBuf> {
+    let appdata = std::env::var_os("APPDATA").context("APPDATA is not set")?;
+    Ok(PathBuf::from(appdata).join("kel"))
+}
+
 /// Where the config file lives, e.g. `C:\Users\you\AppData\Roaming\kel\config.toml`.
 pub fn path() -> anyhow::Result<PathBuf> {
-    let appdata = std::env::var_os("APPDATA").context("APPDATA is not set")?;
-    Ok(PathBuf::from(appdata).join("kel").join("config.toml"))
+    Ok(dir()?.join("config.toml"))
 }
 
 /// When the config file was last saved. `None` if there is no file.
@@ -107,12 +113,17 @@ pub fn load() -> anyhow::Result<Config> {
         std::fs::write(&path, DEFAULT_CONFIG)?;
     }
     let text = std::fs::read_to_string(&path)?;
+    parse_toml("config.toml", &text)
+}
+
+/// Reads `text`, the contents of the TOML file `file` (its name, for errors).
+pub fn parse_toml<T: DeserializeOwned>(file: &str, text: &str) -> anyhow::Result<T> {
     // toml's own message has several lines with a drawing of the bad line.
     // Kel shows errors on one line, so: where, and why.
     // e.g. "config.toml, line 3: invalid type: string "big", expected f32"
-    toml::from_str(&text).map_err(|e| {
-        let line = e.span().map_or(1, |span| line_at(&text, span.start));
-        anyhow::anyhow!("config.toml, line {line}: {}", e.message())
+    toml::from_str(text).map_err(|e| {
+        let line = e.span().map_or(1, |span| line_at(text, span.start));
+        anyhow::anyhow!("{file}, line {line}: {}", e.message())
     })
 }
 
