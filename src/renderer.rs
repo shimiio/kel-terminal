@@ -71,6 +71,8 @@ pub struct Chrome<'a> {
     pub maximized: bool,
     /// Something went wrong (a config error...): shown in red at the end of the tab bar.
     pub status: Option<&'a str>,
+    /// A question ("close again to quit"): in its place, in yellow, while it waits.
+    pub question: Option<&'a str>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -296,13 +298,19 @@ impl Renderer {
             &mut self.ui,
         );
         draw_window_buttons(&mut buffer, width, theme, layout, chrome);
-        if let Some(status) = chrome.status {
+        // A question waits for an answer now, so it comes before a problem.
+        let message = match (chrome.question, chrome.status) {
+            (Some(question), _) => Some((question, theme.palette[11])),
+            (None, Some(status)) => Some((status, theme.palette[9])),
+            (None, None) => None,
+        };
+        if let Some((text, color)) = message {
             draw_status(
                 &mut buffer,
                 width,
                 theme,
                 layout,
-                status,
+                (text, color),
                 font,
                 &mut self.ui,
             );
@@ -533,14 +541,14 @@ fn draw_window_buttons(
     }
 }
 
-/// A message in red at the right end of the tab bar, just before the window buttons.
-/// It goes over the tabs if they reach that far: a problem should be seen.
+/// A message in its color at the right end of the tab bar, just before the window
+/// buttons. It goes over the tabs if they reach that far: it should be seen.
 fn draw_status(
     pixels: &mut [u32],
     width: usize,
     theme: &Theme,
     layout: &Layout,
-    status: &str,
+    (status, color): (&str, u32),
     font: &fontdue::Font,
     ui: &mut Ui,
 ) {
@@ -566,7 +574,7 @@ fn draw_status(
             width,
             glyph,
             ui.ascent,
-            theme.palette[9],
+            color,
             x + n * ui.advance,
             y,
         );

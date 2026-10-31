@@ -78,7 +78,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       a tab is busy even when the program prints nothing (`cargo run` of a window app):
   - [x] "Busy" mark on the tab (a ring), and "done" when the command ends unseen
         (a green or red dot, by the exit code)
-  - [ ] Ask before closing a tab with a running command
+  - [x] Ask before closing a tab (or the window) with a running command: do it again
+        within 3 seconds
 - [ ] Project file: tabs with name, folder, startup command
 - [ ] Open a project: start each tab in its folder and type its command (`nvim .`, `cargo run`)
 - [ ] Save the last folder of each tab on close

@@ -63,6 +63,11 @@ impl CommandState {
         }
     }
 
+    /// A command runs: closing the tab would end it.
+    pub fn running(&self) -> bool {
+        self.running_since.is_some()
+    }
+
     /// A command runs, for longer than `BUSY_DELAY`: a ring on the tab.
     pub fn busy(&self) -> bool {
         self.running_since
@@ -310,10 +315,12 @@ mod tests {
     fn busy_after_a_moment() {
         let mut command = CommandState::default();
         command.apply(Mark::Started, true);
+        assert!(command.running());
         assert!(!command.busy());
         command.running_since = Some(Instant::now() - BUSY_DELAY);
         assert!(command.busy());
         command.apply(Mark::Ended(true), true);
+        assert!(!command.running());
         assert!(!command.busy());
     }
 

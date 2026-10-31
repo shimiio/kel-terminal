@@ -23,7 +23,7 @@ cargo build --release   # a fast build: target/release/kel-terminal.exe
 | Keys | What it does |
 |---|---|
 | Ctrl+Shift+T | New tab, in the current tab's folder |
-| Ctrl+Shift+W | Close the tab (typing `exit` does the same) |
+| Ctrl+Shift+W | Close the tab (typing `exit` does the same). If a command runs in it (nvim, `cargo run`), press again to close |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
 | Ctrl+1 … Ctrl+8 | Tab 1 … 8 |
 | Ctrl+9 | The last tab |
@@ -88,6 +88,9 @@ PowerShell also tells Kel when a command starts and ends. A tab with a running
 command (longer than half a second) has a ring at its right end; one whose command
 ended while you were in another tab, a green dot (it worked) or a red one (it failed).
 cmd can't say this, so its tabs never show them.
+
+Closing a tab with a running command, or the window while one runs in any tab,
+asks first in the tab bar: do it again within 3 seconds to close.
 
 ### Change the spaces around the terminal
 

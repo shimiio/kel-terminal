@@ -66,6 +66,24 @@ pub enum UserEvent {
     PtyExited(TabId),
 }
 
+/// How long "close?" waits for the second press.
+const CONFIRM_TIME: Duration = Duration::from_secs(3);
+
+/// What a second press would close.
+#[derive(Clone, Copy, PartialEq)]
+enum Closing {
+    Tab(TabId),
+    Window,
+}
+
+/// A close waiting for a second press, because it would end a running command.
+struct PendingClose {
+    what: Closing,
+    /// Shown in the tab bar meanwhile.
+    message: String,
+    until: Instant,
+}
+
 pub struct App {
     // Created in `resumed`, so they are `None` until the window exists.
     window: Option<Rc<Window>>,
@@ -109,8 +127,10 @@ pub struct App {
     hovered: Option<WindowButton>,
     /// When the empty title bar was last clicked, to notice a double click.
     last_click: Option<Instant>,
-    /// The close button was clicked: `about_to_wait` ends the event loop.
+    /// The window is closing (see `close_window`): `about_to_wait` ends the event loop.
     quit: bool,
+    /// A close that asked "sure?" and waits for the second press.
+    pending_close: Option<PendingClose>,
     /// The mouse is at the window's edge: pressing there resizes the window this way.
     resize_edge: Option<ResizeDirection>,
     /// Something went wrong (a config error...), shown in the tab bar until it's fixed.
@@ -187,6 +207,7 @@ impl App {
             hovered: None,
             last_click: None,
             quit: false,
+            pending_close: None,
             resize_edge: None,
             status: None,
         })
@@ -275,6 +296,55 @@ impl App {
         self.selection = None;
         self.scroll_rest = 0.0;
         self.request_redraw();
+    }
+
+    /// Ctrl+Shift+W: ends the shell of the tab on screen. If a command runs
+    /// (nvim, `cargo run`), only on the second press.
+    fn close_tab(&mut self) {
+        let tab = self.tab();
+        let (id, running) = (tab.id, tab.command.running());
+        let message = "a command runs here: Ctrl+Shift+W again to close";
+        if self.confirm_close(Closing::Tab(id), running, message.to_string()) {
+            // Only ends the shell; the tab goes when the shell is gone (`remove_tab`),
+            // the same way as after `exit`.
+            self.tab_mut().kill();
+        }
+    }
+
+    /// The close button or Alt+F4: closes Kel. If a command runs in any tab,
+    /// only on the second time.
+    fn close_window(&mut self) {
+        let running = self.tabs.iter().filter(|tab| tab.command.running()).count();
+        let message = match running {
+            1 => "a command runs in a tab: close again to quit".to_string(),
+            n => format!("commands run in {n} tabs: close again to quit"),
+        };
+        if self.confirm_close(Closing::Window, running > 0, message) {
+            self.quit = true;
+        }
+    }
+
+    /// Returns `true` if `what` may close now: nothing would be lost (`!running`),
+    /// or it's the second press within `CONFIRM_TIME`. Else asks, with `message`.
+    fn confirm_close(&mut self, what: Closing, running: bool, message: String) -> bool {
+        let now = Instant::now();
+        let again = self
+            .pending_close
+            .as_ref()
+            .is_some_and(|pending| pending.what == what && now < pending.until);
+        if !running || again {
+            if self.pending_close.take().is_some() {
+                self.request_redraw(); // the question goes away
+            }
+            return true;
+        }
+        self.pending_close = Some(PendingClose {
+            what,
+            message,
+            until: now + CONFIRM_TIME,
+        });
+        self.request_redraw();
+        false
     }
 
     /// The window's own title, seen in the taskbar and in Alt+Tab: the tab on screen.
@@ -391,9 +461,7 @@ impl App {
     fn run(&mut self, action: Action) {
         match action {
             Action::NewTab => self.new_tab(),
-            // Only ends the shell; the tab goes when the shell is gone (`remove_tab`),
-            // the same way as after `exit`.
-            Action::CloseTab => self.tab_mut().kill(),
+            Action::CloseTab => self.close_tab(),
             Action::NextTab => self.next_tab(1),
             Action::PreviousTab => self.next_tab(-1),
             Action::GoToTab(n) => self.show_tab(n - 1), // tab 1 is at index 0
@@ -532,9 +600,10 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     /// Every window event arrives here and is passed to its own handler below.
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            // Alt+F4, or "Close window" in the taskbar.
+            WindowEvent::CloseRequested => self.close_window(),
             WindowEvent::RedrawRequested => self.on_redraw(),
             WindowEvent::Resized(_) => self.on_resize(),
             // The window moved to a display with another scale (or the setting changed).
@@ -572,8 +641,16 @@ impl ApplicationHandler<UserEvent> for App {
             self.cursor_on = !self.cursor_on;
             self.next_blink = Instant::now() + BLINK_INTERVAL;
             self.request_redraw();
-            // The same timer looks for a saved config file, twice a second.
+            // The same timer looks for a saved config file, twice a second,
+            // and lets an unanswered "close?" go.
             self.reload_config_if_changed();
+            if self
+                .pending_close
+                .as_ref()
+                .is_some_and(|pending| Instant::now() >= pending.until)
+            {
+                self.pending_close = None;
+            }
         }
         // Sleep until the next event, or until it's time to blink, whichever comes first.
         event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_blink));
@@ -611,6 +688,7 @@ impl App {
             hovered: self.hovered,
             maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),
             status: self.status.as_deref(),
+            question: self.pending_close.as_ref().map(|p| p.message.as_str()),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -756,7 +834,7 @@ impl App {
             match button {
                 WindowButton::Minimize => window.set_minimized(true),
                 WindowButton::Maximize => window.set_maximized(!window.is_maximized()),
-                WindowButton::Close => self.quit = true,
+                WindowButton::Close => self.close_window(),
             }
             return;
         }
