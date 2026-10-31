@@ -166,6 +166,21 @@ Every line of a `[[tab]]` is optional: `[[tab]]` alone is a shell in the project
 folder. A file without any is one such tab. The running programs aren't saved, they
 can't be: opening the project starts them again.
 
+When the window closes (the × button or Alt+F4), Kel writes the file again with the
+tabs open then, so the project opens next time as you left it:
+
+| | Saved? |
+|---|---|
+| The tabs, left to right (closed ones go, new ones come) | yes |
+| Each tab's last folder (`cd src`) | yes, if the shell reports it (PowerShell, cmd) |
+| A tab's `name` and `command` from the file | yes |
+| Commands you typed (`git log`, `cargo run`) | no: opening a project never runs one by itself |
+| The text on the screen | no |
+
+Edit the file while the project isn't open, or Kel writes over your changes.
+Comments in it don't stay. Closing the tabs one by one (`exit`) doesn't save:
+the file keeps the tabs it had, not none.
+
 ## How the code is laid out
 
 ```text

@@ -11,6 +11,7 @@ use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{self, Chrome, Fonts, Renderer, TabLabel};
 use crate::tab::{Tab, TabId};
 use crate::term::Terminal;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime};
 use vte::Parser;
@@ -136,8 +137,9 @@ pub struct App {
     resize_edge: Option<ResizeDirection>,
     /// Something went wrong (a config error...), shown in the tab bar until it's fixed.
     status: Option<String>,
-    /// The open project's name, if Kel was started with one (`kel <name>`).
-    project: Option<String>,
+    /// The open project, if Kel was started with one (`kel <name>`): its name and
+    /// folder. Saved when the window closes (see `save_project`).
+    project: Option<(String, PathBuf)>,
 }
 
 impl App {
@@ -259,7 +261,7 @@ impl App {
             pending_close: None,
             resize_edge: None,
             status,
-            project: project.and(project_name),
+            project: project_name.zip(project.map(|project| project.folder)),
         })
     }
 
@@ -361,17 +363,46 @@ impl App {
         }
     }
 
-    /// The close button or Alt+F4: closes Kel. If a command runs in any tab,
-    /// only on the second time.
+    /// The close button or Alt+F4: saves the project and closes Kel. If a command
+    /// runs in any tab, or the project can't be saved, only on the second time.
     fn close_window(&mut self) {
+        // Saved at every try: a try that only asks writes the same file again later.
+        let saved = self.save_project();
         let running = self.tabs.iter().filter(|tab| tab.command.running()).count();
-        let message = match running {
-            1 => "a command runs in a tab: close again to quit".to_string(),
-            n => format!("commands run in {n} tabs: close again to quit"),
+        let question = match (saved, running) {
+            (Err(e), _) => Some(format!("{e:#}: close again to quit")),
+            (Ok(()), 0) => None,
+            (Ok(()), 1) => Some("a command runs in a tab: close again to quit".to_string()),
+            (Ok(()), n) => Some(format!("commands run in {n} tabs: close again to quit")),
         };
-        if self.confirm_close(Closing::Window, running > 0, message) {
+        let ask = question.is_some();
+        if self.confirm_close(Closing::Window, ask, question.unwrap_or_default()) {
             self.quit = true;
         }
+    }
+
+    /// Writes the open project's file: its tabs as they are now, each in its last
+    /// folder. Only what you wrote in the file comes back, the name and the command:
+    /// Kel never adds a command, so opening a project never runs `git push` by itself.
+    /// A tab opened since (Ctrl+Shift+T) is saved as a plain one, with its folder.
+    ///
+    /// Only when the window closes: after `exit` in each tab, the file stays as it
+    /// was, not a project of no tabs.
+    fn save_project(&self) -> anyhow::Result<()> {
+        let Some((name, folder)) = &self.project else {
+            return Ok(()); // no project, or one that couldn't be read: not written over
+        };
+        let mut project = Project {
+            folder: folder.clone(),
+            tabs: Vec::new(),
+        };
+        let tabs = self.tabs.iter().map(|tab| TabRecipe {
+            name: tab.name.clone(),
+            folder: tab.cwd().and_then(|cwd| project.tab_folder(&cwd)),
+            command: tab.start_command.clone(),
+        });
+        project.tabs = tabs.collect();
+        project::save(name, &project)
     }
 
     /// Returns `true` if `what` may close now: nothing would be lost (`!running`),
@@ -401,7 +432,7 @@ impl App {
     fn update_window_title(&self) {
         if let Some(window) = &self.window {
             let title = match &self.project {
-                Some(project) => format!("{} - {project} - Kel", self.tab().label()),
+                Some((project, _)) => format!("{} - {project} - Kel", self.tab().label()),
                 None => format!("{} - Kel", self.tab().label()),
             };
             window.set_title(&title);

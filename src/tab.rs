@@ -85,8 +85,13 @@ pub struct Tab {
     pub name: Option<String>,
     /// The shell's name, e.g. "powershell".
     shell_name: String,
-    /// A project's command, waiting for the shell to be ready (see `type_at_start`).
-    startup: Option<String>,
+    /// The folder the shell started in, if Kel gave one.
+    started_in: Option<PathBuf>,
+    /// The project's command for the tab, e.g. `nvim .`: typed at start (see
+    /// `type_at_start`), and saved with the project.
+    pub start_command: Option<String>,
+    /// `start_command` waits for the shell to be ready.
+    waiting_to_type: bool,
     /// The icon's name, picked by the title (see `icons::for_title`).
     pub icon: &'static str,
     /// New output since the tab was last on screen: a dot in the tab bar.
@@ -134,7 +139,9 @@ impl Tab {
             icon: icons::for_title(&shell_name),
             name: None,
             shell_name,
-            startup: None,
+            started_in: cwd.map(Path::to_path_buf),
+            start_command: None,
+            waiting_to_type: false,
             activity: false,
             resized_at: Instant::now(),
             command: CommandState::default(),
@@ -162,8 +169,9 @@ impl Tab {
     /// up. The first prompt is when shell integration first reports the folder;
     /// a shell without it gets the command at once.
     pub fn type_at_start(&mut self, command: &str, shell: &str) {
+        self.start_command = Some(command.to_string());
         if shell_integration::reports_folder(shell) {
-            self.startup = Some(command.to_string());
+            self.waiting_to_type = true;
         } else {
             self.write(format!("{command}\r").as_bytes());
         }
@@ -171,12 +179,13 @@ impl Tab {
 
     /// Called on new output: if the shell is ready now, types the waiting command.
     pub fn type_startup_when_ready(&mut self) {
-        if self.startup.is_none() {
+        if !self.waiting_to_type || self.terminal.lock().unwrap().cwd.is_none() {
             return;
         }
-        let ready = self.terminal.lock().unwrap().cwd.is_some();
-        if let Some(command) = self.startup.take_if(|_| ready) {
-            self.write(format!("{command}\r").as_bytes());
+        self.waiting_to_type = false;
+        if let Some(command) = &self.start_command {
+            let typed = format!("{command}\r");
+            self.write(typed.as_bytes());
         }
     }
 
@@ -224,13 +233,13 @@ impl Tab {
     }
 
     /// The shell's current folder, as it last said (see `shell_integration`).
+    /// Until it says one (and a shell without integration never does): the
+    /// folder it started in.
     pub fn cwd(&self) -> Option<PathBuf> {
-        self.terminal
-            .lock()
-            .unwrap()
-            .cwd
-            .as_ref()
+        let reported = self.terminal.lock().unwrap().cwd.clone();
+        reported
             .map(PathBuf::from)
+            .or_else(|| self.started_in.clone())
     }
 
     /// The shell wrote something while the tab is not on screen: light the dot.

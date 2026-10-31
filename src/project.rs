@@ -4,6 +4,9 @@
 //! if you did. The file holds no running programs (those can't be saved): Kel
 //! starts them again.
 //!
+//! When the window closes, Kel writes the file again with the tabs open then
+//! (see `save`): the project is what you left open.
+//!
 //! ```toml
 //! folder = 'C:\code\kel-terminal'   # single quotes: a '\' stays a '\'
 //!
@@ -17,31 +20,42 @@
 
 use crate::config;
 use anyhow::Context;
-use serde::Deserialize;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+/// On top of a file Kel wrote.
+const HEADER: &str = "\
+# Kel writes this file when its window closes: the tabs as they were then.
+# Edit it while the project isn't open, or Kel writes over it. Comments don't stay.
+
+";
 
 /// `deny_unknown_fields`: a typo (`[[tabs]]`, `comand`) is an error, not a tab
 /// that silently goes missing.
-#[derive(Debug, Deserialize, PartialEq)]
+/// `skip_serializing_if`: a line that says nothing isn't written.
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Project {
     /// The project's folder: tabs start here; their own folders are inside it.
     pub folder: PathBuf,
     /// `[[tab]]` in the file, one per tab, left to right.
-    #[serde(default, rename = "tab")]
+    #[serde(default, rename = "tab", skip_serializing_if = "Vec::is_empty")]
     pub tabs: Vec<TabRecipe>,
 }
 
 /// One tab of a project. Every line is optional: `[[tab]]` alone is a shell in
 /// the project's folder.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TabRecipe {
     /// Shown in the tab bar instead of the program's title.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Where it starts: inside the project's folder (`"src"`), or a full path.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub folder: Option<PathBuf>,
     /// Typed into the shell once it's ready, e.g. `nvim .`
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
 }
 
@@ -63,6 +77,28 @@ impl Project {
             None => self.folder.clone(),
         }
     }
+
+    /// The other way round: `folder` as a tab's `folder` line. Inside the project's
+    /// folder: the rest of the path (`src\term`); the folder itself: no line;
+    /// elsewhere: the full path. Big and small letters are the same folder on
+    /// Windows, and the shell reports them as typed (`cd SRC`).
+    pub fn tab_folder(&self, folder: &Path) -> Option<PathBuf> {
+        let mut rest = folder.components();
+        let inside = self.folder.components().all(|part| {
+            rest.next()
+                .is_some_and(|next| next.as_os_str().eq_ignore_ascii_case(part.as_os_str()))
+        });
+        match inside {
+            true if rest.as_path().as_os_str().is_empty() => None,
+            true => Some(rest.as_path().to_path_buf()),
+            false => Some(folder.to_path_buf()),
+        }
+    }
+
+    /// The file's text, as Kel writes it.
+    fn to_file(&self) -> anyhow::Result<String> {
+        Ok(format!("{HEADER}{}", toml::to_string(self)?))
+    }
 }
 
 /// Where the projects live, e.g. `C:\Users\you\AppData\Roaming\kel\projects`.
@@ -77,6 +113,20 @@ pub fn load(name: &str) -> anyhow::Result<Project> {
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("no project \"{name}\": can't read {}", path.display()))?;
     config::parse_toml(&file, &text)
+}
+
+/// Writes the project `name`'s file, over the old one.
+pub fn save(name: &str, project: &Project) -> anyhow::Result<()> {
+    let path = dir()?.join(format!("{name}.toml"));
+    let save = || -> anyhow::Result<()> {
+        // First to a file next to it, then in its place: if Kel stops halfway
+        // (the PC turns off), the old file is still whole.
+        let new = path.with_extension("toml.new");
+        std::fs::write(&new, project.to_file()?)?;
+        std::fs::rename(&new, &path)?;
+        Ok(())
+    };
+    save().with_context(|| format!("can't save project \"{name}\" to {}", path.display()))
 }
 
 #[cfg(test)]
@@ -125,6 +175,32 @@ folder = 'D:\other'
     fn no_tabs_is_one_plain_tab() {
         let project: Project = config::parse_toml("kel.toml", "folder = 'C:\\code'").unwrap();
         assert_eq!(project.tabs(), [TabRecipe::default()]);
+    }
+
+    #[test]
+    fn folders_as_tab_folders() {
+        let project: Project = config::parse_toml("kel.toml", EXAMPLE).unwrap();
+        let tab_folder = |folder: &str| project.tab_folder(Path::new(folder));
+        assert_eq!(tab_folder(r"C:\code\kel"), None);
+        assert_eq!(tab_folder(r"c:\Code\KEL\"), None);
+        assert_eq!(
+            tab_folder(r"C:\code\kel\src\term"),
+            Some(r"src\term".into())
+        );
+        assert_eq!(tab_folder(r"C:\code\kelp"), Some(r"C:\code\kelp".into()));
+        assert_eq!(tab_folder(r"C:\code"), Some(r"C:\code".into()));
+    }
+
+    #[test]
+    fn saved_file_reads_back() {
+        let project: Project = config::parse_toml("kel.toml", EXAMPLE).unwrap();
+        let text = project.to_file().unwrap();
+        assert!(text.starts_with(HEADER));
+        assert!(text.contains("folder = 'C:\\code\\kel'"), "{text}");
+        assert_eq!(
+            config::parse_toml::<Project>("kel.toml", &text).unwrap(),
+            project
+        );
     }
 
     #[test]
