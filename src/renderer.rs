@@ -9,7 +9,7 @@
 use crate::app::Selection;
 use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, WindowButton, scaled};
-use crate::term::{CursorShape, Grid};
+use crate::term::{CursorShape, Grid, Underline};
 use crate::theme::Theme;
 use anyhow::Context;
 use fontdb::{Family, Query, Style, Weight};
@@ -366,9 +366,17 @@ impl Renderer {
                         draw_glyph(&mut buffer, width, glyph, self.ascent, fg, x, y);
                     }
 
-                    if cell.underline {
-                        let underline_y = y + self.ascent as usize + text_px(2);
-                        fill_rect(&mut buffer, width, x, underline_y, cell_w, text_px(1), fg);
+                    if cell.underline != Underline::None {
+                        let color = theme.rgb(cell.underline_color, fg);
+                        draw_underline(
+                            &mut buffer,
+                            width,
+                            cell.underline,
+                            (x, y, cell_w, cell_h),
+                            self.ascent as usize,
+                            text_scale,
+                            color,
+                        );
                     }
 
                     if is_cursor {
@@ -596,6 +604,74 @@ fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: 
     for py in y..(y + h).min(height) {
         for px in x..(x + w).min(width) {
             pixels[py * width + px] = color;
+        }
+    }
+}
+
+/// Draws the underline of a cell at `(x, y)`, `w` x `h`, below the baseline
+/// (`baseline` pixels below the cell's top). Lines grow with the text (`scale`).
+///
+/// Neighbors must join into one line: the dots and dashes count from the
+/// window's left edge, not the cell's, and the curly one is one whole wave per
+/// cell, so it ends where the next one starts.
+fn draw_underline(
+    pixels: &mut [u32],
+    width: usize,
+    style: Underline,
+    (x, y, w, h): (usize, usize, usize, usize),
+    baseline: usize,
+    scale: f32,
+    color: u32,
+) {
+    let t = scaled(1, scale); // a line's thickness
+    // The tallest kinds (double, curly) need 4 lines; a font with little room
+    // below the baseline still gets them inside the cell.
+    let low = (y + h).saturating_sub(4 * t);
+    let line_y = (y + baseline + scaled(2, scale)).min(low + 3 * t);
+    let band_y = (y + baseline + scaled(1, scale)).min(low);
+    match style {
+        Underline::None => {}
+        Underline::Single => fill_rect(pixels, width, x, line_y, w, t, color),
+        Underline::Double => {
+            fill_rect(pixels, width, x, band_y, w, t, color);
+            fill_rect(pixels, width, x, band_y + 2 * t, w, t, color);
+        }
+        // On 2 pixels (at 100%), off 2.
+        Underline::Dotted => {
+            for px in (x..x + w).filter(|px| (px / (2 * t)).is_multiple_of(2)) {
+                fill_rect(pixels, width, px, line_y, 1, t, color);
+            }
+        }
+        // On 6, off 3.
+        Underline::Dashed => {
+            for px in (x..x + w).filter(|px| (px / (3 * t)) % 3 != 2) {
+                fill_rect(pixels, width, px, line_y, 1, t, color);
+            }
+        }
+        // Down from the top of the band and back up, 3 lines deep (at 100%):
+        // (1 - cos) / 2 goes 0 → 1 → 0 over one cell. Each pixel column also
+        // fills the gap to the one before, so the steep parts don't break up.
+        Underline::Curly => {
+            let depth = (3 * t) as f32;
+            let at = |px: usize| {
+                let turn = px as f32 / w as f32 * std::f32::consts::TAU;
+                ((1.0 - turn.cos()) / 2.0 * depth).round() as usize
+            };
+            let mut before = 0;
+            for px in 0..w {
+                let now = at(px);
+                let (top, bottom) = (before.min(now), before.max(now));
+                fill_rect(
+                    pixels,
+                    width,
+                    x + px,
+                    band_y + top,
+                    1,
+                    bottom - top + t,
+                    color,
+                );
+                before = now;
+            }
         }
     }
 }

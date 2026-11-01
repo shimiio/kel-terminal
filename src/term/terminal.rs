@@ -12,7 +12,7 @@
 //! Each method only decides which `Grid` function to call.
 
 use super::Grid;
-use super::grid::CursorShape;
+use super::grid::{CursorShape, Underline};
 use crate::mouse::Tracking;
 use crate::theme::Color;
 use vte::Perform;
@@ -74,7 +74,8 @@ impl Terminal {
                     self.grid.bg = Color::Default;
                     self.grid.bold = false;
                     self.grid.italic = false;
-                    self.grid.underline = false;
+                    self.grid.underline = Underline::None;
+                    self.grid.underline_color = Color::Default;
                     self.grid.inverse = false;
                 }
 
@@ -83,8 +84,20 @@ impl Terminal {
                 22 => self.grid.bold = false,
                 3 => self.grid.italic = true,
                 23 => self.grid.italic = false,
-                4 => self.grid.underline = true,
-                24 => self.grid.underline = false,
+                // `4` alone, or `4:n` for the kind (nvim's LSP errors: `4:3`, curly).
+                4 => {
+                    self.grid.underline = match param.get(1) {
+                        None | Some(1) => Underline::Single,
+                        Some(0) => Underline::None,
+                        Some(2) => Underline::Double,
+                        Some(3) => Underline::Curly,
+                        Some(4) => Underline::Dotted,
+                        Some(5) => Underline::Dashed,
+                        Some(_) => Underline::Single, // a kind we don't know
+                    }
+                }
+                21 => self.grid.underline = Underline::Double,
+                24 => self.grid.underline = Underline::None,
                 7 => self.grid.inverse = true,
                 27 => self.grid.inverse = false,
 
@@ -92,7 +105,7 @@ impl Terminal {
                 39 => self.grid.fg = Color::Default,
                 30..=37 => self.grid.fg = Color::Indexed((code - 30) as u8),
                 90..=97 => self.grid.fg = Color::Indexed((code - 90 + 8) as u8),
-                38 => match extended_color(&mut iter) {
+                38 => match extended_color(param, &mut iter) {
                     Some(color) => self.grid.fg = color,
                     None => break, // a format we don't know: stop reading this sequence
                 },
@@ -101,10 +114,17 @@ impl Terminal {
                 40..=47 => self.grid.bg = Color::Indexed((code - 40) as u8),
                 100..=107 => self.grid.bg = Color::Indexed((code - 100 + 8) as u8),
                 49 => self.grid.bg = Color::Default,
-                48 => match extended_color(&mut iter) {
+                48 => match extended_color(param, &mut iter) {
                     Some(color) => self.grid.bg = color,
                     None => break,
                 },
+
+                // underline color: 58 like 38, 59 back to the text's
+                58 => match extended_color(param, &mut iter) {
+                    Some(color) => self.grid.underline_color = color,
+                    None => break,
+                },
+                59 => self.grid.underline_color = Color::Default,
                 _ => {}
             }
         }
@@ -120,12 +140,28 @@ fn param(params: &vte::Params, index: usize, default: u16) -> u16 {
     }
 }
 
-/// Reads the rest of an extended color, after a 38 (text) or 48 (background):
+/// Reads the rest of an extended color, after a 38 (text), 48 (background) or
+/// 58 (underline):
 /// - `5;n`: color number n of the 256-color table
 /// - `2;r;g;b`: any color, as red, green and blue (0-255 each)
 ///
+/// Written with `;` (`38;2;r;g;b`), the numbers are the next params, in `iter`.
+/// Written with `:` (`58:2::255:0:0`, nvim's way), they're all in this one,
+/// `param`; and `2` may have one more number before r, g, b, a "color space",
+/// left empty (0).
+///
 /// `None` = a format we don't know.
-fn extended_color(iter: &mut vte::ParamsIter) -> Option<Color> {
+fn extended_color(param: &[u16], iter: &mut vte::ParamsIter) -> Option<Color> {
+    let rgb =
+        |r: u16, g: u16, b: u16| Color::Rgb(((r as u32) << 16) | ((g as u32) << 8) | b as u32);
+    if param.len() > 1 {
+        return match param[1..] {
+            [5, n, ..] => Some(Color::Indexed(n.min(255) as u8)),
+            [2, _, r, g, b, ..] => Some(rgb(r, g, b)),
+            [2, r, g, b] => Some(rgb(r, g, b)),
+            _ => None,
+        };
+    }
     let mut next = || iter.next().and_then(|p| p.first().copied());
     match next()? {
         5 => Some(Color::Indexed(next()?.min(255) as u8)),
@@ -500,10 +536,38 @@ mod tests {
     #[test]
     fn underline_and_inverse() {
         let t = feed("\x1b[4mU\x1b[7mR\x1b[24mr\x1b[0mx");
-        assert!(t.grid.cell(0, 0).underline); // U: underline
-        assert!(t.grid.cell(0, 1).underline && t.grid.cell(0, 1).inverse); // R: both
-        assert!(!t.grid.cell(0, 2).underline && t.grid.cell(0, 2).inverse); // r: underline off, inverse stays
-        assert!(!t.grid.cell(0, 3).underline && !t.grid.cell(0, 3).inverse); // x: everything reset
+        let underlined = |col| t.grid.cell(0, col).underline == Underline::Single;
+        assert!(underlined(0)); // U: underline
+        assert!(underlined(1) && t.grid.cell(0, 1).inverse); // R: both
+        assert!(!underlined(2) && t.grid.cell(0, 2).inverse); // r: underline off, inverse stays
+        assert!(!underlined(3) && !t.grid.cell(0, 3).inverse); // x: everything reset
+    }
+
+    #[test]
+    fn underline_kinds_and_color() {
+        // What nvim sends for an LSP error: curly, red.
+        let t = feed("\x1b[4:3mA\x1b[58:2::255:0:0mB\x1b[59mC\x1b[24mD\x1b[21mE\x1b[4:0mF");
+        let cell = |col| t.grid.cell(0, col);
+        assert_eq!(
+            (cell(0).underline, cell(0).underline_color),
+            (Underline::Curly, Color::Default)
+        );
+        assert_eq!(
+            (cell(1).underline, cell(1).underline_color),
+            (Underline::Curly, Color::Rgb(0xff0000))
+        );
+        assert_eq!(cell(2).underline_color, Color::Default); // 59
+        assert_eq!(cell(3).underline, Underline::None); // 24
+        assert_eq!(cell(4).underline, Underline::Double); // 21
+        assert_eq!(cell(5).underline, Underline::None); // 4:0
+    }
+
+    #[test]
+    fn colors_written_with_colons() {
+        let t = feed("\x1b[38:2:1:2:3mA\x1b[58:5:9mB\x1b[0mC");
+        assert_eq!(t.grid.cell(0, 0).fg, Color::Rgb(0x010203)); // no color space
+        assert_eq!(t.grid.cell(0, 1).underline_color, Color::Indexed(9));
+        assert_eq!(t.grid.cell(0, 2).underline_color, Color::Default); // 0 resets it
     }
 
     #[test]

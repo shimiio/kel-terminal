@@ -19,8 +19,23 @@ pub struct Cell {
     pub bg: Color,
     pub bold: bool,
     pub italic: bool,
-    pub underline: bool,
+    pub underline: Underline,
+    /// The underline's own color; `Default`: the text's.
+    pub underline_color: Color,
     pub inverse: bool,
+}
+
+/// How a cell is underlined: `ESC[4:<n>m`, n = 1 to 5 in this order. nvim marks
+/// LSP errors and spelling mistakes with `Curly`, in the color `ESC[58:...m` gives.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Underline {
+    #[default]
+    None,
+    Single,
+    Double,
+    Curly,
+    Dotted,
+    Dashed,
 }
 
 impl Default for Cell {
@@ -31,7 +46,8 @@ impl Default for Cell {
             bg: Color::Default,
             bold: false,
             italic: false,
-            underline: false,
+            underline: Underline::None,
+            underline_color: Color::Default,
             inverse: false,
         }
     }
@@ -55,7 +71,8 @@ pub struct Grid {
     pub bg: Color,
     pub bold: bool,
     pub italic: bool,
-    pub underline: bool,
+    pub underline: Underline,
+    pub underline_color: Color,
     pub inverse: bool,
     /// Hidden by `ESC[?25l`, shown again by `ESC[?25h`.
     pub cursor_visible: bool,
@@ -89,7 +106,8 @@ impl Grid {
             bg: Color::Default,
             bold: false,
             italic: false,
-            underline: false,
+            underline: Underline::None,
+            underline_color: Color::Default,
             inverse: false,
             cursor_visible: true,
             cursor_shape: CursorShape::Underline,
@@ -167,6 +185,7 @@ impl Grid {
             bold: self.bold,
             italic: self.italic,
             underline: self.underline,
+            underline_color: self.underline_color,
             inverse: self.inverse,
         };
         self.cursor_col += 1;
