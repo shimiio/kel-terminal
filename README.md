@@ -37,6 +37,7 @@ cargo build --release   # a fast build: target/release/kel.exe
 | Ctrl+C | Stop the running command |
 | Mouse drag | Select text |
 | Mouse wheel | Scroll back through earlier output |
+| Shift + mouse | In a program that takes the mouse (nvim, htop, lazygit), the mouse is the program's; with Shift it's Kel's: select text, scroll back |
 | Drag the empty top bar | Move the window |
 | Double-click the empty top bar | Maximize / restore |
 | Drag the window's edge or corner | Resize the window |
@@ -201,6 +202,7 @@ the file keeps the tabs it had, not none.
 |---|---|
 | `src/app.rs` | The window, the list of tabs, and all events: keys, mouse, resize |
 | `src/keys.rs` | Kel's shortcuts (one table), and the bytes every other key sends to the shell |
+| `src/mouse.rs` | The bytes that tell a program what the mouse does, if it asked for the mouse |
 | `src/layout.rs` | Where the terminal panel goes in the window |
 | `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
 | `src/config.rs` | Reads `config.toml` |

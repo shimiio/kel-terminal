@@ -14,6 +14,7 @@
 //! - `config`: the settings file, `%APPDATA%\kel\config.toml`.
 //! - `icons`: the tab icons, pixel-art PNGs built into the .exe.
 //! - `layout`: where the terminal panel goes in the window.
+//! - `mouse`: the bytes that tell a program (nvim) what the mouse does, if it asked.
 //! - `project`: a project file, the recipe for a set of tabs.
 //! - `pty`: starts the shell inside a pseudo-terminal.
 //! - `term`: understands what the shell sends and keeps the screen as a grid of cells.
@@ -28,6 +29,7 @@ pub mod config;
 pub mod icons;
 pub mod keys;
 pub mod layout;
+pub mod mouse;
 pub mod project;
 pub mod pty;
 pub mod renderer;

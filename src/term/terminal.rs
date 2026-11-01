@@ -13,6 +13,7 @@
 
 use super::Grid;
 use super::grid::CursorShape;
+use crate::mouse::Tracking;
 use crate::theme::Color;
 use vte::Perform;
 
@@ -32,6 +33,12 @@ pub struct Terminal {
     pub replies: Vec<u8>,
     /// The program asked for pasted text to be marked (`ESC[?2004h`), see `paste_bytes`.
     pub bracketed_paste: bool,
+    /// The program asked for the mouse (`ESC[?1002h`...), see `mouse`.
+    pub mouse: Tracking,
+    /// ...and for the reports written the SGR way (`ESC[?1006h`).
+    pub mouse_sgr: bool,
+    /// The program asked to hear when the window gets and loses the focus (`ESC[?1004h`).
+    pub focus_events: bool,
     /// The window title the program asked for (`ESC]0;title BEL`), as it came.
     pub title: Option<String>,
     /// The shell's current folder, if it says (see `shell_integration`).
@@ -46,6 +53,9 @@ impl Terminal {
             grid: Grid::new(rows, cols),
             replies: Vec::new(),
             bracketed_paste: false,
+            mouse: Tracking::Off,
+            mouse_sgr: false,
+            focus_events: false,
             title: None,
             cwd: None,
             marks: Vec::new(),
@@ -153,16 +163,28 @@ impl Perform for Terminal {
     ) {
         // e.g. `ESC[2;5H`: params = [2, 5], action = 'H'.
 
-        // Private sequences, `ESC[?...`: the `?` arrives in `intermediates`.
+        // Private modes, `ESC[?...h` on, `ESC[?...l` off: the `?` arrives in
+        // `intermediates`. Several can come at once: `ESC[?1000;1006h`.
         if intermediates == [b'?'] {
-            match (action, param(params, 0, 0)) {
-                ('l', 25) => self.grid.cursor_visible = false,
-                ('h', 25) => self.grid.cursor_visible = true,
-                ('h', 1049) => self.grid.enter_alt_screen(),
-                ('l', 1049) => self.grid.leave_alt_screen(),
-                ('h', 2004) => self.bracketed_paste = true,
-                ('l', 2004) => self.bracketed_paste = false,
-                _ => {}
+            let on = match action {
+                'h' => true,
+                'l' => false,
+                _ => return,
+            };
+            for mode in params.iter().filter_map(|param| param.first()) {
+                match mode {
+                    25 => self.grid.cursor_visible = on,
+                    1049 if on => self.grid.enter_alt_screen(),
+                    1049 => self.grid.leave_alt_screen(),
+                    2004 => self.bracketed_paste = on,
+                    1000 | 1002 | 1003 if !on => self.mouse = Tracking::Off,
+                    1000 => self.mouse = Tracking::Clicks,
+                    1002 => self.mouse = Tracking::Drags,
+                    1003 => self.mouse = Tracking::Moves,
+                    1006 => self.mouse_sgr = on,
+                    1004 => self.focus_events = on,
+                    _ => {}
+                }
             }
             return;
         }
@@ -305,6 +327,20 @@ mod tests {
         assert_eq!(feed("\x1b[2;5H\x1b[6n").replies, b"\x1b[2;5R");
         assert_eq!(feed("\x1b[5n").replies, b"\x1b[0n");
         assert!(feed("hello").replies.is_empty());
+    }
+
+    #[test]
+    fn mouse_and_focus_modes() {
+        let terminal = feed("\x1b[?1002h\x1b[?1006h\x1b[?1004h");
+        assert_eq!(terminal.mouse, Tracking::Drags);
+        assert!(terminal.mouse_sgr);
+        assert!(terminal.focus_events);
+        // Two at once.
+        let terminal = feed("\x1b[?1000;1006h");
+        assert_eq!(terminal.mouse, Tracking::Clicks);
+        assert!(terminal.mouse_sgr);
+        // nvim turns it off while you type a `:` command.
+        assert_eq!(feed("\x1b[?1002h\x1b[?1002l").mouse, Tracking::Off);
     }
 
     #[test]

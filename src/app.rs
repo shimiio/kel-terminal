@@ -7,6 +7,7 @@
 use crate::config::{self, Config};
 use crate::keys::{self, Action};
 use crate::layout::{Layout, WindowButton};
+use crate::mouse::{self, Tracking};
 use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{self, Chrome, Fonts, Renderer, TabLabel};
 use crate::tab::{Tab, TabId};
@@ -108,6 +109,13 @@ pub struct App {
     selection: Option<Selection>,
     /// True while the left button is held down (dragging).
     selecting: bool,
+    /// The button whose press went to the program (see `on_mouse_button`): its
+    /// moves and its release go there too.
+    mouse_button: Option<mouse::Button>,
+    /// The window has the keyboard focus.
+    focused: bool,
+    /// The tab last told it has the focus (see `update_focus`).
+    focused_tab: Option<TabId>,
 
     /// Is the blinking cursor in its "on" half right now?
     cursor_on: bool,
@@ -245,6 +253,9 @@ impl App {
             mouse_cell: (0, 0),
             selection: None,
             selecting: false,
+            mouse_button: None,
+            focused: false,
+            focused_tab: None,
 
             cursor_on: true,
             next_blink: Instant::now() + BLINK_INTERVAL,
@@ -347,7 +358,28 @@ impl App {
         // The selection and the half-scrolled line belonged to the other tab.
         self.selection = None;
         self.scroll_rest = 0.0;
+        self.update_focus();
         self.request_redraw();
+    }
+
+    /// Tells the programs that asked (`ESC[?1004h`) when they get the focus
+    /// (`ESC[I`) and lose it (`ESC[O`). nvim does, e.g. to reload a file changed
+    /// meanwhile. A tab has the focus while it's on screen and the window has it.
+    fn update_focus(&mut self) {
+        let now = self.focused.then(|| self.tab().id);
+        if now == self.focused_tab {
+            return;
+        }
+        let before = std::mem::replace(&mut self.focused_tab, now);
+        for (id, bytes) in [(before, b"\x1b[O"), (now, b"\x1b[I")] {
+            // `before` may be gone: closed.
+            if let Some(tab) = self.tabs.iter_mut().find(|tab| Some(tab.id) == id) {
+                let asked = tab.terminal.lock().unwrap().focus_events;
+                if asked {
+                    tab.write(bytes);
+                }
+            }
+        }
     }
 
     /// Ctrl+Shift+W: ends the shell of the tab on screen. If a command runs
@@ -708,11 +740,11 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::MouseWheel { delta, .. } => self.on_mouse_wheel(delta),
             WindowEvent::CursorMoved { position, .. } => self.on_mouse_move(position),
             WindowEvent::CursorLeft { .. } => self.set_hovered(None),
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Left,
-                ..
-            } => self.on_left_button(state),
+            WindowEvent::MouseInput { state, button, .. } => self.on_mouse_button(state, button),
+            WindowEvent::Focused(focused) => {
+                self.focused = focused;
+                self.update_focus();
+            }
             _ => {}
         }
     }
@@ -843,6 +875,21 @@ impl App {
             MouseScrollDelta::LineDelta(_, y) => y * 3.0, // 3 lines per wheel notch
             MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / cell_h as f32,
         };
+        if self.program_takes_mouse() {
+            // The program scrolls by itself (nvim: 3 lines a notch): it gets notches.
+            self.scroll_rest += lines / 3.0;
+            let notches = self.scroll_rest.trunc();
+            self.scroll_rest -= notches;
+            let button = if notches > 0.0 {
+                mouse::Button::WheelUp
+            } else {
+                mouse::Button::WheelDown
+            };
+            for _ in 0..notches.abs() as usize {
+                self.report_mouse(mouse::Event::Press(button));
+            }
+            return;
+        }
         // Add it to the leftover from before. Scroll by the whole lines, keep the rest.
         self.scroll_rest += lines;
         let whole = self.scroll_rest.trunc();
@@ -871,6 +918,7 @@ impl App {
         let text = self.layout.text;
         let col = x.saturating_sub(text.x) / cell_w;
         let row = y.saturating_sub(text.y) / cell_h;
+        let moved = (row, col) != self.mouse_cell;
         self.mouse_pos = (x, y);
         self.mouse_cell = (row, col);
         // At the window's edge: resize arrows, and no lit button under them. A
@@ -899,6 +947,63 @@ impl App {
                 selection.end = (row, col);
             }
             self.request_redraw();
+        } else if moved
+            && (self.mouse_button.is_some() || self.over_text() && self.program_takes_mouse())
+        {
+            // Dragging in the program, or just moving if it asked for every move.
+            self.report_mouse(mouse::Event::Move(self.mouse_button));
+        }
+    }
+
+    /// The program on screen asked for the mouse (nvim does), and Shift isn't held:
+    /// Shift + mouse is always Kel's, to select text the program shows.
+    fn program_takes_mouse(&self) -> bool {
+        !self.modifiers.shift_key() && self.tab().terminal.lock().unwrap().mouse != Tracking::Off
+    }
+
+    /// The mouse is over the terminal panel: not the title bar, not an edge.
+    fn over_text(&self) -> bool {
+        let (x, y) = self.mouse_pos;
+        self.resize_edge.is_none() && !self.layout.title_bar.contains(x, y)
+    }
+
+    /// Tells the program on screen about `event` at the mouse's cell, the way it asked.
+    fn report_mouse(&mut self, event: mouse::Event) {
+        let bytes = {
+            let terminal = self.tab().terminal.lock().unwrap();
+            // In the space around the text: the nearest cell.
+            let row = self.mouse_cell.0.min(terminal.grid.rows() - 1);
+            let col = self.mouse_cell.1.min(terminal.grid.cols() - 1);
+            let (tracking, sgr) = (terminal.mouse, terminal.mouse_sgr);
+            mouse::report(tracking, sgr, event, self.modifiers, (row, col))
+        };
+        if let Some(bytes) = bytes {
+            self.tab_mut().write(&bytes);
+        }
+    }
+
+    /// A mouse button: the program's, if it asked for the mouse; else Kel's (the
+    /// left one selects text). The title bar and the edges are always Kel's.
+    fn on_mouse_button(&mut self, state: ElementState, button: MouseButton) {
+        let button = match button {
+            MouseButton::Left => mouse::Button::Left,
+            MouseButton::Middle => mouse::Button::Middle,
+            MouseButton::Right => mouse::Button::Right,
+            _ => return,
+        };
+        match state {
+            // The program got the press, so it gets the release, wherever the
+            // mouse is now and whatever is held.
+            ElementState::Released if self.mouse_button == Some(button) => {
+                self.mouse_button = None;
+                self.report_mouse(mouse::Event::Release(button));
+            }
+            ElementState::Pressed if self.over_text() && self.program_takes_mouse() => {
+                self.mouse_button = Some(button);
+                self.report_mouse(mouse::Event::Press(button));
+            }
+            _ if button == mouse::Button::Left => self.on_left_button(state),
+            _ => {}
         }
     }
 

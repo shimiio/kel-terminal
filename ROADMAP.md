@@ -88,10 +88,12 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 
 ## 6. nvim polish
 
-- [ ] Mouse reporting (`?1000`, `?1006`) and focus events (`?1004`)
+- [x] Mouse reporting (`?1000`, `?1002`, `?1003`, `?1006`) and focus events (`?1004`);
+      Shift + mouse stays Kel's
 - [ ] Undercurl and underline color (LSP diagnostics)
 - [ ] Wide characters (emoji, CJK) take two cells
-- [ ] Synchronized output (`?2026`) against flicker
+- [ ] ~~Synchronized output (`?2026`) against flicker~~: measured, nvim doesn't send it
+      through ConPTY
 - [ ] `:checkhealth` clean
 
 ## 7. Command palette and catalog
