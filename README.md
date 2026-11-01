@@ -45,6 +45,7 @@ the new program.
 | Ctrl+= / Ctrl+- | Bigger / smaller font |
 | Ctrl+0 | Font size back to the one in the config |
 | Ctrl+, | Open the config file |
+| Ctrl+Shift+P | Command palette: type a few letters (`ntb` finds "New tab"), Up/Down, Enter; Esc or a click closes it |
 | Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C) |
 | Ctrl+Shift+V | Paste |
 | Ctrl+C | Stop the running command |
@@ -225,6 +226,7 @@ the file keeps the tabs it had, not none.
 | `src/app.rs` | The window, the list of tabs, and all events: keys, mouse, resize |
 | `src/keys.rs` | Kel's shortcuts (one table), and the bytes every other key sends to the shell |
 | `src/mouse.rs` | The bytes that tell a program what the mouse does, if it asked for the mouse |
+| `src/palette.rs` | The command palette's state: what's typed, which lines match, which one is chosen |
 | `src/layout.rs` | Where the terminal panel goes in the window |
 | `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
 | `src/config.rs` | Reads `config.toml` |

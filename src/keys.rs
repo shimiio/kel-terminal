@@ -5,6 +5,7 @@
 //! into bytes for the shell. Nothing here knows about windows or tabs, so it
 //! can all be tested with plain values.
 
+use crate::palette::Item;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
 /// Something Kel does when you press one of its shortcuts.
@@ -26,6 +27,8 @@ pub enum Action {
     ZoomOut,
     ZoomReset,
     OpenConfig,
+    /// Opens the command palette, or closes it.
+    Palette,
 }
 
 /// Which of Kel's shortcuts this key is, if any. All of Kel's shortcuts, in one table.
@@ -64,9 +67,34 @@ pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
         (KeyCode::Minus, _) => Action::ZoomOut,
         (KeyCode::Digit0, _) => Action::ZoomReset,
         (KeyCode::Comma, _) => Action::OpenConfig,
+        (KeyCode::KeyP, true) => Action::Palette,
         _ => return None,
     };
     Some(action)
+}
+
+/// Kel's actions as the command palette lists them, with their shortcuts from the
+/// table above (a test checks they match).
+pub fn palette_items() -> Vec<Item> {
+    let item = |label, hint, action| Item {
+        label,
+        hint,
+        action,
+    };
+    vec![
+        item("New tab", "Ctrl+Shift+T", Action::NewTab),
+        item("Close tab", "Ctrl+Shift+W", Action::CloseTab),
+        item("Next tab", "Ctrl+Tab", Action::NextTab),
+        item("Previous tab", "Ctrl+Shift+Tab", Action::PreviousTab),
+        item("Last tab", "Ctrl+9", Action::LastTab),
+        item("Paste", "Ctrl+Shift+V", Action::Paste),
+        item("Copy the selection", "Ctrl+Shift+C", Action::Copy),
+        item("Stop the running command", "Ctrl+C", Action::Interrupt),
+        item("Zoom in: bigger font", "Ctrl+=", Action::ZoomIn),
+        item("Zoom out: smaller font", "Ctrl+-", Action::ZoomOut),
+        item("Reset zoom", "Ctrl+0", Action::ZoomReset),
+        item("Open the config file", "Ctrl+,", Action::OpenConfig),
+    ]
 }
 
 /// The bytes to send for pasted text.
@@ -333,6 +361,53 @@ mod tests {
     fn ctrl_c_and_ctrl_shift_c() {
         assert_eq!(shortcut(key(KeyCode::KeyC), CTRL), Some(Action::Interrupt));
         assert_eq!(shortcut(key(KeyCode::KeyC), CTRL_SHIFT), Some(Action::Copy));
+    }
+
+    /// "Ctrl+Shift+T" → the T key with Ctrl and Shift held.
+    fn parse_hint(hint: &str) -> (PhysicalKey, ModifiersState) {
+        let mut mods = ModifiersState::empty();
+        let mut parts: Vec<&str> = hint.split('+').collect();
+        // Ctrl+- and Ctrl+= : the last part is the key, even when it's a `+`-less sign.
+        let last = parts.pop().unwrap();
+        for part in parts {
+            match part {
+                "Ctrl" => mods |= ModifiersState::CONTROL,
+                "Shift" => mods |= ModifiersState::SHIFT,
+                _ => panic!("unknown modifier in {hint}"),
+            }
+        }
+        let code = match last {
+            "Tab" => KeyCode::Tab,
+            "=" => KeyCode::Equal,
+            "-" => KeyCode::Minus,
+            "," => KeyCode::Comma,
+            "0" => KeyCode::Digit0,
+            "9" => KeyCode::Digit9,
+            "C" => KeyCode::KeyC,
+            "T" => KeyCode::KeyT,
+            "V" => KeyCode::KeyV,
+            "W" => KeyCode::KeyW,
+            _ => panic!("add {last} to parse_hint"),
+        };
+        (PhysicalKey::Code(code), mods)
+    }
+
+    #[test]
+    fn palette_hints_are_the_real_shortcuts() {
+        for item in palette_items() {
+            let (key, mods) = parse_hint(item.hint);
+            assert_eq!(shortcut(key, mods), Some(item.action), "{}", item.label);
+        }
+    }
+
+    #[test]
+    fn palette_shortcut() {
+        assert_eq!(
+            shortcut(key(KeyCode::KeyP), CTRL_SHIFT),
+            Some(Action::Palette)
+        );
+        // Ctrl+P alone goes to the program (nvim: up in a list).
+        assert_eq!(shortcut(key(KeyCode::KeyP), CTRL), None);
     }
 
     #[test]

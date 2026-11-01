@@ -10,6 +10,7 @@ use crate::app::Selection;
 use crate::fallback::Fallbacks;
 use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, WindowButton, scaled};
+use crate::palette::Palette;
 use crate::term::{CursorShape, Grid, Underline, Width, char_width};
 use crate::theme::Theme;
 use anyhow::Context;
@@ -39,6 +40,12 @@ const DOT_RADIUS: f32 = 3.0;
 const RING_WIDTH: f32 = 1.5;
 /// The close button under the mouse: the red of Windows' own.
 const CLOSE_HOVER: u32 = 0xc42b1c;
+
+/// The command palette: at most this wide (in letters) and this many lines.
+const PALETTE_CHARS: usize = 64;
+const PALETTE_LINES: usize = 10;
+/// Space above and below a palette line's text, and at its sides, at 100%.
+const PALETTE_PADDING: usize = 6;
 
 /// Zoom limits: smaller is unreadable, bigger leaves only a few cells in the window.
 const MIN_FONT_SIZE: f32 = 8.0;
@@ -74,6 +81,8 @@ pub struct Chrome<'a> {
     pub status: Option<&'a str>,
     /// A question ("close again to quit"): in its place, in yellow, while it waits.
     pub question: Option<&'a str>,
+    /// The command palette, if it's open: drawn over everything else.
+    pub palette: Option<&'a Palette>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -409,6 +418,19 @@ impl Renderer {
             }
         }
 
+        // Last, so it's on top of the terminal, whatever the terminal shows.
+        if let Some(palette) = chrome.palette {
+            draw_palette(
+                &mut buffer,
+                width,
+                theme,
+                layout,
+                palette,
+                font,
+                &mut self.ui,
+            );
+        }
+
         buffer.present().unwrap();
     }
 }
@@ -605,6 +627,175 @@ fn draw_status(
             y,
         );
     }
+}
+
+/// The command palette, at the top of the terminal panel, in the middle:
+///
+/// ```text
+/// ┌──────────────────────────────┐
+/// │ > zo|                        │  what's typed, and a cursor
+/// ├──────────────────────────────┤
+/// │ Zoom in              Ctrl+=  │  the chosen line, in the selection color
+/// │ Zoom out             Ctrl+-  │
+/// └──────────────────────────────┘
+/// ```
+fn draw_palette(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    palette: &Palette,
+    font: &fontdue::Font,
+    ui: &mut Ui,
+) {
+    let area = layout.inside;
+    let pad = ui.px(PALETTE_PADDING);
+    let b = layout.border.max(1);
+    let line_h = ui.line_h + 2 * pad;
+    // As wide as 64 letters, or the panel minus some room at the sides.
+    let box_w = (PALETTE_CHARS * ui.advance + 2 * pad).min(area.w.saturating_sub(4 * pad));
+    if box_w < 10 * ui.advance {
+        return; // a window too narrow for it
+    }
+    let x = area.x + (area.w - box_w) / 2;
+    let y = area.y + 2 * pad;
+
+    // The lines on screen: the chosen one is always among them. With 10 lines and
+    // line 12 chosen, lines 3 to 12.
+    let shown: Vec<_> = palette.shown().collect();
+    let first = (palette.selected() + 1).saturating_sub(PALETTE_LINES);
+    let lines = shown.len().clamp(1, PALETTE_LINES); // "nothing found" takes a line too
+    let box_h = line_h + b + lines * line_h + 2 * b;
+
+    let dim = blend(theme.frame, theme.foreground, 128);
+    outline(
+        pixels,
+        width,
+        Rect {
+            x,
+            y,
+            w: box_w,
+            h: box_h,
+        },
+        b,
+        theme.border,
+    );
+    fill_rect(
+        pixels,
+        width,
+        x + b,
+        y + b,
+        box_w - 2 * b,
+        box_h - 2 * b,
+        theme.frame,
+    );
+    let text_w = box_w - 2 * (b + pad);
+    let text_x = x + b + pad;
+
+    // The search box: "> ", what's typed, and a bar for the cursor after it.
+    let query = format!("> {}", palette.query());
+    let query_y = y + b + pad;
+    let typed = draw_ui_text(
+        pixels,
+        width,
+        font,
+        ui,
+        &query,
+        (text_x, query_y),
+        text_w,
+        theme.foreground,
+    );
+    fill_rect(
+        pixels,
+        width,
+        text_x + typed,
+        query_y,
+        ui.px(2),
+        ui.line_h,
+        theme.cursor,
+    );
+    let sep_y = y + b + line_h;
+    fill_rect(pixels, width, x, sep_y, box_w, b, theme.border);
+
+    let list_y = sep_y + b;
+    if shown.is_empty() {
+        let at = (text_x, list_y + pad);
+        draw_ui_text(pixels, width, font, ui, "Nothing found", at, text_w, dim);
+    }
+    for (row, (i, item)) in shown
+        .iter()
+        .enumerate()
+        .skip(first)
+        .take(PALETTE_LINES)
+        .enumerate()
+    {
+        let line_y = list_y + row * line_h;
+        if i == palette.selected() {
+            fill_rect(
+                pixels,
+                width,
+                x + b,
+                line_y,
+                box_w - 2 * b,
+                line_h,
+                theme.selection,
+            );
+        }
+        // The hint at the right end, then the label in the room left of it.
+        let hint_w = item.hint.chars().count() * ui.advance;
+        let hint_x = (text_x + text_w).saturating_sub(hint_w);
+        draw_ui_text(
+            pixels,
+            width,
+            font,
+            ui,
+            item.hint,
+            (hint_x, line_y + pad),
+            hint_w,
+            dim,
+        );
+        let label_w = text_w.saturating_sub(hint_w + 2 * ui.advance);
+        let at = (text_x, line_y + pad);
+        draw_ui_text(
+            pixels,
+            width,
+            font,
+            ui,
+            item.label,
+            at,
+            label_w,
+            theme.foreground,
+        );
+    }
+}
+
+/// One line of UI text from (x, y), cut off where it would pass `max_w` pixels.
+/// Returns how wide the drawn part is.
+#[allow(clippy::too_many_arguments)]
+fn draw_ui_text(
+    pixels: &mut [u32],
+    width: usize,
+    font: &fontdue::Font,
+    ui: &mut Ui,
+    text: &str,
+    (x, y): (usize, usize),
+    max_w: usize,
+    color: u32,
+) -> usize {
+    let size = ui.font_size();
+    let mut drawn = 0;
+    for ch in text.chars() {
+        if drawn + ui.advance > max_w {
+            break;
+        }
+        let glyph = ui
+            .glyphs
+            .entry(ch)
+            .or_insert_with(|| font.rasterize(ch, size));
+        draw_glyph(pixels, width, glyph, ui.ascent, color, x + drawn, y);
+        drawn += ui.advance;
+    }
+    drawn
 }
 
 /// A rectangle's outline, `t` pixels thick.

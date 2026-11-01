@@ -8,6 +8,7 @@ use crate::config::{self, Config};
 use crate::keys::{self, Action};
 use crate::layout::{Layout, WindowButton};
 use crate::mouse::{self, Tracking};
+use crate::palette::Palette;
 use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{self, Chrome, Fonts, Renderer, TabLabel};
 use crate::tab::{Tab, TabId};
@@ -21,7 +22,7 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-use winit::keyboard::ModifiersState;
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{CursorIcon, ResizeDirection, Window, WindowId};
 
 // Starting size, in cells. After that, the size comes from the window (`on_resize`).
@@ -148,6 +149,8 @@ pub struct App {
     /// The open project, if Kel was started with one (`kel <name>`): its name and
     /// folder. Saved when the window closes (see `save_project`).
     project: Option<(String, PathBuf)>,
+    /// The command palette, while it's open. It gets the keys then, not the shell.
+    palette: Option<Palette>,
 }
 
 impl App {
@@ -273,6 +276,7 @@ impl App {
             resize_edge: None,
             status,
             project: project_name.zip(project.map(|project| project.folder)),
+            palette: None,
         })
     }
 
@@ -595,7 +599,46 @@ impl App {
                     let _ = std::process::Command::new("explorer.exe").arg(path).spawn();
                 }
             }
+            Action::Palette => {
+                self.palette = match self.palette {
+                    Some(_) => None,
+                    None => Some(Palette::new(keys::palette_items())),
+                };
+                self.request_redraw();
+            }
         }
+    }
+
+    /// A key while the palette is open: it's for the palette, never the shell.
+    /// Letters go into the search box, Up/Down choose a line, Enter does it, Esc
+    /// closes. Kel's shortcuts wait, except Ctrl+Shift+P, which closes it.
+    fn palette_key(&mut self, event: &KeyEvent) {
+        let Some(palette) = &mut self.palette else {
+            return;
+        };
+        match &event.logical_key {
+            Key::Named(NamedKey::Escape) => self.palette = None,
+            Key::Named(NamedKey::Enter) => {
+                let chosen = palette.chosen();
+                self.palette = None;
+                if let Some(action) = chosen {
+                    self.run(action);
+                }
+            }
+            Key::Named(NamedKey::ArrowUp) => palette.move_selection(-1),
+            Key::Named(NamedKey::ArrowDown) => palette.move_selection(1),
+            Key::Named(NamedKey::Backspace) => palette.backspace(),
+            // Typed letters, not Ctrl+letter: winit leaves Ctrl out of `text`, so
+            // Ctrl+D would type a "d".
+            _ if !self.modifiers.control_key() => {
+                if let Some(text) = event.text.as_deref() {
+                    let text: String = text.chars().filter(|c| !c.is_control()).collect();
+                    palette.type_text(&text);
+                }
+            }
+            _ => {}
+        }
+        self.request_redraw();
     }
 
     /// Pastes the clipboard into the shell.
@@ -808,6 +851,7 @@ impl App {
             maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),
             status: self.status.as_deref(),
             question: self.pending_close.as_ref().map(|p| p.message.as_str()),
+            palette: self.palette.as_ref(),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -851,7 +895,12 @@ impl App {
     /// or a key for the shell.
     fn on_key(&mut self, event: KeyEvent) {
         self.restart_blink();
-        if let Some(action) = keys::shortcut(event.physical_key, self.modifiers) {
+        let shortcut = keys::shortcut(event.physical_key, self.modifiers);
+        if self.palette.is_some() && shortcut != Some(Action::Palette) {
+            self.palette_key(&event);
+            return;
+        }
+        if let Some(action) = shortcut {
             self.run(action);
             return;
         }
@@ -986,6 +1035,12 @@ impl App {
     /// A mouse button: the program's, if it asked for the mouse; else Kel's (the
     /// left one selects text). The title bar and the edges are always Kel's.
     fn on_mouse_button(&mut self, state: ElementState, button: MouseButton) {
+        // A click anywhere closes the palette, and does nothing else.
+        if self.palette.is_some() && state == ElementState::Pressed {
+            self.palette = None;
+            self.request_redraw();
+            return;
+        }
         let button = match button {
             MouseButton::Left => mouse::Button::Left,
             MouseButton::Middle => mouse::Button::Middle,

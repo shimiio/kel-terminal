@@ -102,7 +102,7 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 
 ## 7. Command palette and catalog
 
-- [ ] Command palette (Ctrl+Shift+P): a searchable list window
+- [x] Command palette (Ctrl+Shift+P): a searchable list over the terminal, Kel's actions in it
 - [ ] Projects in the palette
 - [x] Install scripts in `setup/`, one per tool, skip what's there: `lazygit.ps1` (winget)
 - [ ] Catalog: the palette lists `setup/` scripts and runs one in a new tab (per OS: `.ps1`, `.sh`)
