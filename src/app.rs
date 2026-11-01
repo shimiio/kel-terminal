@@ -616,8 +616,10 @@ impl App {
                 self.palette = match self.palette {
                     Some(_) => None,
                     None => {
-                        // Kel's actions first, then the install scripts.
+                        // Kel's actions first, then the projects, then the install scripts.
+                        let current = self.project.as_ref().map(|(name, _)| name.as_str());
                         let mut items = keys::palette_items();
+                        items.extend(project::palette_items(current));
                         items.extend(setup::palette_items());
                         Some(Palette::new(items))
                     }
@@ -625,6 +627,20 @@ impl App {
                 self.request_redraw();
             }
             Action::Install(name) => self.install(name),
+            Action::OpenProject(name) => self.open_project(&name),
+        }
+    }
+
+    /// Opens the project `name` in a new Kel window: Kel starts itself again, as
+    /// `kel <name>` does. This window and its tabs stay as they are.
+    fn open_project(&mut self, name: &str) {
+        if self.project.as_ref().is_some_and(|(open, _)| open == name) {
+            return; // it's this window
+        }
+        let started = std::env::current_exe()
+            .and_then(|kel| std::process::Command::new(kel).arg(name).spawn());
+        if let Err(e) = started {
+            self.set_status(Some(format!("can't open project \"{name}\": {e}")));
         }
     }
 

@@ -180,6 +180,9 @@ A project is a file in `%APPDATA%\kel\projects`, a recipe for a set of tabs. The
 file's name is the project's: `projects\kel.toml` opens with `kel kel`
 (or `cargo run -- kel`). Each `kel` opens a new window.
 
+From an open Kel: the command palette (Ctrl+Shift+P) lists the projects, `Open project:
+kel`. It opens the project in a new window too; this one stays as it is.
+
 `kel` works in any shell after `.\install.ps1`: it builds Kel and copies `kel.exe` to
 `~\.cargo\bin`, the folder where cargo puts programs. Installing Rust put that folder
 on the PATH, so there's nothing to add by hand. Run it again after changes: it works

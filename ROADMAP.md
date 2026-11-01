@@ -103,7 +103,7 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 ## 7. Command palette and catalog
 
 - [x] Command palette (Ctrl+Shift+P): a searchable list over the terminal, Kel's actions in it
-- [ ] Projects in the palette
+- [x] Projects in the palette: `Open project: kel` opens it in a new window
 - [x] Install scripts in `setup/`, one per tool, skip what's there: `lazygit.ps1` (winget)
 - [x] Catalog: the palette lists `setup/` scripts (built into the exe) and runs one in a new tab
 - [x] Buttons for those who don't know the keys: `+` after the tabs (new tab), `×` on a tab
@@ -115,6 +115,13 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 
 ## 8. Later
 
+- [ ] Workspaces in one window: a general place and projects, switched from the palette (or
+      a sidebar). Switching hides a set of tabs, nothing stops: a `ping -t` keeps going.
+      The general place is remembered too (a hidden `home` project, saved on close).
+      "Close project" ends its shells: each idle PowerShell is ~58 MB (measured)
+- [ ] Kel's own memory: 213 MB with one tab (measured, release build). Likely the fonts
+      (fontdue keeps every glyph of 4 styles); check, and load less
+- [ ] Save the tabs as a new project from the palette (the typed text is the name)
 - [ ] Reflow lines on resize
 - [ ] Search in scrollback (Ctrl+Shift+F)
 - [ ] Clickable links

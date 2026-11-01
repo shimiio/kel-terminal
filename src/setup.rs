@@ -40,8 +40,8 @@ pub fn palette_items() -> Vec<Item> {
     SCRIPTS
         .iter()
         .map(|script| Item {
-            label: script.label,
-            hint: "setup script",
+            label: script.label.into(),
+            hint: "setup script".into(),
             action: Action::Install(script.name),
         })
         .collect()

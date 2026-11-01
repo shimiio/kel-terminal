@@ -820,14 +820,15 @@ fn draw_palette(
             );
         }
         // The hint at the right end, then the label in the room left of it.
-        let hint_w = item.hint.chars().count() * ui.advance;
+        // At most half the line, so a long folder leaves the label room.
+        let hint_w = (item.hint.chars().count() * ui.advance).min(text_w / 2);
         let hint_x = (text_x + text_w).saturating_sub(hint_w);
         draw_ui_text(
             pixels,
             width,
             font,
             ui,
-            item.hint,
+            &item.hint,
             (hint_x, line_y + pad),
             hint_w,
             dim,
@@ -839,7 +840,7 @@ fn draw_palette(
             width,
             font,
             ui,
-            item.label,
+            &item.label,
             at,
             label_w,
             theme.foreground,

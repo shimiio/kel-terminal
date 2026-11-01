@@ -8,8 +8,9 @@
 use crate::palette::Item;
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
-/// Something Kel does when you press one of its shortcuts.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// Something Kel does: one of its shortcuts, or a line in the command palette.
+/// Not `Copy`: `OpenProject` holds a `String`, which is cloned, not copied.
+#[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     NewTab,
     CloseTab,
@@ -31,6 +32,8 @@ pub enum Action {
     Palette,
     /// Runs the install script of this name (see `setup`) in a new tab.
     Install(&'static str),
+    /// Opens the project of this name in a new window (see `project`).
+    OpenProject(String),
 }
 
 /// Which of Kel's shortcuts this key is, if any. All of Kel's shortcuts, in one table.
@@ -78,9 +81,9 @@ pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
 /// Kel's actions as the command palette lists them, with their shortcuts from the
 /// table above (a test checks they match).
 pub fn palette_items() -> Vec<Item> {
-    let item = |label, hint, action| Item {
-        label,
-        hint,
+    let item = |label: &str, hint: &str, action| Item {
+        label: label.into(),
+        hint: hint.into(),
         action,
     };
     vec![
@@ -397,7 +400,7 @@ mod tests {
     #[test]
     fn palette_hints_are_the_real_shortcuts() {
         for item in palette_items() {
-            let (key, mods) = parse_hint(item.hint);
+            let (key, mods) = parse_hint(&item.hint);
             assert_eq!(shortcut(key, mods), Some(item.action), "{}", item.label);
         }
     }

@@ -6,13 +6,14 @@
 
 use crate::keys::Action;
 
-/// One line of the list.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// One line of the list. Its text is a `String`: a project's name is only
+/// known when Kel runs.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Item {
     /// What it does, e.g. "New tab". What the search looks in.
-    pub label: &'static str,
+    pub label: String,
     /// Shown dimmer at the right end, e.g. the shortcut "Ctrl+Shift+T".
-    pub hint: &'static str,
+    pub hint: String,
     pub action: Action,
 }
 
@@ -76,13 +77,13 @@ impl Palette {
     /// What Enter would do now. `None` when nothing matches.
     pub fn chosen(&self) -> Option<Action> {
         let &i = self.shown.get(self.selected)?;
-        Some(self.items[i].action)
+        Some(self.items[i].action.clone())
     }
 
     /// The query changed: only the lines that match, and the first of them chosen.
     fn filter(&mut self) {
         self.shown = (0..self.items.len())
-            .filter(|&i| matches(&self.query, self.items[i].label))
+            .filter(|&i| matches(&self.query, &self.items[i].label))
             .collect();
         self.selected = 0;
     }
@@ -104,9 +105,9 @@ mod tests {
     use super::*;
 
     fn items() -> Vec<Item> {
-        let item = |label, action| Item {
-            label,
-            hint: "",
+        let item = |label: &str, action| Item {
+            label: label.into(),
+            hint: String::new(),
             action,
         };
         vec![
@@ -118,7 +119,7 @@ mod tests {
     }
 
     fn labels(palette: &Palette) -> Vec<&str> {
-        palette.shown().map(|item| item.label).collect()
+        palette.shown().map(|item| item.label.as_str()).collect()
     }
 
     #[test]

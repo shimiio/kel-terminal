@@ -19,6 +19,8 @@
 //! ```
 
 use crate::config;
+use crate::keys::Action;
+use crate::palette::Item;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -115,6 +117,60 @@ pub fn load(name: &str) -> anyhow::Result<Project> {
     config::parse_toml(&file, &text)
 }
 
+/// The projects in `folder`: its `.toml` files' names, without `.toml`, A to Z.
+pub fn names_in(folder: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return Vec::new(); // no projects yet: no folder either
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+        .filter_map(|path| Some(path.file_stem()?.to_string_lossy().into_owned()))
+        .collect();
+    names.sort();
+    names
+}
+
+/// The projects as command palette lines: "Open project: kel", with its folder
+/// at the right. `current` is the project open in this window: "this window".
+pub fn palette_items(current: Option<&str>) -> Vec<Item> {
+    let Ok(dir) = dir() else {
+        return Vec::new();
+    };
+    names_in(&dir)
+        .into_iter()
+        .map(|name| {
+            let hint = if current == Some(name.as_str()) {
+                "this window".to_string()
+            } else {
+                match load(&name) {
+                    Ok(project) => short_folder(&project.folder),
+                    // Opening it shows why, in the new window.
+                    Err(_) => "can't read its file".to_string(),
+                }
+            };
+            Item {
+                label: format!("Open project: {name}"),
+                hint,
+                action: Action::OpenProject(name),
+            }
+        })
+        .collect()
+}
+
+/// A folder's last two parts, enough to tell projects apart:
+/// `C:\code\major-projects\kel-terminal` → `…\major-projects\kel-terminal`.
+fn short_folder(folder: &Path) -> String {
+    let parts: Vec<_> = folder.components().collect();
+    // `C:\code` is 3 parts: `C:`, `\`, `code`. Short already.
+    if parts.len() <= 4 {
+        return folder.display().to_string();
+    }
+    let tail: PathBuf = parts[parts.len() - 2..].iter().collect();
+    format!("…{}{}", std::path::MAIN_SEPARATOR, tail.display())
+}
+
 /// Writes the project `name`'s file, over the old one.
 pub fn save(name: &str, project: &Project) -> anyhow::Result<()> {
     let path = dir()?.join(format!("{name}.toml"));
@@ -200,6 +256,30 @@ folder = 'D:\other'
         assert_eq!(
             config::parse_toml::<Project>("kel.toml", &text).unwrap(),
             project
+        );
+    }
+
+    #[test]
+    fn project_names_from_the_files() {
+        let folder = std::env::temp_dir().join(format!("kel-test-projects-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        for file in ["web.toml", "kel.toml", "notes.txt", "kel.toml.new"] {
+            std::fs::write(folder.join(file), "").unwrap();
+        }
+        assert_eq!(names_in(&folder), ["kel", "web"]);
+        std::fs::remove_dir_all(&folder).unwrap();
+        // No folder: no projects, no error.
+        assert!(names_in(&folder).is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn short_folders() {
+        let short = |folder: &str| short_folder(Path::new(folder));
+        assert_eq!(short(r"C:\code\kel"), r"C:\code\kel");
+        assert_eq!(
+            short(r"C:\Users\Public\major-projects\kel-terminal"),
+            r"…\major-projects\kel-terminal"
         );
     }
 
