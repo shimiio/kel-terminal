@@ -7,9 +7,10 @@
 //! - Every frame redraws everything: backgrounds, letters, cursor.
 
 use crate::app::Selection;
+use crate::fallback::Fallbacks;
 use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, WindowButton, scaled};
-use crate::term::{CursorShape, Grid, Underline};
+use crate::term::{CursorShape, Grid, Underline, Width, char_width};
 use crate::theme::Theme;
 use anyhow::Context;
 use fontdb::{Family, Query, Style, Weight};
@@ -153,6 +154,8 @@ pub struct Renderer {
     /// and size the result never changes, so each one is rasterized only once.
     /// Cleared when the font size changes.
     glyphs: HashMap<(char, usize), Glyph>,
+    /// For letters the font doesn't have: emoji, Chinese...
+    fallbacks: Fallbacks,
     /// Turns the colors in the cells into pixels.
     theme: Theme,
     ui: Ui,
@@ -186,6 +189,7 @@ impl Renderer {
             cell_h,
             ascent,
             glyphs: HashMap::new(),
+            fallbacks: Fallbacks::default(),
             theme,
             ui,
         })
@@ -317,6 +321,8 @@ impl Renderer {
         }
 
         let (cursor_row, cursor_col) = grid.cursor();
+        // On a wide letter, the cursor covers both its cells.
+        let cursor_wide = grid.cell(cursor_row, cursor_col).width == Width::Wide;
         let (cell_w, cell_h) = (self.cell_w, self.cell_h);
         // Lines around the text (underline, cursor) grow with the text.
         let text_scale = self.text_scale;
@@ -337,7 +343,8 @@ impl Renderer {
                     let is_cursor = grid.cursor_visible
                         && cursor_on
                         && grid.scroll_offset() == 0
-                        && (row, col) == (cursor_row, cursor_col);
+                        && row == cursor_row
+                        && (col == cursor_col || cursor_wide && col == cursor_col + 1);
                     // A block cursor is drawn by swapping colors, so the letter stays visible.
                     let block = is_cursor && grid.cursor_shape == CursorShape::Block;
 
@@ -354,15 +361,25 @@ impl Renderer {
                         continue;
                     }
 
-                    if cell.ch != ' ' {
+                    if cell.ch != ' ' && !invisible(cell.ch) {
                         let style = cell.bold as usize + 2 * cell.italic as usize;
-                        let font = &self.fonts[style];
                         let size = self.font_size * self.text_scale;
-                        // Already in the cache: take it. Not yet: rasterize, store, take.
-                        let glyph = self
-                            .glyphs
-                            .entry((cell.ch, style))
-                            .or_insert_with(|| font.rasterize(cell.ch, size));
+                        let glyph = glyph(
+                            &mut self.glyphs,
+                            &self.fonts[style],
+                            &mut self.fallbacks,
+                            (cell.ch, style),
+                            size,
+                            cell_w,
+                        );
+                        // A wide letter in the middle of its two cells.
+                        let x = match cell.width {
+                            Width::Wide => {
+                                let room = 2.0 * cell_w as f32 - glyph.0.advance_width;
+                                x + (room / 2.0).max(0.0) as usize
+                            }
+                            _ => x,
+                        };
                         draw_glyph(&mut buffer, width, glyph, self.ascent, fg, x, y);
                     }
 
@@ -382,7 +399,8 @@ impl Renderer {
                     if is_cursor {
                         let (w, h) = match grid.cursor_shape {
                             CursorShape::Underline => (cell_w, text_px(CURSOR_HEIGHT)),
-                            CursorShape::Bar => (text_px(2), cell_h),
+                            CursorShape::Bar if col == cursor_col => (text_px(2), cell_h),
+                            CursorShape::Bar => continue, // not again in a wide letter's 2nd cell
                             CursorShape::Block => continue, // drawn: the swapped colors above
                         };
                         fill_rect(&mut buffer, width, x, y + cell_h - h, w, h, theme.cursor);
@@ -606,6 +624,50 @@ fn fill_rect(pixels: &mut [u32], width: usize, x: usize, y: usize, w: usize, h: 
             pixels[py * width + px] = color;
         }
     }
+}
+
+/// Characters that only steer others and show nothing: the joiner in emoji
+/// sequences (ZWJ, U+200D), FE0F ("as an emoji") and the like. Some fonts still
+/// have a mark for them (Segoe UI Emoji's ZWJ: a bar 4 x 20 pixels). ConPTY gives
+/// each a cell (see `char_width`), which stays empty.
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FE00}'..='\u{FE0F}' | '\u{FEFF}'
+    )
+}
+
+/// The glyph of `c` in font `style`, from `cache`: rasterized the first time,
+/// which is the slow part of drawing a letter; for the same letter and size the
+/// result never changes.
+///
+/// A letter the font lacks comes from a fallback font, made smaller if it's
+/// bigger than its cells (1, or 2 for a wide one): Segoe UI Emoji's 😀 is 2.5
+/// cells wide at the font's size. A letter no font has: the font's "missing" box.
+fn glyph<'a>(
+    cache: &'a mut HashMap<(char, usize), Glyph>,
+    font: &fontdue::Font,
+    fallbacks: &mut Fallbacks,
+    (c, style): (char, usize),
+    size: f32,
+    cell_w: usize,
+) -> &'a Glyph {
+    cache.entry((c, style)).or_insert_with(|| {
+        if font.lookup_glyph_index(c) != 0 {
+            return font.rasterize(c, size);
+        }
+        let Some(fallback) = fallbacks.font_for(c) else {
+            return font.rasterize(c, size);
+        };
+        let room = (char_width(c) * cell_w) as f32;
+        let advance = fallback.metrics(c, size).advance_width;
+        let size = if advance > room {
+            size * room / advance
+        } else {
+            size
+        };
+        fallback.rasterize(c, size)
+    })
 }
 
 /// Draws the underline of a cell at `(x, y)`, `w` x `h`, below the baseline

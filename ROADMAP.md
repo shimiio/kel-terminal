@@ -91,7 +91,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 - [x] Mouse reporting (`?1000`, `?1002`, `?1003`, `?1006`) and focus events (`?1004`);
       Shift + mouse stays Kel's
 - [x] Undercurl and underline color (LSP diagnostics); double, dotted, dashed too
-- [ ] Wide characters (emoji, CJK) take two cells
+- [x] Wide characters (emoji, CJK) take two cells, counted the way ConPTY does;
+      fallback fonts for them (Segoe UI Emoji, Microsoft YaHei, Malgun Gothic)
 - [ ] ~~Synchronized output (`?2026`) against flicker~~: measured, nvim doesn't send it
       through ConPTY
 - [ ] `:checkhealth` clean

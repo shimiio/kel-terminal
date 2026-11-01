@@ -6,6 +6,7 @@
 
 use crate::theme::Color;
 use std::collections::VecDeque;
+use unicode_width::UnicodeWidthChar;
 
 /// How many old lines to keep. Older ones are thrown away.
 pub const SCROLLBACK_LIMIT: usize = 10_000;
@@ -23,6 +24,39 @@ pub struct Cell {
     /// The underline's own color; `Default`: the text's.
     pub underline_color: Color,
     pub inverse: bool,
+    /// One cell of a wide character, or a normal one.
+    pub width: Width,
+}
+
+/// A wide character (emoji, Chinese) takes two cells: its own, `Wide`, and the
+/// next one, `Spacer`, which shows nothing by itself: the letter in the cell
+/// before reaches over it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Width {
+    #[default]
+    Narrow,
+    Wide,
+    Spacer,
+}
+
+/// How many cells `c` takes: the way ConPTY counts, or Kel and ConPTY disagree
+/// on where the text after it is (ConPTY sends the letters, not where they go).
+/// Measured:
+///
+/// - 2: emoji (😀 ✅), Chinese, Japanese, Korean, fullwidth letters (Ａ): what
+///   Unicode calls "wide".
+/// - 1: everything else, and also the "invisible" ones, which Unicode gives 0:
+///   an accent on its own (U+301), the joiner of emoji sequences (ZWJ), FE0F.
+///   ConPTY doesn't put them on the letter before, so they take a cell.
+/// - 2 too: the halves of a flag (🇺 + 🇦), Unicode says 1.
+pub fn char_width(c: char) -> usize {
+    if ('\u{1F1E6}'..='\u{1F1FF}').contains(&c) {
+        return 2;
+    }
+    match c.width() {
+        Some(2) => 2,
+        _ => 1,
+    }
 }
 
 /// How a cell is underlined: `ESC[4:<n>m`, n = 1 to 5 in this order. nvim marks
@@ -49,6 +83,7 @@ impl Default for Cell {
             underline: Underline::None,
             underline_color: Color::Default,
             inverse: false,
+            width: Width::Narrow,
         }
     }
 }
@@ -127,6 +162,7 @@ impl Grid {
         // Make every line `cols` long, then make the grid `rows` lines tall.
         for line in &mut self.cells {
             line.resize(cols, Cell::default());
+            mend_wide(line); // a wide letter at the new edge lost its right half
         }
         self.cells.resize(rows, vec![Cell::default(); cols]);
 
@@ -171,14 +207,28 @@ impl Grid {
         }
     }
 
-    /// Writes `c` at the cursor with the pen's colors, and moves the cursor right.
+    /// Writes `c` at the cursor with the pen's colors, and moves the cursor right:
+    /// one cell, or two for a wide character (see `char_width`).
     pub fn put_char(&mut self, c: char) {
+        let wide = char_width(c) == 2 && self.cols >= 2;
         // The last char went into the last column (pending wrap): wrap now.
-        if self.cursor_col >= self.cols {
+        // A wide one wraps from the last column too, where only half of it would
+        // fit; that cell stays empty, as in ConPTY.
+        if self.cursor_col >= self.cols || wide && self.cursor_col == self.cols - 1 {
+            if self.cursor_col < self.cols {
+                self.split_wide(self.cursor_row, self.cursor_col);
+                self.cells[self.cursor_row][self.cursor_col] = self.blank();
+            }
             self.cursor_col = 0;
             self.newline();
         }
-        self.cells[self.cursor_row][self.cursor_col] = Cell {
+        let (row, col) = (self.cursor_row, self.cursor_col);
+        // Over half of a wide letter: its other half goes too.
+        self.split_wide(row, col);
+        if wide {
+            self.split_wide(row, col + 1);
+        }
+        let cell = Cell {
             ch: c,
             fg: self.fg,
             bg: self.bg,
@@ -187,8 +237,35 @@ impl Grid {
             underline: self.underline,
             underline_color: self.underline_color,
             inverse: self.inverse,
+            width: if wide { Width::Wide } else { Width::Narrow },
         };
-        self.cursor_col += 1;
+        self.cells[row][col] = cell;
+        if wide {
+            // The same colors and underline, so they reach under the whole letter.
+            self.cells[row][col + 1] = Cell {
+                ch: ' ',
+                width: Width::Spacer,
+                ..cell
+            };
+            self.cursor_col += 2;
+        } else {
+            self.cursor_col += 1;
+        }
+    }
+
+    /// If the cell at (row, col) is half of a wide letter, empties the other half:
+    /// the cell is about to be written over.
+    fn split_wide(&mut self, row: usize, col: usize) {
+        let line = &mut self.cells[row];
+        let other = match line[col].width {
+            Width::Narrow => return,
+            Width::Wide => col + 1,
+            Width::Spacer => col.wrapping_sub(1),
+        };
+        if let Some(cell) = line.get_mut(other) {
+            cell.ch = ' ';
+            cell.width = Width::Narrow;
+        }
     }
 
     /// The cell shown at this screen position, taking the scroll offset into account.
@@ -214,7 +291,9 @@ impl Grid {
             let first_col = if row == start.0 { start.1 } else { 0 };
             let last_col = if row == end.0 { end.1 } else { self.cols - 1 };
             let line: String = (first_col..=last_col)
-                .map(|col| self.visible_cell(row, col).ch)
+                .map(|col| self.visible_cell(row, col))
+                .filter(|cell| cell.width != Width::Spacer) // not "中 b" for "中b"
+                .map(|cell| cell.ch)
                 .collect();
             lines.push(line.trim_end().to_string());
         }
@@ -303,6 +382,7 @@ impl Grid {
             _ => return,
         };
         line[range].fill(blank);
+        mend_wide(line);
     }
 
     /// `CSI n J`. 0: cursor to end of screen, 1: start of screen to cursor, 2/3: everything.
@@ -339,7 +419,9 @@ impl Grid {
         let blank = self.blank();
         let start = self.cursor_col.min(self.cols - 1);
         let end = (start + n).min(self.cols);
-        self.cells[self.cursor_row][start..end].fill(blank);
+        let line = &mut self.cells[self.cursor_row];
+        line[start..end].fill(blank);
+        mend_wide(line);
     }
 
     /// `CSI n P`: delete n chars at the cursor, shifting the rest of the line left.
@@ -350,6 +432,7 @@ impl Grid {
         let line = &mut self.cells[self.cursor_row];
         line[start..].rotate_left(n);
         line[self.cols - n..].fill(blank);
+        mend_wide(line);
     }
 
     /// `CSI n @`: insert n blanks at the cursor, shifting the rest of the line right.
@@ -360,6 +443,7 @@ impl Grid {
         let line = &mut self.cells[self.cursor_row];
         line[start..].rotate_right(n);
         line[start..start + n].fill(blank);
+        mend_wide(line);
     }
 
     /// The live screen as plain text, for tests. Trailing spaces and empty
@@ -370,6 +454,7 @@ impl Grid {
             .iter()
             .map(|row| {
                 row.iter()
+                    .filter(|cell| cell.width != Width::Spacer)
                     .map(|cell| cell.ch)
                     .collect::<String>()
                     .trim_end()
@@ -409,6 +494,56 @@ impl Grid {
         Cell {
             bg: self.bg,
             ..Cell::default()
+        }
+    }
+}
+
+/// After cells of `line` were erased or moved: a wide letter that lost one of
+/// its halves loses the other one too, rather than showing half a letter.
+fn mend_wide(line: &mut [Cell]) {
+    for col in 0..line.len() {
+        let alone = match line[col].width {
+            Width::Narrow => false,
+            Width::Wide => line
+                .get(col + 1)
+                .is_none_or(|next| next.width != Width::Spacer),
+            Width::Spacer => col == 0 || line[col - 1].width != Width::Wide,
+        };
+        if alone {
+            line[col].ch = ' ';
+            line[col].width = Width::Narrow;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn widths_like_conpty() {
+        // (char, cells), as measured in ConPTY.
+        let measured = [
+            ('a', 1),
+            ('\u{1F600}', 2), // 😀
+            ('\u{2705}', 2),  // ✅
+            ('\u{4E2D}', 2),  // 中
+            ('\u{AC00}', 2),  // 가
+            ('\u{FF21}', 2),  // Ａ
+            ('\u{1F3FD}', 2), // skin tone
+            ('\u{1F1FA}', 2), // half of a flag
+            ('\u{2764}', 1),  // ❤ without FE0F
+            ('\u{2600}', 1),  // ☀
+            ('\u{301}', 1),   // an accent on its own
+            ('\u{200D}', 1),  // ZWJ
+            ('\u{FE0F}', 1),
+            ('\u{E0B0}', 1), // Nerd Font powerline arrow
+            ('\u{2500}', 1), // ─
+            ('\u{A7}', 1),   // §
+            ('\u{2192}', 1), // →
+        ];
+        for (c, cells) in measured {
+            assert_eq!(char_width(c), cells, "U+{:04X}", c as u32);
         }
     }
 }

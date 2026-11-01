@@ -304,6 +304,7 @@ impl Perform for Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::term::Width;
     use vte::Parser;
 
     /// Feeds `input` into a fresh 5x10 terminal, like bytes arriving from the shell.
@@ -568,6 +569,45 @@ mod tests {
         assert_eq!(t.grid.cell(0, 0).fg, Color::Rgb(0x010203)); // no color space
         assert_eq!(t.grid.cell(0, 1).underline_color, Color::Indexed(9));
         assert_eq!(t.grid.cell(0, 2).underline_color, Color::Default); // 0 resets it
+    }
+
+    #[test]
+    fn wide_chars_take_two_cells() {
+        let t = feed("a中b");
+        assert_eq!(t.grid.render(), "a中b");
+        assert_eq!(t.grid.cell(0, 1).width, Width::Wide);
+        assert_eq!(t.grid.cell(0, 2).width, Width::Spacer);
+        assert_eq!(t.grid.cell(0, 3).ch, 'b');
+        assert_eq!(t.grid.cursor(), (0, 4));
+        // An accent on its own takes a cell, as in ConPTY.
+        assert_eq!(feed("e\u{301}x").grid.cell(0, 2).ch, 'x');
+    }
+
+    #[test]
+    fn wide_char_in_the_last_column_wraps() {
+        assert_eq!(feed("123456789中").grid.render(), "123456789\n中");
+    }
+
+    #[test]
+    fn writing_over_half_a_wide_char() {
+        // Over the left half, or the right one: the other half goes too.
+        assert_eq!(feed("中\rx").grid.render(), "x");
+        assert_eq!(feed("中\x1b[2Gx").grid.render(), " x");
+    }
+
+    #[test]
+    fn erasing_and_moving_wide_chars() {
+        // Erasing the right half (ESC[X at col 2) erases the whole letter.
+        assert_eq!(feed("中b\x1b[2G\x1b[X").grid.render(), "  b");
+        // Deleting the char before it (ESC[P) moves it whole.
+        assert_eq!(feed("a中\x1b[1G\x1b[P").grid.render(), "中");
+        // Inserting a blank in its middle (ESC[@) breaks it: both halves go.
+        assert_eq!(feed("中b\x1b[2G\x1b[@").grid.render(), "   b");
+    }
+
+    #[test]
+    fn copied_text_has_no_gap_after_a_wide_char() {
+        assert_eq!(feed("中b").grid.text_between((0, 0), (0, 9)), "中b");
     }
 
     #[test]
