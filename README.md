@@ -95,6 +95,11 @@ cmd can't say this, so its tabs never show them.
 Closing a tab with a running command, or the window while one runs in any tab,
 asks first in the tab bar: do it again within 3 seconds to close.
 
+Programs in a tab can tell they run in Kel: it sets `TERM_PROGRAM=kel` (and
+`TERM_PROGRAM_VERSION`). It also sets `LANG` from Windows' language, e.g.
+`en_US.UTF-8`, unless you set it yourself; programs from Linux (nvim, git) read
+their language from it, and nvim's `:checkhealth` asks for it.
+
 ### Change the spaces around the terminal
 
 The terminal is a panel inside the window. Three numbers, in pixels, set the spaces:

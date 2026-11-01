@@ -95,7 +95,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       fallback fonts for them (Segoe UI Emoji, Microsoft YaHei, Malgun Gothic)
 - [ ] ~~Synchronized output (`?2026`) against flicker~~: measured, nvim doesn't send it
       through ConPTY
-- [ ] `:checkhealth` clean
+- [x] `:checkhealth` clean of the terminal's part: Kel sets `TERM_PROGRAM=kel` and `LANG`
+      (from Windows' language); the rest it reports is what's installed (stage 7's setup script)
 
 ## 7. Command palette and catalog
 
