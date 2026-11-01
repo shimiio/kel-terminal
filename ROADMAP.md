@@ -113,29 +113,36 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       test it in Windows Sandbox (a clean Windows that's thrown away on close)
 - [ ] Languages: Rust and others, with their language servers for nvim
 
-## 8. Later
+## 8. Every day
 
-- [ ] Workspaces in one window: a general place and projects, switched from the palette (or
-      a sidebar). Switching hides a set of tabs, nothing stops: a `ping -t` keeps going.
-      The general place is remembered too (a hidden `home` project, saved on close).
-      "Close project" ends its shells: each idle PowerShell is ~58 MB (measured)
+What gets in the way when Kel is the only terminal. Kel is used daily from here on, so
+what bothers in use can come first.
+
 - [ ] Kel's own memory: 213 MB with one tab (measured, release build). Likely the fonts
       (fontdue keeps every glyph of 4 styles); check, and load less
-- [ ] Save the tabs as a new project from the palette (the typed text is the name)
-- [ ] Reflow lines on resize
+- [ ] Reflow lines on resize: a narrower window wraps long lines, a wider one joins them back
 - [ ] Search in scrollback (Ctrl+Shift+F)
 - [ ] Clickable links
-- [ ] Split panes
+- [ ] Save the tabs as a new project from the palette (the typed text is the name)
+
+## 9. Style
+
+Each one gets tried on screen first. Alternates with stage 8: one feature, one look.
+
+- [ ] Project accent color: fills the tab icons, colors the project name
+- [ ] Pixel-art tab icons (made in Aseprite, PNG), outlines filled with the accent color
+- [ ] Pixel font for the UI: the Kel logo, the project name (built into the exe, see Fonts)
+- [ ] Sidebar on the left (hover with a short delay, or a key): dims the rest, lists projects
+- [ ] Workspaces in one window: a general place and projects, switched from the palette or
+      the sidebar. Switching hides a set of tabs, nothing stops: a `ping -t` keeps going.
+      The general place is remembered too (a hidden `home` project, saved on close).
+      "Close project" ends its shells: each idle PowerShell is ~58 MB (measured)
 - [ ] Window vibrancy
+
+## Later
+
+- [ ] Split panes (tabs and nvim's own windows do for now)
 - [ ] License, CI, release `.exe` on GitHub
-
-## Look (ideas, to try)
-
-Not decided, each one gets tried on screen first:
-- Project accent color: fills the tab icons, colors the project name
-- Pixel-art tab icons (made in Aseprite, PNG), outlines filled with the accent color
-- Pixel font for the UI: the Kel logo, the project name
-- Sidebar on the left (hover with a short delay, or a key): dims the rest, lists projects
 
 ## Fonts (to decide)
 
