@@ -104,8 +104,11 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 
 - [ ] Command palette (Ctrl+Shift+P): a searchable list window
 - [ ] Projects in the palette
-- [ ] Catalog: a file of tools (name, description, install command), e.g. lazygit via winget
-- [ ] nvim setup script (kickstart deps via winget + clone config), launched from the catalog
+- [x] Install scripts in `setup/`, one per tool, skip what's there: `lazygit.ps1` (winget)
+- [ ] Catalog: the palette lists `setup/` scripts and runs one in a new tab (per OS: `.ps1`, `.sh`)
+- [ ] `setup/nvim.ps1`: nvim + kickstart deps + clone the config. When the config is ready;
+      test it in Windows Sandbox (a clean Windows that's thrown away on close)
+- [ ] Languages: Rust and others, with their language servers for nvim
 
 ## 8. Later
 

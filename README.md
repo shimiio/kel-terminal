@@ -20,6 +20,19 @@ cargo build --release   # a fast build: target/release/kel.exe
 .\install.ps1        # build it and put it on the PATH: `kel` in any shell
 ```
 
+## Install tools
+
+Scripts in `setup/` install tools for the terminal with winget, one script per tool:
+
+```powershell
+.\setup\lazygit.ps1          # lazygit: git in the terminal
+.\setup\lazygit.ps1 -DryRun  # only say what it would do
+```
+
+Whatever is already there (installed any way: winget, choco, by hand) is skipped, so a
+script can run again any time. Afterwards open a new tab: the ones open before don't see
+the new program.
+
 ## Shortcuts
 
 | Keys | What it does |
@@ -225,5 +238,6 @@ the file keeps the tabs it had, not none.
 | `src/renderer.rs` | Turns the grid into pixels |
 | `src/fallback.rs` | Fonts for the letters the terminal's font lacks (emoji, Chinese), loaded when first needed |
 | `examples/` | Small tools that print the raw bytes a program sends: `cargo run --example probe_nvim` |
+| `setup/` | Scripts that install tools (see Install tools) |
 
 Each file starts with a comment that explains it in more detail.
