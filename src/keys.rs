@@ -29,6 +29,8 @@ pub enum Action {
     OpenConfig,
     /// Opens the command palette, or closes it.
     Palette,
+    /// Runs the install script of this name (see `setup`) in a new tab.
+    Install(&'static str),
 }
 
 /// Which of Kel's shortcuts this key is, if any. All of Kel's shortcuts, in one table.

@@ -11,6 +11,7 @@ use crate::mouse::{self, Tracking};
 use crate::palette::Palette;
 use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{self, Chrome, Fonts, Renderer, TabLabel};
+use crate::setup;
 use crate::tab::{Tab, TabId};
 use crate::term::Terminal;
 use std::path::PathBuf;
@@ -602,10 +603,38 @@ impl App {
             Action::Palette => {
                 self.palette = match self.palette {
                     Some(_) => None,
-                    None => Some(Palette::new(keys::palette_items())),
+                    None => {
+                        // Kel's actions first, then the install scripts.
+                        let mut items = keys::palette_items();
+                        items.extend(setup::palette_items());
+                        Some(Palette::new(items))
+                    }
                 };
                 self.request_redraw();
             }
+            Action::Install(name) => self.install(name),
+        }
+    }
+
+    /// Runs the install script `name` in a new tab: Kel writes it to the temp
+    /// folder, and the tab's shell runs it once it's ready.
+    fn install(&mut self, name: &str) {
+        let Some(script) = setup::find(name) else {
+            return;
+        };
+        let path = match setup::write_to_temp(script) {
+            Ok(path) => path,
+            Err(e) => {
+                self.set_status(Some(format!("can't write the {name} script: {e}")));
+                return;
+            }
+        };
+        let tabs = self.tabs.len();
+        self.new_tab();
+        if self.tabs.len() > tabs {
+            let shell = self.config.shell.clone();
+            let tab = self.tabs.last_mut().unwrap();
+            tab.type_when_ready(&setup::command(&path), &shell);
         }
     }
 

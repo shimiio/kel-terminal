@@ -22,7 +22,12 @@ cargo build --release   # a fast build: target/release/kel.exe
 
 ## Install tools
 
-Scripts in `setup/` install tools for the terminal with winget, one script per tool:
+In the command palette (Ctrl+Shift+P), type `install`: Enter on a line opens a new tab
+that runs that tool's script. The scripts are built into `kel.exe`, so this works
+without the repository.
+
+The scripts are in `setup/`, one per tool, and install with winget. They run from any
+shell too:
 
 ```powershell
 .\setup\lazygit.ps1          # lazygit: git in the terminal
@@ -227,6 +232,7 @@ the file keeps the tabs it had, not none.
 | `src/keys.rs` | Kel's shortcuts (one table), and the bytes every other key sends to the shell |
 | `src/mouse.rs` | The bytes that tell a program what the mouse does, if it asked for the mouse |
 | `src/palette.rs` | The command palette's state: what's typed, which lines match, which one is chosen |
+| `src/setup.rs` | The install scripts from `setup/`, built into the exe, and how a tab runs one |
 | `src/layout.rs` | Where the terminal panel goes in the window |
 | `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
 | `src/config.rs` | Reads `config.toml` |

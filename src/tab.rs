@@ -90,8 +90,9 @@ pub struct Tab {
     /// The project's command for the tab, e.g. `nvim .`: typed at start (see
     /// `type_at_start`), and saved with the project.
     pub start_command: Option<String>,
-    /// `start_command` waits for the shell to be ready.
-    waiting_to_type: bool,
+    /// A command waiting for the shell to be ready, to be typed then (see
+    /// `type_when_ready`). Only once, and not saved with the project.
+    to_type: Option<String>,
     /// The icon's name, picked by the title (see `icons::for_title`).
     pub icon: &'static str,
     /// New output since the tab was last on screen: a dot in the tab bar.
@@ -141,7 +142,7 @@ impl Tab {
             shell_name,
             started_in: cwd.map(Path::to_path_buf),
             start_command: None,
-            waiting_to_type: false,
+            to_type: None,
             activity: false,
             resized_at: Instant::now(),
             command: CommandState::default(),
@@ -164,14 +165,20 @@ impl Tab {
         self.name.as_deref().unwrap_or(&self.title)
     }
 
+    /// The project's command for this tab: typed at start (see `type_when_ready`),
+    /// and saved with the project.
+    pub fn type_at_start(&mut self, command: &str, shell: &str) {
+        self.start_command = Some(command.to_string());
+        self.type_when_ready(command, shell);
+    }
+
     /// Types `command` and Enter into the shell, once it's ready for typing: at
     /// its first prompt. Typed sooner, it would reach ConPTY while it still sets
     /// up. The first prompt is when shell integration first reports the folder;
     /// a shell without it gets the command at once.
-    pub fn type_at_start(&mut self, command: &str, shell: &str) {
-        self.start_command = Some(command.to_string());
+    pub fn type_when_ready(&mut self, command: &str, shell: &str) {
         if shell_integration::reports_folder(shell) {
-            self.waiting_to_type = true;
+            self.to_type = Some(command.to_string());
         } else {
             self.write(format!("{command}\r").as_bytes());
         }
@@ -179,13 +186,11 @@ impl Tab {
 
     /// Called on new output: if the shell is ready now, types the waiting command.
     pub fn type_startup_when_ready(&mut self) {
-        if !self.waiting_to_type || self.terminal.lock().unwrap().cwd.is_none() {
+        if self.to_type.is_none() || self.terminal.lock().unwrap().cwd.is_none() {
             return;
         }
-        self.waiting_to_type = false;
-        if let Some(command) = &self.start_command {
-            let typed = format!("{command}\r");
-            self.write(typed.as_bytes());
+        if let Some(command) = self.to_type.take() {
+            self.write(format!("{command}\r").as_bytes());
         }
     }
 

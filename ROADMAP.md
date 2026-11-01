@@ -105,7 +105,9 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 - [x] Command palette (Ctrl+Shift+P): a searchable list over the terminal, Kel's actions in it
 - [ ] Projects in the palette
 - [x] Install scripts in `setup/`, one per tool, skip what's there: `lazygit.ps1` (winget)
-- [ ] Catalog: the palette lists `setup/` scripts and runs one in a new tab (per OS: `.ps1`, `.sh`)
+- [x] Catalog: the palette lists `setup/` scripts (built into the exe) and runs one in a new tab
+- [ ] Buttons for those who don't know the keys: `+` after the tabs (new tab), `×` on a tab
+      under the mouse, `⌄` next to `+` (the palette, which shows each action's shortcut)
 - [ ] `setup/nvim.ps1`: nvim + kickstart deps + clone the config. When the config is ready;
       test it in Windows Sandbox (a clean Windows that's thrown away on close)
 - [ ] Languages: Rust and others, with their language servers for nvim
