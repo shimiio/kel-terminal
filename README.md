@@ -250,6 +250,7 @@ the file keeps the tabs it had, not none.
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |
 | `src/term/grid.rs` | The screen as a grid of cells, plus scrollback |
 | `src/renderer.rs` | Turns the grid into pixels |
+| `src/font.rs` | Finds a font, and turns its letters into pixels, each one when it's first drawn |
 | `src/fallback.rs` | Fonts for the letters the terminal's font lacks (emoji, Chinese), loaded when first needed |
 | `examples/` | Small tools that print the raw bytes a program sends: `cargo run --example probe_nvim` |
 | `setup/` | Scripts that install tools (see Install tools) |

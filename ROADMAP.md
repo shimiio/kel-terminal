@@ -118,8 +118,11 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 What gets in the way when Kel is the only terminal. Kel is used daily from here on, so
 what bothers in use can come first.
 
-- [ ] Kel's own memory: 213 MB with one tab (measured, release build). Likely the fonts
-      (fontdue keeps every glyph of 4 styles); check, and load less
+- [x] Kel's own memory: 213 MB with one tab → 15 MB (measured, release build, JetBrainsMono
+      Nerd Font). fontdue read every glyph of the font up front, 4 styles × ~12 600; ab_glyph
+      keeps the file and reads a letter when it's first drawn. With an emoji and a Chinese
+      letter on screen (their fallback fonts loaded): 453 MB → 46 MB
+- [ ] Memory of a tab with a full scrollback (10 000 lines): measure
 - [ ] Reflow lines on resize: a narrower window wraps long lines, a wider one joins them back
 - [ ] Search in scrollback (Ctrl+Shift+F)
 - [ ] Clickable links
@@ -156,7 +159,7 @@ Either way:
 
 ## Linux / macOS
 
-The base is already cross-platform: winit, softbuffer, fontdue, fontdb, portable-pty, arboard.
+The base is already cross-platform: winit, softbuffer, ab_glyph, fontdb, portable-pty, arboard.
 What is Windows-only today:
 - [ ] Config path `%APPDATA%\kel` (Linux `~/.config/kel`, macOS `~/Library/Application Support/kel`)
 - [ ] Ctrl+, opens the config with `explorer.exe` (Linux `xdg-open`, macOS `open`)

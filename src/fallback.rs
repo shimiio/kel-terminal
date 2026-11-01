@@ -1,12 +1,12 @@
 //! Fallback fonts: for the characters the terminal's font doesn't have (emoji,
 //! Chinese, Japanese, Korean), fonts that come with Windows.
 //!
-//! Loading one is slow: fontdue reads every glyph up front (measured: Segoe UI
-//! Emoji, 12 MB, ~230 ms; Microsoft YaHei, 19 MB, ~460 ms). So nothing is loaded
-//! at start, and each font only when a character first needs it. Which font has
-//! the character: its character map, read with ttf-parser without loading the
-//! rest (fast).
+//! They're big (Segoe UI Emoji 12 MB, Microsoft YaHei 19 MB), so nothing is
+//! loaded at start, and each font only when a character first needs it. Which
+//! font has the character: its character map, read with ttf-parser without
+//! loading the rest (fast).
 
+use crate::font::Font;
 use fontdb::{Database, Family, ID, Query};
 
 /// Tried in this order: emoji, symbols, Chinese (also Japanese kana), Korean.
@@ -30,12 +30,12 @@ struct Installed {
 struct Fallback {
     id: ID,
     /// Loaded the first time a character needs it.
-    font: Option<fontdue::Font>,
+    font: Option<Font>,
 }
 
 impl Fallbacks {
     /// The first fallback font that has `c`, loaded now if it wasn't yet.
-    pub fn font_for(&mut self, c: char) -> Option<&fontdue::Font> {
+    pub fn font_for(&mut self, c: char) -> Option<&Font> {
         let Installed { db, fonts } = self.0.get_or_insert_with(Installed::find);
         let fallback = fonts.iter_mut().find(|fallback| has(db, fallback.id, c))?;
         if fallback.font.is_none() {
@@ -72,10 +72,6 @@ fn has(db: &Database, id: ID, c: char) -> bool {
     .unwrap_or(false)
 }
 
-fn load(data: &[u8], index: u32) -> Option<fontdue::Font> {
-    let settings = fontdue::FontSettings {
-        collection_index: index,
-        ..Default::default()
-    };
-    fontdue::Font::from_bytes(data, settings).ok()
+fn load(data: &[u8], index: u32) -> Option<Font> {
+    Font::from_bytes(data.to_vec(), index).ok()
 }

@@ -2,29 +2,24 @@
 //!
 //! - softbuffer gives us the window's pixels as one long `[u32]` list, row after row.
 //!   Pixel (x, y) is at index `y * width + x`. A color is `0xRRGGBB`.
-//! - fontdue turns a character into a coverage map: how much of each pixel the
+//! - `font` turns a character into a coverage map: how much of each pixel the
 //!   letter covers, 0 (not at all) to 255 (fully).
 //! - Every frame redraws everything: backgrounds, letters, cursor.
 
 use crate::app::Selection;
 use crate::fallback::Fallbacks;
+use crate::font::{Font, Fonts, Metrics};
 use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::palette::Palette;
 use crate::term::{CursorShape, Grid, Underline, Width, char_width};
 use crate::theme::Theme;
-use anyhow::Context;
-use fontdb::{Family, Query, Style, Weight};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::window::Window;
 
 const CURSOR_HEIGHT: usize = 4;
-
-/// One font family in 4 styles. Index = bold + 2 * italic:
-/// 0 = regular, 1 = bold, 2 = italic, 3 = bold italic.
-pub type Fonts = [fontdue::Font; 4];
 
 /// The size of the text in Kel's own UI (tab names), in pixels at 100%.
 /// It doesn't follow the terminal's zoom. Sizes here are for 100% too; the UI's
@@ -52,7 +47,7 @@ const MIN_FONT_SIZE: f32 = 8.0;
 const MAX_FONT_SIZE: f32 = 48.0;
 
 /// A letter already turned into pixels: its metrics and coverage map.
-type Glyph = (fontdue::Metrics, Vec<u8>);
+type Glyph = (Metrics, Vec<u8>);
 
 /// One tab, as the tab bar shows it.
 pub struct TabLabel<'a> {
@@ -101,7 +96,7 @@ struct Ui {
 }
 
 impl Ui {
-    fn new(font: &fontdue::Font) -> anyhow::Result<Ui> {
+    fn new(font: &Font) -> anyhow::Result<Ui> {
         let mut ui = Ui {
             scale: 1.0,
             icon_scale: 1,
@@ -116,14 +111,14 @@ impl Ui {
     }
 
     /// Measures the text for another font. The letters of the old one go.
-    fn set_font(&mut self, font: &fontdue::Font) -> anyhow::Result<()> {
+    fn set_font(&mut self, font: &Font) -> anyhow::Result<()> {
         (self.advance, self.line_h, self.ascent) = measure_cell(font, self.font_size())?;
         self.glyphs.clear();
         Ok(())
     }
 
     /// A new scale: the text is measured again at its new size.
-    fn set_scale(&mut self, font: &fontdue::Font, scale: f32) -> anyhow::Result<()> {
+    fn set_scale(&mut self, font: &Font, scale: f32) -> anyhow::Result<()> {
         self.scale = scale;
         // Pixel art gets uneven at 1.5: of 16 pixels, every other one would be
         // 2 wide and the rest 1. So whole steps only, rounded down: ×1 up to
@@ -446,7 +441,7 @@ fn draw_tab_bar(
     theme: &Theme,
     layout: &Layout,
     chrome: &Chrome,
-    font: &fontdue::Font,
+    font: &Font,
     ui: &mut Ui,
 ) {
     let Chrome { tabs, active, .. } = *chrome;
@@ -675,7 +670,7 @@ fn draw_status(
     theme: &Theme,
     layout: &Layout,
     (status, color): (&str, u32),
-    font: &fontdue::Font,
+    font: &Font,
     ui: &mut Ui,
 ) {
     let bar = layout.tab_bar;
@@ -723,7 +718,7 @@ fn draw_palette(
     theme: &Theme,
     layout: &Layout,
     palette: &Palette,
-    font: &fontdue::Font,
+    font: &Font,
     ui: &mut Ui,
 ) {
     let area = layout.inside;
@@ -854,7 +849,7 @@ fn draw_palette(
 fn draw_ui_text(
     pixels: &mut [u32],
     width: usize,
-    font: &fontdue::Font,
+    font: &Font,
     ui: &mut Ui,
     text: &str,
     (x, y): (usize, usize),
@@ -916,21 +911,21 @@ fn invisible(c: char) -> bool {
 /// cells wide at the font's size. A letter no font has: the font's "missing" box.
 fn glyph<'a>(
     cache: &'a mut HashMap<(char, usize), Glyph>,
-    font: &fontdue::Font,
+    font: &Font,
     fallbacks: &mut Fallbacks,
     (c, style): (char, usize),
     size: f32,
     cell_w: usize,
 ) -> &'a Glyph {
     cache.entry((c, style)).or_insert_with(|| {
-        if font.lookup_glyph_index(c) != 0 {
+        if font.has_glyph(c) {
             return font.rasterize(c, size);
         }
         let Some(fallback) = fallbacks.font_for(c) else {
             return font.rasterize(c, size);
         };
         let room = (char_width(c) * cell_w) as f32;
-        let advance = fallback.metrics(c, size).advance_width;
+        let advance = fallback.advance(c, size);
         let size = if advance > room {
             size * room / advance
         } else {
@@ -1066,44 +1061,6 @@ fn fill_circle(pixels: &mut [u32], width: usize, cx: f32, cy: f32, r: f32, hole:
     }
 }
 
-/// Finds the font family `family` (e.g. "Consolas") among the installed fonts and
-/// loads its 4 styles. A family without, say, an italic file gets the closest style.
-pub fn load_fonts(family: &str) -> anyhow::Result<Fonts> {
-    let mut db = fontdb::Database::new();
-    // Reads the names of all installed fonts, in C:\Windows\Fonts and the user's
-    // own fonts folder. About 20 ms (the first time after a reboot, ~1 s: from disk).
-    db.load_system_fonts();
-
-    let load = |weight: Weight, style: Style| -> anyhow::Result<fontdue::Font> {
-        let query = Query {
-            families: &[Family::Name(family)],
-            weight,
-            style,
-            ..Default::default()
-        };
-        let id = db
-            .query(&query)
-            .with_context(|| format!("font \"{family}\" is not installed"))?;
-        // A .ttc file holds several fonts; `index` says which one is ours.
-        db.with_face_data(id, |data, index| {
-            let settings = fontdue::FontSettings {
-                collection_index: index,
-                ..Default::default()
-            };
-            fontdue::Font::from_bytes(data, settings).map_err(|e| anyhow::anyhow!("{e}"))
-        })
-        .with_context(|| format!("can't read font \"{family}\""))?
-    };
-
-    // Same order as the index: bold + 2 * italic.
-    Ok([
-        load(Weight::NORMAL, Style::Normal)?,
-        load(Weight::BOLD, Style::Normal)?,
-        load(Weight::NORMAL, Style::Italic)?,
-        load(Weight::BOLD, Style::Italic)?,
-    ])
-}
-
 /// Measures one cell for a font size: (width, height, ascent) in pixels.
 /// - width: how far the pen moves after a letter. In a monospaced font it's
 ///   the same for every letter, so any letter works.
@@ -1111,12 +1068,13 @@ pub fn load_fonts(family: &str) -> anyhow::Result<Fonts> {
 ///
 /// e.g. Consolas 18: advance 9.90 → 10 wide, line 21.08 → 21 tall,
 /// ascent 13.37 + half the gap 1.54 → 15.
-fn measure_cell(font: &fontdue::Font, size: f32) -> anyhow::Result<(usize, usize, i32)> {
-    let line = font
-        .horizontal_line_metrics(size)
-        .ok_or_else(|| anyhow::anyhow!("font has no line metrics"))?;
-    let cell_w = font.metrics('M', size).advance_width.round() as usize;
+fn measure_cell(font: &Font, size: f32) -> anyhow::Result<(usize, usize, i32)> {
+    let line = font.line_metrics(size);
+    let cell_w = font.advance('M', size).round() as usize;
     let cell_h = line.new_line_size.round() as usize;
+    if cell_w == 0 || cell_h == 0 {
+        anyhow::bail!("the font has no size (no 'M', or no line height)");
+    }
     // The gap is extra space between lines. Half of it goes above the letters,
     // half below, so the text sits in the middle of the cell.
     let ascent = (line.ascent + line.line_gap / 2.0).round() as i32;

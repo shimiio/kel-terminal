@@ -5,12 +5,13 @@
 //! report back with `UserEvent`s.
 
 use crate::config::{self, Config};
+use crate::font::{self, Fonts};
 use crate::keys::{self, Action};
 use crate::layout::{Layout, TitleHit, WindowButton};
 use crate::mouse::{self, Tracking};
 use crate::palette::Palette;
 use crate::project::{self, Project, TabRecipe};
-use crate::renderer::{self, Chrome, Fonts, Renderer, TabLabel};
+use crate::renderer::{Chrome, Renderer, TabLabel};
 use crate::setup;
 use crate::tab::{Tab, TabId};
 use crate::term::Terminal;
@@ -171,11 +172,11 @@ impl App {
             problems.push(format!("{e:#}"));
             Config::default()
         });
-        let fonts = match renderer::load_fonts(&config.font) {
+        let fonts = match font::load_family(&config.font) {
             Ok(fonts) => fonts,
             Err(e) => {
                 problems.push(format!("{e:#}"));
-                renderer::load_fonts(&Config::default().font)?
+                font::load_family(&Config::default().font)?
             }
         };
         // A screen with the problems so far in red. The shell starts below them:
@@ -559,7 +560,7 @@ impl App {
                 let mut error = None;
                 // Only what changed, so saving another setting doesn't undo your zoom.
                 if new.font != self.config.font {
-                    match renderer::load_fonts(&new.font) {
+                    match font::load_family(&new.font) {
                         Ok(fonts) => self.set_fonts(fonts),
                         Err(e) => error = Some(format!("{e:#}")), // keeps the old font
                     }
