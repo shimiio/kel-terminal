@@ -85,8 +85,13 @@ pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
 }
 
 /// Translates a key press into the bytes a terminal would send to the shell.
-/// `None` means the key sends nothing (e.g. Shift alone).
-pub fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Option<Vec<u8>> {
+/// `key` is what the layout says the key is (without Ctrl: `d` for Ctrl+D), and where
+/// it is on the keyboard. `None` means the key sends nothing (e.g. Shift alone).
+pub fn key_to_bytes(
+    (key, physical): (&Key, PhysicalKey),
+    text: Option<&str>,
+    mods: ModifiersState,
+) -> Option<Vec<u8>> {
     // Modifier number: 1 + Shift(1) + Alt(2) + Ctrl(4)
     // e.g. Ctrl+Left: m = 1 + 4 = 5, so it sends `ESC[1;5D`.
     let m = 1 + mods.shift_key() as u8 + 2 * mods.alt_key() as u8 + 4 * mods.control_key() as u8;
@@ -123,9 +128,16 @@ pub fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Opti
         Some(seq.into_bytes())
     };
 
+    // Ctrl, but not AltGr (Ctrl+Alt), which types letters.
+    let ctrl = mods.control_key() && !mods.alt_key();
+
     let bytes: &[u8] = match key {
         Key::Named(NamedKey::Enter) => b"\r", // carriage return, not "\n"
+        // Ctrl+Backspace: Ctrl+H, as in Windows Terminal; PowerShell deletes a word.
+        Key::Named(NamedKey::Backspace) if ctrl => b"\x08",
         Key::Named(NamedKey::Backspace) => b"\x7f", // the DEL character
+        // Shift+Tab: "back tab", e.g. the previous item in a completion list.
+        Key::Named(NamedKey::Tab) if mods.shift_key() => b"\x1b[Z",
         Key::Named(NamedKey::Tab) => b"\t",
         Key::Named(NamedKey::Escape) => b"\x1b",
         Key::Named(NamedKey::ArrowUp) => return with_mods('A'),
@@ -152,6 +164,10 @@ pub fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Opti
         Key::Named(NamedKey::F10) => return tilde(21),
         Key::Named(NamedKey::F11) => return tilde(23),
         Key::Named(NamedKey::F12) => return tilde(24),
+        // Ctrl+D, Ctrl+[ ...: one control character.
+        _ if ctrl && control_char(key, physical).is_some() => {
+            return control_char(key, physical).map(|c| vec![c]);
+        }
         // Everything else (letters, digits, Cyrillic...): the typed text, as UTF-8 bytes.
         _ => text?.as_bytes(),
     };
@@ -162,6 +178,69 @@ pub fn key_to_bytes(key: &Key, text: Option<&str>, mods: ModifiersState) -> Opti
         return Some([b"\x1b", bytes].concat());
     }
     Some(bytes.to_vec())
+}
+
+/// The control character Ctrl+`key` sends. Terminals have no "Ctrl is down": Ctrl
+/// keeps only the low 5 bits of the character, so Ctrl+D (`D` = 0x44) is 0x04, and
+/// Ctrl+[ (`[` = 0x5B) is 0x1B, the same byte as Esc.
+///
+/// - By what the layout says the key is: Ctrl+Z is the key with Z on it, also where
+///   German keyboards have it (where US ones have Y).
+/// - A letter that isn't Latin (Ctrl+В on a Russian layout): by the key's place, D.
+///   Only on the A–Z keys: German Ü is where US keyboards have `[`, and Ctrl+Ü
+///   mustn't be Esc; French AZERTY has a comma on M, and Ctrl+, mustn't be Enter.
+/// - `None` for everything else (Ctrl+ü, Ctrl+1): no control character.
+fn control_char(key: &Key, physical: PhysicalKey) -> Option<u8> {
+    let Key::Character(text) = key else {
+        return None;
+    };
+    let mut chars = text.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else {
+        return None;
+    };
+    match c {
+        'a'..='z' | 'A'..='Z' | '[' | '\\' | ']' | '^' | '_' => Some(c as u8 & 0x1F),
+        '/' => Some(0x1F), // like Ctrl+_, as in xterm
+        c if c.is_alphabetic() && !c.is_ascii() => letter_key(physical).map(|c| c & 0x1F),
+        _ => None,
+    }
+}
+
+/// The Latin letter on this key of a US keyboard, if it's one of A–Z.
+fn letter_key(physical: PhysicalKey) -> Option<u8> {
+    const LETTERS: [KeyCode; 26] = [
+        KeyCode::KeyA,
+        KeyCode::KeyB,
+        KeyCode::KeyC,
+        KeyCode::KeyD,
+        KeyCode::KeyE,
+        KeyCode::KeyF,
+        KeyCode::KeyG,
+        KeyCode::KeyH,
+        KeyCode::KeyI,
+        KeyCode::KeyJ,
+        KeyCode::KeyK,
+        KeyCode::KeyL,
+        KeyCode::KeyM,
+        KeyCode::KeyN,
+        KeyCode::KeyO,
+        KeyCode::KeyP,
+        KeyCode::KeyQ,
+        KeyCode::KeyR,
+        KeyCode::KeyS,
+        KeyCode::KeyT,
+        KeyCode::KeyU,
+        KeyCode::KeyV,
+        KeyCode::KeyW,
+        KeyCode::KeyX,
+        KeyCode::KeyY,
+        KeyCode::KeyZ,
+    ];
+    let PhysicalKey::Code(code) = physical else {
+        return None;
+    };
+    let i = LETTERS.iter().position(|&letter| letter == code)?;
+    Some(b'a' + i as u8)
 }
 
 #[cfg(test)]
@@ -177,8 +256,59 @@ mod tests {
 
     /// The bytes a named key sends, as a string, e.g. "\x1b[15~".
     fn send(key: NamedKey, mods: ModifiersState) -> String {
-        let bytes = key_to_bytes(&Key::Named(key), None, mods).unwrap();
+        let place = PhysicalKey::Code(KeyCode::F35); // named keys don't look at it
+        let bytes = key_to_bytes((&Key::Named(key), place), None, mods).unwrap();
         String::from_utf8(bytes).unwrap()
+    }
+
+    /// The bytes the key at `place` sends when the layout calls it `text`
+    /// (winit leaves Ctrl out of it: `d` for Ctrl+D).
+    fn type_key(text: &str, place: KeyCode, mods: ModifiersState) -> Vec<u8> {
+        let key = Key::Character(text.into());
+        key_to_bytes((&key, PhysicalKey::Code(place)), Some(text), mods).unwrap()
+    }
+
+    #[test]
+    fn ctrl_letters_are_control_characters() {
+        assert_eq!(type_key("d", KeyCode::KeyD, CTRL), b"\x04");
+        assert_eq!(type_key("u", KeyCode::KeyU, CTRL), b"\x15");
+        assert_eq!(type_key("a", KeyCode::KeyA, CTRL), b"\x01");
+        assert_eq!(type_key("z", KeyCode::KeyZ, CTRL), b"\x1a");
+        // With Shift the layout says `D`: the same character.
+        assert_eq!(type_key("D", KeyCode::KeyD, CTRL_SHIFT), b"\x04");
+        // Without Ctrl, still the letter.
+        assert_eq!(type_key("d", KeyCode::KeyD, ModifiersState::empty()), b"d");
+    }
+
+    #[test]
+    fn ctrl_punctuation() {
+        assert_eq!(type_key("[", KeyCode::BracketLeft, CTRL), b"\x1b");
+        assert_eq!(type_key("\\", KeyCode::Backslash, CTRL), b"\x1c");
+        assert_eq!(type_key("]", KeyCode::BracketRight, CTRL), b"\x1d");
+        assert_eq!(type_key("^", KeyCode::Digit6, CTRL_SHIFT), b"\x1e");
+        assert_eq!(type_key("/", KeyCode::Slash, CTRL), b"\x1f");
+    }
+
+    #[test]
+    fn ctrl_on_other_layouts() {
+        // Russian: Ctrl+В is the D key.
+        assert_eq!(type_key("в", KeyCode::KeyD, CTRL), b"\x04");
+        // German: Z is where US keyboards have Y; it goes by the letter on it.
+        assert_eq!(type_key("z", KeyCode::KeyY, CTRL), b"\x1a");
+        // German Ü is where US keyboards have `[`: not Esc.
+        assert_eq!(type_key("ü", KeyCode::BracketLeft, CTRL), "ü".as_bytes());
+        // French AZERTY: a comma on M is not Ctrl+M (Enter).
+        assert_eq!(type_key(",", KeyCode::KeyM, CTRL), b",");
+        // AltGr (Ctrl+Alt) types letters, e.g. Polish ć: not a control character.
+        let altgr = CTRL | ModifiersState::ALT;
+        assert_eq!(type_key("ć", KeyCode::KeyC, altgr), "ć".as_bytes());
+    }
+
+    #[test]
+    fn shift_tab_and_ctrl_backspace() {
+        assert_eq!(send(NamedKey::Tab, ModifiersState::SHIFT), "\x1b[Z");
+        assert_eq!(send(NamedKey::Tab, ModifiersState::empty()), "\t");
+        assert_eq!(send(NamedKey::Backspace, CTRL), "\x08");
     }
 
     #[test]
@@ -232,15 +362,11 @@ mod tests {
 
     #[test]
     fn alt_adds_escape() {
-        let alt_f = key_to_bytes(&Key::Character("f".into()), Some("f"), ModifiersState::ALT);
-        assert_eq!(alt_f.unwrap(), b"\x1bf");
+        assert_eq!(type_key("f", KeyCode::KeyF, ModifiersState::ALT), b"\x1bf");
         assert_eq!(send(NamedKey::Backspace, ModifiersState::ALT), "\x1b\x7f");
         // Ctrl+Alt is AltGr: the typed letter goes as it is.
         let altgr = ModifiersState::ALT | ModifiersState::CONTROL;
-        assert_eq!(
-            key_to_bytes(&Key::Character("@".into()), Some("@"), altgr).unwrap(),
-            b"@"
-        );
+        assert_eq!(type_key("@", KeyCode::KeyQ, altgr), b"@");
         // Arrows already carry Alt in their number, no extra ESC.
         assert_eq!(send(NamedKey::ArrowUp, ModifiersState::ALT), "\x1b[1;3A");
     }

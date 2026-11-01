@@ -858,7 +858,8 @@ impl App {
         // Any other key: jump back to the bottom, then translate it to bytes for the shell
         self.tab().terminal.lock().unwrap().grid.scroll_to_bottom();
         let text = event.text.as_deref();
-        if let Some(bytes) = keys::key_to_bytes(&event.logical_key, text, self.modifiers) {
+        let key = (&event.logical_key, event.physical_key);
+        if let Some(bytes) = keys::key_to_bytes(key, text, self.modifiers) {
             self.send_to_shell(&bytes);
         }
     }

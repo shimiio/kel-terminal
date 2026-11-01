@@ -42,6 +42,10 @@ cargo build --release   # a fast build: target/release/kel.exe
 | Double-click the empty top bar | Maximize / restore |
 | Drag the window's edge or corner | Resize the window |
 
+All other keys go to the program: Ctrl+V and Ctrl+W without Shift too (nvim's block
+selection and window commands), and Ctrl with any letter, also on a Russian layout
+(Ctrl+В is Ctrl+D).
+
 ## Config
 
 The config file is `%APPDATA%\kel\config.toml`
