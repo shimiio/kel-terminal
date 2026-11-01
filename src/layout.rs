@@ -32,6 +32,11 @@ const RESIZE_CORNER: usize = 12;
 const BUTTON_WIDTH: usize = 46;
 /// Space between the last tab and the window buttons.
 const BUTTONS_GAP: usize = 8;
+/// The `+` (new tab) and `⌄` (palette) buttons after the tabs: this wide each.
+const BAR_BUTTON_WIDTH: usize = 28;
+/// A tab's `×`: a square this big, this far from the tab's right end.
+const TAB_CLOSE_SIZE: usize = 18;
+const TAB_CLOSE_INSET: usize = 7;
 
 /// `n` pixels of a 100% display at `scale`, e.g. 32 at 1.5 → 48. Never thinner
 /// than one pixel: a 1-pixel line at 0.75 stays 1, not 0.
@@ -48,6 +53,21 @@ pub enum WindowButton {
     Minimize,
     Maximize,
     Close,
+}
+
+/// What the mouse is over in the title bar: drawn lit, and what a click there does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TitleHit {
+    Window(WindowButton),
+    /// `+`: a new tab.
+    NewTab,
+    /// `⌄`: the command palette.
+    Palette,
+    /// The tab at `index`; `close`: on its `×`.
+    Tab {
+        index: usize,
+        close: bool,
+    },
 }
 
 /// A rectangle in pixels: top-left corner (x, y), width w, height h.
@@ -131,6 +151,7 @@ pub struct Layout {
     /// The panel's border line, in pixels (the active tab draws its own the same).
     pub border: usize,
     tab_width: usize,
+    bar_button_w: usize,
 }
 
 impl Spacing {
@@ -188,6 +209,7 @@ impl Spacing {
             text,
             border,
             tab_width: s(self.tab_width),
+            bar_button_w: s(BAR_BUTTON_WIDTH),
         }
     }
 
@@ -241,13 +263,11 @@ impl Layout {
         .map(|(_, button)| button)
     }
 
-    /// Where each of `count` tabs is, left to right in the tab bar.
-    /// e.g. an 846-pixel bar: 3 tabs are 180 wide each; 10 tabs get 84 each.
+    /// Where each of `count` tabs is, left to right in the tab bar. They leave room
+    /// for the `+` and `⌄` buttons after them. e.g. an 846-pixel bar: 3 tabs are
+    /// 180 wide each; 10 tabs get (846 - 2 x 28) / 10 = 79 each.
     pub fn tabs(&self, count: usize) -> Vec<Rect> {
-        if count == 0 {
-            return Vec::new();
-        }
-        let w = self.tab_width.min(self.tab_bar.w / count);
+        let w = self.tab_w(count);
         (0..count)
             .map(|i| Rect {
                 x: self.tab_bar.x + i * w,
@@ -255,6 +275,57 @@ impl Layout {
                 ..self.tab_bar
             })
             .collect()
+    }
+
+    /// One tab's width, when there are `count`.
+    fn tab_w(&self, count: usize) -> usize {
+        let room = self.tab_bar.w.saturating_sub(2 * self.bar_button_w);
+        self.tab_width.min(room / count.max(1))
+    }
+
+    /// The `+` and `⌄` buttons, right after the last of `count` tabs.
+    pub fn bar_buttons(&self, count: usize) -> (Rect, Rect) {
+        let x = self.tab_bar.x + count * self.tab_w(count);
+        let button = |i: usize| Rect {
+            x: x + i * self.bar_button_w,
+            w: self.bar_button_w,
+            ..self.tab_bar
+        };
+        (button(0), button(1))
+    }
+
+    /// The `×` of a tab at `tab`: a square at its right end, in the middle from
+    /// top to bottom.
+    pub fn tab_close(&self, tab: Rect) -> Rect {
+        let size = scaled(TAB_CLOSE_SIZE, self.scale);
+        let inset = scaled(TAB_CLOSE_INSET, self.scale);
+        Rect {
+            x: (tab.x + tab.w).saturating_sub(inset + size),
+            y: tab.y + tab.h.saturating_sub(size) / 2,
+            w: size,
+            h: size,
+        }
+    }
+
+    /// What's at (x, y) in the title bar, with `count` tabs open. `None`: the
+    /// empty bar, which moves the window.
+    pub fn title_hit(&self, x: usize, y: usize, count: usize) -> Option<TitleHit> {
+        if let Some(button) = self.button_at(x, y) {
+            return Some(TitleHit::Window(button));
+        }
+        let tabs = self.tabs(count);
+        if let Some(index) = tabs.iter().position(|tab| tab.contains(x, y)) {
+            let close = self.tab_close(tabs[index]).contains(x, y);
+            return Some(TitleHit::Tab { index, close });
+        }
+        let (new_tab, palette) = self.bar_buttons(count);
+        if new_tab.contains(x, y) {
+            Some(TitleHit::NewTab)
+        } else if palette.contains(x, y) {
+            Some(TitleHit::Palette)
+        } else {
+            None
+        }
     }
 }
 
@@ -340,8 +411,8 @@ mod tests {
             }
         );
         assert_eq!(tabs[2].x, 8 + 2 * 180);
-        // Too many for 180 each: 846 / 10 = 84
-        assert_eq!(layout.tabs(10)[0].w, 84);
+        // Too many for 180 each: (846 - 2 x 28 for + and ⌄) / 10 = 79
+        assert_eq!(layout.tabs(10)[0].w, 79);
         // A click at (200, 20) is on the second tab.
         assert!(tabs[1].contains(200, 20));
         assert!(!tabs[1].contains(200, 45)); // below the bar: the panel
@@ -368,6 +439,35 @@ mod tests {
         assert_eq!(layout.button_at(870, 20), Some(WindowButton::Minimize));
         assert_eq!(layout.button_at(500, 20), None); // the tab bar
         assert_eq!(layout.button_at(990, 50), None); // the panel
+    }
+
+    #[test]
+    fn title_bar_hits() {
+        let layout = Spacing::default().layout(1000, 700, 1.0);
+        // 2 tabs: 8..188 and 188..368, then + at 368..396 and ⌄ at 396..424.
+        let hit = |x| layout.title_hit(x, 20, 2);
+        assert_eq!(
+            hit(100),
+            Some(TitleHit::Tab {
+                index: 0,
+                close: false
+            })
+        );
+        // The × of the second tab: 18 wide, ending 7 before the tab's end (368).
+        assert_eq!(
+            hit(350),
+            Some(TitleHit::Tab {
+                index: 1,
+                close: true
+            })
+        );
+        assert_eq!(hit(380), Some(TitleHit::NewTab));
+        assert_eq!(hit(410), Some(TitleHit::Palette));
+        assert_eq!(hit(600), None); // the empty bar
+        assert_eq!(hit(990), Some(TitleHit::Window(WindowButton::Close)));
+        // Many tabs: the buttons still fit before the window buttons.
+        let (_, palette) = layout.bar_buttons(30);
+        assert!(palette.x + palette.w <= layout.tab_bar.x + layout.tab_bar.w);
     }
 
     #[test]

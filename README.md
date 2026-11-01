@@ -57,6 +57,9 @@ the new program.
 | Mouse drag | Select text |
 | Mouse wheel | Scroll back through earlier output |
 | Shift + mouse | In a program that takes the mouse (nvim, htop, lazygit), the mouse is the program's; with Shift it's Kel's: select text, scroll back |
+| `+` after the tabs | New tab |
+| `⌄` after the tabs | Command palette, which also lists the shortcuts |
+| `×` on a tab under the mouse, or a middle click on a tab | Close that tab (asks first if a command runs in it) |
 | Drag the empty top bar | Move the window |
 | Double-click the empty top bar | Maximize / restore |
 | Drag the window's edge or corner | Resize the window |

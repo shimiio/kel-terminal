@@ -6,7 +6,7 @@
 
 use crate::config::{self, Config};
 use crate::keys::{self, Action};
-use crate::layout::{Layout, WindowButton};
+use crate::layout::{Layout, TitleHit, WindowButton};
 use crate::mouse::{self, Tracking};
 use crate::palette::Palette;
 use crate::project::{self, Project, TabRecipe};
@@ -106,6 +106,8 @@ pub struct App {
 
     /// Where the mouse pointer is, in pixels, and the cell under it as (row, col).
     mouse_pos: (usize, usize),
+    /// The mouse is over the window (else `mouse_pos` is where it left).
+    mouse_inside: bool,
     mouse_cell: (usize, usize),
     /// The mouse selection, if any. Screen positions, so it doesn't follow scrolling.
     selection: Option<Selection>,
@@ -136,7 +138,7 @@ pub struct App {
     /// Where the panel and the text are in the window. Updated in `on_resize`.
     layout: Layout,
     /// The window button under the mouse, if any.
-    hovered: Option<WindowButton>,
+    hovered: Option<TitleHit>,
     /// When the empty title bar was last clicked, to notice a double click.
     last_click: Option<Instant>,
     /// The window is closing (see `close_window`): `about_to_wait` ends the event loop.
@@ -254,6 +256,7 @@ impl App {
             modifiers: ModifiersState::empty(),
 
             mouse_pos: (0, 0),
+            mouse_inside: false,
             mouse_cell: (0, 0),
             selection: None,
             selecting: false,
@@ -360,6 +363,8 @@ impl App {
         self.tabs[index].activity = false;
         self.tabs[index].command.done = None;
         self.update_window_title();
+        // A tab came or went: the tabs and the + moved, maybe under the mouse.
+        self.update_hovered();
         // The selection and the half-scrolled line belonged to the other tab.
         self.selection = None;
         self.scroll_rest = 0.0;
@@ -387,16 +392,23 @@ impl App {
         }
     }
 
-    /// Ctrl+Shift+W: ends the shell of the tab on screen. If a command runs
-    /// (nvim, `cargo run`), only on the second press.
+    /// Ctrl+Shift+W: closes the tab on screen.
     fn close_tab(&mut self) {
-        let tab = self.tab();
+        self.close_tab_at(self.active, "Ctrl+Shift+W");
+    }
+
+    /// Ends the shell of the tab at `index`. If a command runs (nvim, `cargo run`),
+    /// only on the second press of `how` (a key, or the tab's ×).
+    fn close_tab_at(&mut self, index: usize, how: &str) {
+        let Some(tab) = self.tabs.get(index) else {
+            return;
+        };
         let (id, running) = (tab.id, tab.command.running());
-        let message = "a command runs here: Ctrl+Shift+W again to close";
-        if self.confirm_close(Closing::Tab(id), running, message.to_string()) {
+        let message = format!("a command runs there: {how} again to close");
+        if self.confirm_close(Closing::Tab(id), running, message) {
             // Only ends the shell; the tab goes when the shell is gone (`remove_tab`),
             // the same way as after `exit`.
-            self.tab_mut().kill();
+            self.tabs[index].kill();
         }
     }
 
@@ -811,7 +823,10 @@ impl ApplicationHandler<UserEvent> for App {
             }
             WindowEvent::MouseWheel { delta, .. } => self.on_mouse_wheel(delta),
             WindowEvent::CursorMoved { position, .. } => self.on_mouse_move(position),
-            WindowEvent::CursorLeft { .. } => self.set_hovered(None),
+            WindowEvent::CursorLeft { .. } => {
+                self.mouse_inside = false;
+                self.set_hovered(None);
+            }
             WindowEvent::MouseInput { state, button, .. } => self.on_mouse_button(state, button),
             WindowEvent::Focused(focused) => {
                 self.focused = focused;
@@ -999,6 +1014,7 @@ impl App {
         let row = y.saturating_sub(text.y) / cell_h;
         let moved = (row, col) != self.mouse_cell;
         self.mouse_pos = (x, y);
+        self.mouse_inside = true;
         self.mouse_cell = (row, col);
         // At the window's edge: resize arrows, and no lit button under them. A
         // maximized window can't be resized, so it has no edges.
@@ -1014,12 +1030,7 @@ impl App {
                 window.set_cursor(edge.map_or(CursorIcon::Default, CursorIcon::from));
             }
         }
-        let button = if edge.is_some() {
-            None
-        } else {
-            self.layout.button_at(x, y)
-        };
-        self.set_hovered(button);
+        self.update_hovered();
 
         if self.selecting {
             if let Some(selection) = &mut self.selection {
@@ -1070,6 +1081,15 @@ impl App {
             self.request_redraw();
             return;
         }
+        // A middle click on a tab closes it, as in a browser.
+        if button == MouseButton::Middle && state == ElementState::Pressed {
+            let (x, y) = self.mouse_pos;
+            let hit = self.layout.title_hit(x, y, self.tabs.len());
+            if let Some(TitleHit::Tab { index, .. }) = hit {
+                self.close_tab_at(index, "middle click");
+                return;
+            }
+        }
         let button = match button {
             MouseButton::Left => mouse::Button::Left,
             MouseButton::Middle => mouse::Button::Middle,
@@ -1092,34 +1112,54 @@ impl App {
         }
     }
 
-    /// The window button under the mouse changed: draw the buttons again.
-    fn set_hovered(&mut self, button: Option<WindowButton>) {
-        if self.hovered != button {
-            self.hovered = button;
+    /// Finds what's under the mouse in the title bar again: after the mouse moved,
+    /// or after the things there moved (a new tab pushes the + to the right).
+    /// Nothing at the window's edge: the resize arrows are there.
+    fn update_hovered(&mut self) {
+        let (x, y) = self.mouse_pos;
+        let hit = if !self.mouse_inside || self.resize_edge.is_some() {
+            None
+        } else {
+            self.layout.title_hit(x, y, self.tabs.len())
+        };
+        self.set_hovered(hit);
+    }
+
+    /// What's under the mouse in the title bar changed: draw it again.
+    fn set_hovered(&mut self, hit: Option<TitleHit>) {
+        if self.hovered != hit {
+            self.hovered = hit;
             self.request_redraw();
         }
     }
 
-    /// A click in the title bar: a window button, a tab, or the empty bar, which
+    /// A click in the title bar: a button, a tab or its ×, or the empty bar, which
     /// moves the window (and maximizes it on a double click), like a Windows title bar.
     fn on_title_bar_click(&mut self) {
         let Some(window) = self.window.clone() else {
             return;
         };
         let (x, y) = self.mouse_pos;
-        if let Some(button) = self.layout.button_at(x, y) {
-            match button {
+        match self.layout.title_hit(x, y, self.tabs.len()) {
+            Some(TitleHit::Window(button)) => match button {
                 WindowButton::Minimize => window.set_minimized(true),
                 WindowButton::Maximize => window.set_maximized(!window.is_maximized()),
                 WindowButton::Close => self.close_window(),
-            }
-            return;
+            },
+            Some(TitleHit::NewTab) => self.new_tab(),
+            Some(TitleHit::Palette) => self.run(Action::Palette),
+            Some(TitleHit::Tab { index, close: true }) => self.close_tab_at(index, "×"),
+            Some(TitleHit::Tab {
+                index,
+                close: false,
+            }) => self.show_tab(index),
+            None => self.on_empty_bar_click(&window),
         }
-        let tabs = self.layout.tabs(self.tabs.len());
-        if let Some(index) = tabs.iter().position(|tab| tab.contains(x, y)) {
-            self.show_tab(index);
-            return;
-        }
+    }
+
+    /// The empty part of the title bar: drag to move the window, double-click to
+    /// maximize or restore it.
+    fn on_empty_bar_click(&mut self, window: &Window) {
         let now = Instant::now();
         let double = self
             .last_click

@@ -9,7 +9,7 @@
 use crate::app::Selection;
 use crate::fallback::Fallbacks;
 use crate::icons::{Icon, Icons};
-use crate::layout::{Layout, Rect, WindowButton, scaled};
+use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::palette::Palette;
 use crate::term::{CursorShape, Grid, Underline, Width, char_width};
 use crate::theme::Theme;
@@ -74,7 +74,7 @@ pub struct Chrome<'a> {
     /// The tab on screen.
     pub active: usize,
     /// The window button under the mouse, drawn lit.
-    pub hovered: Option<WindowButton>,
+    pub hovered: Option<TitleHit>,
     /// The maximize button then shows "restore" (two squares).
     pub maximized: bool,
     /// Something went wrong (a config error...): shown in red at the end of the tab bar.
@@ -311,6 +311,7 @@ impl Renderer {
             &mut self.ui,
         );
         draw_window_buttons(&mut buffer, width, theme, layout, chrome);
+        draw_bar_buttons(&mut buffer, width, theme, layout, chrome);
         // A question waits for an answer now, so it comes before a problem.
         let message = match (chrome.question, chrome.status) {
             (Some(question), _) => Some((question, theme.palette[11])),
@@ -489,9 +490,31 @@ fn draw_tab_bar(
 
         let gap = ui.px(ICON_GAP);
         let mut max_w = tab.w.saturating_sub(2 * padding + icon_w + gap);
+        // Under the mouse: a × at the right end, in place of the mark.
+        let hovered = match chrome.hovered {
+            Some(TitleHit::Tab { index, close }) if index == i => Some(close),
+            _ => None,
+        };
+        if let Some(on_close) = hovered {
+            let r = layout.tab_close(*tab);
+            let tab_bg = if on_screen {
+                theme.background
+            } else {
+                theme.frame
+            };
+            if on_close {
+                let lit = blend(tab_bg, theme.foreground, 40);
+                fill_rect(pixels, width, r.x, r.y, r.w, r.h, lit);
+            }
+            let (n, t) = (ui.px(8), ui.px(1));
+            let (x, y) = (r.x + (r.w - n) / 2, r.y + (r.h - n) / 2);
+            draw_x(pixels, width, (x, y), n, t, color);
+            max_w = max_w.saturating_sub(r.w + gap);
+        }
         // The mark at the right end, one at a time: a running command's ring
         // says the most, then how one ended, then plain new output.
         let mark = match (label.busy, label.done) {
+            _ if hovered.is_some() => None,
             (true, _) => Some((theme.foreground, RING_WIDTH)),
             // Bright green and bright red, so they follow the theme.
             (false, Some(true)) => Some((theme.palette[10], 0.0)),
@@ -547,7 +570,8 @@ fn draw_window_buttons(
         (layout.maximize, WindowButton::Maximize),
         (layout.close, WindowButton::Close),
     ] {
-        let (bg, fg) = match (button, chrome.hovered == Some(button)) {
+        let lit_now = chrome.hovered == Some(TitleHit::Window(button));
+        let (bg, fg) = match (button, lit_now) {
             (WindowButton::Close, true) => (CLOSE_HOVER, 0xffffff),
             (_, true) => (lit, theme.foreground),
             (_, false) => (theme.frame, dim),
@@ -578,14 +602,68 @@ fn draw_window_buttons(
                 fill_rect(pixels, width, x + n - t, y, t, side, fg);
             }
             WindowButton::Maximize => outline(pixels, width, Rect { x, y, w: n, h: n }, t, fg),
-            WindowButton::Close => {
-                // An X: two diagonals, a t x t square per row.
-                for i in 0..=(n - t) {
+            WindowButton::Close => draw_x(pixels, width, (x, y), n, t, fg),
+        }
+    }
+}
+
+/// `+` (a new tab) and `⌄` (the command palette), right after the last tab: dim,
+/// with a lighter background under the mouse, like the window buttons.
+fn draw_bar_buttons(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    chrome: &Chrome,
+) {
+    let dim = blend(theme.frame, theme.foreground, 128);
+    let lit = blend(theme.frame, theme.foreground, 40);
+    let (new_tab, palette) = layout.bar_buttons(chrome.tabs.len());
+    let s = |n: usize| scaled(n, layout.scale);
+    for (r, hit) in [(new_tab, TitleHit::NewTab), (palette, TitleHit::Palette)] {
+        // A square in the middle of the button's place, 24 x 24 at 100%.
+        let side = s(24).min(r.w).min(r.h);
+        let (bx, by) = (r.x + (r.w - side) / 2, r.y + (r.h - side) / 2);
+        let fg = if chrome.hovered == Some(hit) {
+            fill_rect(pixels, width, bx, by, side, side, lit);
+            theme.foreground
+        } else {
+            dim
+        };
+        // The icon: 10 x 10 at 100%, lines 1 pixel thick.
+        let (n, t) = (s(10), s(1));
+        let (x, y) = (bx + (side - n) / 2, by + (side - n) / 2);
+        match hit {
+            // Two lines through the middle.
+            TitleHit::NewTab => {
+                fill_rect(pixels, width, x, y + (n - t) / 2, n, t, fg);
+                fill_rect(pixels, width, x + (n - t) / 2, y, t, n, fg);
+            }
+            // A V, half as tall as wide, a bit below the middle: a t x t square
+            // per row from each side, meeting in the middle.
+            _ => {
+                let y = y + n / 4;
+                for i in 0..=(n - t) / 2 {
                     fill_rect(pixels, width, x + i, y + i, t, t, fg);
                     fill_rect(pixels, width, x + n - t - i, y + i, t, t, fg);
                 }
             }
         }
+    }
+}
+
+/// An X, `n` pixels square, from (x, y): two diagonals, a t x t square per row.
+fn draw_x(
+    pixels: &mut [u32],
+    width: usize,
+    (x, y): (usize, usize),
+    n: usize,
+    t: usize,
+    color: u32,
+) {
+    for i in 0..=(n - t) {
+        fill_rect(pixels, width, x + i, y + i, t, t, color);
+        fill_rect(pixels, width, x + n - t - i, y + i, t, t, color);
     }
 }
 
