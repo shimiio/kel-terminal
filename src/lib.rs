@@ -24,6 +24,7 @@
 //! - `renderer`: turns that grid into pixels.
 //! - `search`: the search in the output (Ctrl+Shift+F): what's typed, the matches.
 //! - `sidebar`: the panel of projects (`≡`, Ctrl+Shift+B).
+//! - `card`: the small box for changing a tab's name and command.
 //! - `start`: the start screen of a new home: the recent projects.
 //! - `links`: `https://...` in the output, opened with Ctrl+click.
 //! - `setup`: the install scripts from `setup/`, built into the exe.
@@ -33,6 +34,7 @@
 //! - `theme`: colors as programs ask for them, and the theme that turns them into pixels.
 
 pub mod app;
+pub mod card;
 pub mod config;
 pub mod fallback;
 pub mod font;

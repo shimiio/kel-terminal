@@ -46,6 +46,8 @@ pub enum Action {
     OpenHome,
     /// Closes the project on screen: saves it, ends its shells, goes home.
     CloseProject,
+    /// Opens the card of the tab on screen: its name and command.
+    EditTab,
     /// Saves the tabs as a new project of this name; the window becomes it.
     SaveProject(String),
 }

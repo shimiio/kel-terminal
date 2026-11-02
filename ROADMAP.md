@@ -181,6 +181,11 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] Home as a start screen (like Visual Studio's): the recent projects (by when their file
       was written), ↑↓ Enter or a click opens one; typing puts it away and goes to the shell,
       which starts behind it
+- [x] Cards: change in Kel what was only in the project's file. A tab's card (double-click
+      it): its name and its command, saved at once
+- [ ] A project's card (F2 in the sidebar): its name (the file renamed) and color (the
+      theme's colors, or a `#hex` typed, its dot showing it as it's typed)
+- [ ] The projects' order in the sidebar: drag one, or Alt+↑↓; kept in `projects\order.txt`
 - [ ] Window vibrancy
 
 ## Later

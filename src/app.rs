@@ -4,10 +4,11 @@
 //! Each tab has its own shell and two threads of its own (see `tab`), which
 //! report back with `UserEvent`s.
 
+use crate::card::{self, Card, Target};
 use crate::config::{self, Config};
 use crate::font::{self, Fonts};
 use crate::keys::{self, Action};
-use crate::layout::{Layout, TitleHit, WindowButton};
+use crate::layout::{Layout, Rect, TitleHit, WindowButton};
 use crate::mouse::{self, Tracking};
 use crate::palette::{Item, Palette};
 use crate::project::{self, Project, TabRecipe};
@@ -27,7 +28,7 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, ResizeDirection, Window, WindowId};
 
 // Starting size, in cells. After that, the size comes from the window (`on_resize`).
@@ -218,6 +219,10 @@ pub struct App {
     sidebar: Option<Sidebar>,
     /// Home's start screen, until a key or a click puts it away (see `start`).
     start: Option<Start>,
+    /// The card of a tab (double-click it), while it's open. It gets the keys.
+    card: Option<Card>,
+    /// The last click on a tab: a second one on it soon after opens its card.
+    last_tab_click: Option<(TabId, Instant)>,
 }
 
 impl App {
@@ -360,6 +365,8 @@ impl App {
             tab_drag: None,
             sidebar: None,
             start,
+            card: None,
+            last_tab_click: None,
         })
     }
 
@@ -521,8 +528,10 @@ impl App {
         self.search = None;
         self.link = None;
         self.scroll_rest = 0.0;
-        // Another tab (a new one, a click on one): the shell, not the start screen.
+        // Another tab (a new one, a click on one): the shell, not the start screen,
+        // and not a card of the tab before.
         self.start = None;
+        self.card = None;
         self.update_focus();
         self.request_redraw();
     }
@@ -1031,6 +1040,11 @@ impl App {
                         // Kel's actions first, then the projects, then the install scripts.
                         let current = self.project.as_ref().map(|p| p.name.as_str());
                         let mut items = keys::palette_items();
+                        items.push(Item {
+                            label: "Edit tab: name and command".to_string(),
+                            hint: "double-click a tab".to_string(),
+                            action: Action::EditTab,
+                        });
                         // The project on screen can be closed.
                         if let Some(name) = current {
                             items.push(Item {
@@ -1060,6 +1074,7 @@ impl App {
             Action::Install(name) => self.install(name),
             Action::OpenProject(name) => self.switch_to(Some(&name)),
             Action::OpenHome => self.switch_to(None),
+            Action::EditTab => self.open_tab_card(self.active),
             Action::CloseProject => {
                 if let Some(name) = self.project.as_ref().map(|p| p.name.clone()) {
                     self.close_project(&name, "choose Close project again");
@@ -1135,6 +1150,91 @@ impl App {
             Key::Named(NamedKey::Delete) => self.sidebar_close(),
             _ => {}
         }
+        self.request_redraw();
+    }
+
+    /// Opens the card of the tab at `index`: its name, and in a project its
+    /// command (see `card`).
+    fn open_tab_card(&mut self, index: usize) {
+        let Some(tab) = self.tabs.get(index) else {
+            return;
+        };
+        let name = tab.name.as_deref();
+        let command = tab.start_command.as_deref();
+        self.card = Some(Card::tab(tab.id, name, command, self.project.is_some()));
+        self.palette = None;
+        self.search = None;
+        self.sidebar = None;
+        self.request_redraw();
+    }
+
+    /// Where the open card is: under its tab.
+    fn card_rect(&self) -> Option<Rect> {
+        let card = self.card.as_ref()?;
+        let Target::Tab(id) = card.target;
+        let index = self.tabs.iter().position(|tab| tab.id == id)?;
+        let anchor = self.layout.tabs(self.tabs.len())[index];
+        let (window, scale) = (self.layout.window, self.layout.scale);
+        Some(card::rect(anchor, window, scale, card.fields().len()))
+    }
+
+    /// A key while a card is open: it's typed in the field with the cursor. Tab
+    /// or ↑↓ go to another field, Enter keeps what's typed, Esc doesn't.
+    fn card_key(&mut self, event: &KeyEvent) {
+        let ctrl = self.modifiers.control_key();
+        let shift = self.modifiers.shift_key();
+        let Some(card) = &mut self.card else {
+            return;
+        };
+        match &event.logical_key {
+            Key::Named(NamedKey::Escape) => self.card = None,
+            Key::Named(NamedKey::Enter) => self.apply_card(),
+            Key::Named(NamedKey::Tab) => card.next_field(if shift { -1 } else { 1 }),
+            Key::Named(NamedKey::ArrowUp) => card.next_field(-1),
+            Key::Named(NamedKey::ArrowDown) => card.next_field(1),
+            Key::Named(NamedKey::ArrowLeft) => card.focused().move_cursor(-1),
+            Key::Named(NamedKey::ArrowRight) => card.focused().move_cursor(1),
+            Key::Named(NamedKey::Home) => card.focused().jump(false),
+            Key::Named(NamedKey::End) => card.focused().jump(true),
+            Key::Named(NamedKey::Backspace) if ctrl => card.focused().backspace_word(),
+            Key::Named(NamedKey::Backspace) => card.focused().backspace(),
+            Key::Named(NamedKey::Delete) => card.focused().delete(),
+            // Ctrl+V (or Kel's Ctrl+Shift+V): the clipboard, as one line.
+            _ if ctrl && event.physical_key == PhysicalKey::Code(KeyCode::KeyV) => {
+                if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                    card.focused().insert(&text);
+                }
+            }
+            // Typed letters, not Ctrl+letter (see `palette_key`).
+            _ if !ctrl => {
+                if let Some(text) = event.text.as_deref() {
+                    card.focused().insert(text);
+                }
+            }
+            _ => {}
+        }
+        self.request_redraw();
+    }
+
+    /// Enter, or a click outside the card: what's typed is kept. A tab's name and
+    /// command go into the project's file at once. The command runs the next
+    /// time the project opens, not now.
+    fn apply_card(&mut self) {
+        let Some(card) = self.card.take() else {
+            return;
+        };
+        let Target::Tab(id) = card.target;
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        tab.name = card.value("Name");
+        if card.has("Command") {
+            tab.start_command = card.value("Command");
+        }
+        if let Err(e) = self.save_project() {
+            self.set_status(Some(format!("{e:#}")));
+        }
+        self.update_window_title();
         self.request_redraw();
     }
 
@@ -1560,6 +1660,7 @@ impl App {
             link: self.link.as_ref().map(|(found, _)| *found),
             sidebar: self.sidebar.as_ref(),
             start: self.start.as_ref(),
+            card: self.card.as_ref().zip(self.card_rect()),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -1624,6 +1725,11 @@ impl App {
     /// or a key for the shell.
     fn on_key(&mut self, event: KeyEvent) {
         self.restart_blink();
+        // An open card gets every key: it's typed in.
+        if self.card.is_some() {
+            self.card_key(&event);
+            return;
+        }
         let shortcut = keys::shortcut(event.physical_key, self.modifiers);
         // Ctrl+Shift+P and Ctrl+Shift+F still work in the palette and the search:
         // they close one, or swap one for the other.
@@ -1851,6 +1957,22 @@ impl App {
     /// A mouse button: the program's, if it asked for the mouse; else Kel's (the
     /// left one selects text). The title bar and the edges are always Kel's.
     fn on_mouse_button(&mut self, state: ElementState, button: MouseButton) {
+        // A card: a click on a field puts the cursor there; one outside keeps
+        // what's typed and closes it (as renaming a file in Explorer does).
+        if self.card.is_some() && state == ElementState::Pressed {
+            let (x, y) = self.mouse_pos;
+            let rect = self.card_rect().filter(|rect| rect.contains(x, y));
+            match (rect, &mut self.card) {
+                (Some(rect), Some(card)) => {
+                    if let Some(i) = card.field_at(rect, self.layout.scale, x, y) {
+                        card.focus_field(i);
+                    }
+                }
+                _ => self.apply_card(),
+            }
+            self.request_redraw();
+            return;
+        }
         // A click anywhere closes the palette, and does nothing else.
         if self.palette.is_some() && state == ElementState::Pressed {
             self.palette = None;
@@ -1977,7 +2099,19 @@ impl App {
                 close: false,
             }) => {
                 // On screen right away; held, it can be dragged to another place.
+                // Clicked twice: its card.
+                let id = self.tabs[index].id;
+                let now = Instant::now();
+                let double = self
+                    .last_tab_click
+                    .is_some_and(|(last, at)| last == id && now - at < DOUBLE_CLICK);
                 self.show_tab(index);
+                if double {
+                    self.last_tab_click = None;
+                    self.open_tab_card(index);
+                    return;
+                }
+                self.last_tab_click = Some((id, now));
                 self.tab_drag = Some(TabDrag {
                     from_x: x,
                     moving: false,

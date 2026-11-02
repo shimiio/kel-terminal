@@ -7,6 +7,7 @@
 //! - Every frame redraws everything: backgrounds, letters, cursor.
 
 use crate::app::Selection;
+use crate::card::{self, Card};
 use crate::fallback::Fallbacks;
 use crate::font::{Font, Fonts, Metrics};
 use crate::icons::{Icon, Icons};
@@ -107,6 +108,8 @@ pub struct Chrome<'a> {
     pub sidebar: Option<&'a Sidebar>,
     /// The start screen, if it shows: over the terminal.
     pub start: Option<&'a Start>,
+    /// The open card, and where it is.
+    pub card: Option<(&'a Card, Rect)>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -507,6 +510,18 @@ impl Renderer {
                 layout,
                 chrome,
                 sidebar,
+                font,
+                &mut self.ui,
+            );
+        }
+        if let Some((card, rect)) = chrome.card {
+            draw_card(
+                &mut buffer,
+                width,
+                theme,
+                layout,
+                card,
+                rect,
                 font,
                 &mut self.ui,
             );
@@ -1066,6 +1081,99 @@ fn draw_sidebar(
         let at = (panel.x + pad, top + i * ui.line_h);
         draw_ui_text(pixels, width, font, ui, line, at, text_w, color);
     }
+}
+
+/// The card (see `card`) at `rect`: each field's name and what's typed in it,
+/// the cursor in the one it's in, and under them what that field does.
+#[allow(clippy::too_many_arguments)]
+fn draw_card(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    card: &Card,
+    rect: Rect,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    let b = layout.border.max(1);
+    outline(pixels, width, rect, b, theme.border);
+    let inside = rect.shrink(b);
+    let back = theme.frame;
+    fill_rect(pixels, width, inside.x, inside.y, inside.w, inside.h, back);
+    let dim = blend(back, theme.foreground, 128);
+    let pad = ui.px(8);
+    // "Command" and a space.
+    let label_w = 8 * ui.advance;
+    for (i, field) in card.fields().iter().enumerate() {
+        let r = card::field_rect(rect, layout.scale, i);
+        let focused = i == card.focus();
+        let text_y = r.y + r.h.saturating_sub(ui.line_h) / 2;
+        draw_ui_text(
+            pixels,
+            width,
+            font,
+            ui,
+            field.label,
+            (r.x + pad, text_y),
+            label_w,
+            dim,
+        );
+        // The box it's typed in: lighter where the cursor is.
+        let bx = r.x + pad + label_w;
+        let (by, bh) = (r.y + ui.px(3), r.h.saturating_sub(ui.px(6)));
+        let bw = (r.x + r.w).saturating_sub(bx);
+        let lit = if focused { 20 } else { 8 };
+        fill_rect(
+            pixels,
+            width,
+            bx,
+            by,
+            bw,
+            bh,
+            blend(back, theme.foreground, lit),
+        );
+        let tx = bx + ui.px(6);
+        let chars = bw.saturating_sub(ui.px(12)) / ui.advance.max(1);
+        let (shown, cursor) = field.text.visible(chars);
+        let text_w = chars * ui.advance;
+        if field.text.text().is_empty() {
+            // Empty: what that means, dim.
+            draw_ui_text(
+                pixels,
+                width,
+                font,
+                ui,
+                field.empty,
+                (tx, text_y),
+                text_w,
+                dim,
+            );
+        } else {
+            let fg = theme.foreground;
+            draw_ui_text(pixels, width, font, ui, &shown, (tx, text_y), text_w, fg);
+        }
+        if focused {
+            let cx = tx + cursor * ui.advance;
+            fill_rect(pixels, width, cx, text_y, ui.px(2), ui.line_h, theme.cursor);
+        }
+    }
+    // Under the fields: what the one with the cursor does, and the keys.
+    let n = card.fields().len();
+    let note = card.fields()[card.focus()].note;
+    let hint = format!("{note}   Enter   Esc");
+    let y = card::hint_y(rect, layout.scale, n) + ui.px(6);
+    let w = rect.w.saturating_sub(2 * pad);
+    draw_ui_text(
+        pixels,
+        width,
+        font,
+        ui,
+        &hint,
+        (rect.x + 2 * pad, y),
+        w,
+        dim,
+    );
 }
 
 /// A row of projects, in the sidebar or on the start screen.
