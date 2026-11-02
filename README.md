@@ -51,7 +51,7 @@ the new program.
 | Ctrl+0 | Font size back to the one in the config |
 | Ctrl+, | Open the config file |
 | Ctrl+Shift+P | Command palette: type a few letters (`ntb` finds "New tab"), Up/Down, Enter; Esc or a click closes it |
-| Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C) |
+| Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C). A line too long for the window comes out as one line, not cut where it wrapped |
 | Ctrl+Shift+V | Paste |
 | Ctrl+C | Stop the running command |
 | Mouse drag | Select text |
@@ -62,7 +62,7 @@ the new program.
 | `×` on a tab under the mouse, or a middle click on a tab | Close that tab (asks first if a command runs in it) |
 | Drag the empty top bar | Move the window |
 | Double-click the empty top bar | Maximize / restore |
-| Drag the window's edge or corner | Resize the window |
+| Drag the window's edge or corner | Resize the window. Long lines wrap again at the new width, the earlier output too |
 
 All other keys go to the program: Ctrl+V and Ctrl+W without Shift too (nvim's block
 selection and window commands), and Ctrl with any letter, also on a Russian layout
@@ -248,7 +248,7 @@ the file keeps the tabs it had, not none.
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |
 | `src/shell_integration.rs` | Makes the shell tell Kel its folder, and when a command starts and ends |
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |
-| `src/term/grid.rs` | The screen as a grid of cells, plus scrollback |
+| `src/term/grid.rs` | The screen as a grid of cells, plus scrollback; on resize, the lines are cut again at the new width |
 | `src/renderer.rs` | Turns the grid into pixels |
 | `src/font.rs` | Finds a font, and turns its letters into pixels, each one when it's first drawn |
 | `src/fallback.rs` | Fonts for the letters the terminal's font lacks (emoji, Chinese), loaded when first needed |

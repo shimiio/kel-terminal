@@ -509,7 +509,7 @@ mod tests {
     fn lines_scrolled_off_are_kept() {
         let t = feed("1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7");
         assert_eq!(t.grid.scrollback().len(), 2);
-        assert_eq!(t.grid.scrollback()[0][0].ch, '1'); // oldest line starts with '1'
+        assert_eq!(t.grid.scrollback()[0].cells[0].ch, '1'); // oldest line starts with '1'
         assert_eq!(t.grid.render(), "3\n4\n5\n6\n7"); // the screen shows the rest
     }
 
@@ -520,10 +520,10 @@ mod tests {
         let t = feed("ab\r\n\x1b[31;42mb\x1b[K\x1b[0m\r\n\r\n3\r\n4\r\n5\r\n6\r\n7");
         let lines = t.grid.scrollback();
         assert_eq!(lines.len(), 3);
-        assert_eq!(lines[0].len(), 2); // "ab"
-        assert_eq!(lines[1].len(), 10); // the green spaces go to the edge
-        assert_eq!(lines[1][9].bg, Color::Indexed(2));
-        assert!(lines[2].is_empty()); // an empty line keeps nothing
+        assert_eq!(lines[0].cells.len(), 2); // "ab"
+        assert_eq!(lines[1].cells.len(), 10); // the green spaces go to the edge
+        assert_eq!(lines[1].cells[9].bg, Color::Indexed(2));
+        assert!(lines[2].cells.is_empty()); // an empty line keeps nothing
     }
 
     #[test]

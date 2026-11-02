@@ -127,7 +127,11 @@ what bothers in use can come first.
       window's edge (36 bytes each); now only up to its last non-empty one
 - [ ] Later, if needed: a smaller cell (36 → ~16 bytes: a color in 4 bytes, flags in bits),
       and `scrollback = 10000` in the config
-- [ ] Reflow lines on resize: a narrower window wraps long lines, a wider one joins them back
+- [x] Reflow lines on resize: a narrower window wraps long lines, a wider one joins them back.
+      Each row remembers if it wrapped by itself; on resize Kel joins and cuts the lines the
+      way ConPTY does (measured: it draws its screen again right after, from the top). A
+      shorter window keeps the rows above in the scrollback (they were lost); the 10 000 limit
+      counts lines, not rows. A long line copies as one line
 - [ ] Search in scrollback (Ctrl+Shift+F)
 - [ ] Clickable links
 - [ ] Save the tabs as a new project from the palette (the typed text is the name)
