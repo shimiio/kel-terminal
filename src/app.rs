@@ -104,7 +104,19 @@ struct TabDrag {
     moving: bool,
 }
 
-/// The project open in this window (`kel <name>`): what's kept of its file.
+/// A project open in this window but not on screen, or home (Kel without a
+/// project). Its tabs live on: their shells and commands run, their grids take
+/// the output, as a tab does while another one is on screen.
+struct Workspace {
+    /// `None`: home.
+    project: Option<OpenProject>,
+    tabs: Vec<Tab>,
+    /// The tab that was on screen, shown again on the way back.
+    active: usize,
+}
+
+/// The project on screen (`kel <name>`, or chosen in the sidebar): what's kept
+/// of its file.
 struct OpenProject {
     name: String,
     folder: PathBuf,
@@ -173,9 +185,14 @@ pub struct App {
     resize_edge: Option<ResizeDirection>,
     /// Something went wrong (a config error...), shown in the tab bar until it's fixed.
     status: Option<String>,
-    /// The open project, if Kel was started with one (`kel <name>`). Saved when
-    /// the window closes (see `save_project`).
+    /// The project on screen (`kel <name>`, or one chosen in the sidebar); `None`:
+    /// home. Saved when you leave it and when the window closes (`save_project`).
     project: Option<OpenProject>,
+    /// The other projects open in this window, home among them if you left it:
+    /// out of sight, still running (see `switch_to`). The last one is the one you
+    /// were in last. `tabs`, `active` and `project` are always the one on screen,
+    /// so everything else in `App` only knows about those.
+    parked: Vec<Workspace>,
     /// The command palette, while it's open. It gets the keys then, not the shell.
     palette: Option<Palette>,
     /// The search in the output, while it's open. It gets the keys then too.
@@ -319,6 +336,7 @@ impl App {
                     folder: project.folder,
                     color: project.color,
                 }),
+            parked: Vec::new(),
             palette: None,
             search: None,
             link: None,
@@ -338,6 +356,15 @@ impl App {
 
     fn tab_mut(&mut self) -> &mut Tab {
         &mut self.tabs[self.active]
+    }
+
+    /// The tab `id`, on screen or in a project out of sight. The tabs' threads
+    /// only know the id: the output, the answers (`UserEvent::Reply`) and the
+    /// end of a shell come for any tab, and an answer that's lost can leave a
+    /// program waiting for it.
+    fn tab_anywhere(&mut self, id: TabId) -> Option<&mut Tab> {
+        let parked = self.parked.iter_mut().flat_map(|w| w.tabs.iter_mut());
+        self.tabs.iter_mut().chain(parked).find(|tab| tab.id == id)
     }
 
     /// Sends bytes to the shell of the tab on screen, as if they were typed.
@@ -380,11 +407,14 @@ impl App {
     /// The last one closes Kel.
     fn remove_tab(&mut self, id: TabId, event_loop: &ActiveEventLoop) {
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
-            return; // already gone
+            self.remove_parked_tab(id);
+            return;
         };
         self.tabs.remove(index);
         if self.tabs.is_empty() {
-            event_loop.exit();
+            if !self.leave_empty() {
+                event_loop.exit();
+            }
             return;
         }
         // Stay on the same tab. It moved one place left if the closed tab was
@@ -394,6 +424,45 @@ impl App {
             self.active -= 1;
         }
         self.show_tab(self.active);
+    }
+
+    /// A tab out of sight ended (`exit` in it, or its command closed the shell).
+    /// Its project's last tab: the project closes, its file stays as it was.
+    fn remove_parked_tab(&mut self, id: TabId) {
+        for (w, workspace) in self.parked.iter_mut().enumerate() {
+            let Some(index) = workspace.tabs.iter().position(|tab| tab.id == id) else {
+                continue;
+            };
+            workspace.tabs.remove(index);
+            if workspace.tabs.is_empty() {
+                self.parked.remove(w);
+            } else if index < workspace.active || workspace.active == workspace.tabs.len() {
+                workspace.active -= 1;
+            }
+            self.request_redraw(); // the sidebar may show it
+            return;
+        }
+    }
+
+    /// The last tab on screen ended. A project's: back home, the home that was
+    /// left or a new one. Home's: the project you were in last. Returns `false`
+    /// when there's nothing left to go to: Kel closes.
+    /// The project's file isn't written: it stays as it was, not a project of no
+    /// tabs (see `save_project`).
+    fn leave_empty(&mut self) -> bool {
+        let next = if self.project.is_some() {
+            match self.parked.iter().position(|w| w.project.is_none()) {
+                Some(home) => Some(self.parked.remove(home)),
+                None => self.start_workspace(None).ok(),
+            }
+        } else {
+            self.parked.pop()
+        };
+        let Some(next) = next else {
+            return false;
+        };
+        self.enter(next);
+        true
     }
 
     /// Shows the tab at `index` (its place in the list).
@@ -464,8 +533,8 @@ impl App {
         }
         let before = std::mem::replace(&mut self.focused_tab, now);
         for (id, bytes) in [(before, b"\x1b[O"), (now, b"\x1b[I")] {
-            // `before` may be gone: closed.
-            if let Some(tab) = self.tabs.iter_mut().find(|tab| Some(tab.id) == id) {
+            // `before` may be gone (closed), or out of sight (another project).
+            if let Some(tab) = id.and_then(|id| self.tab_anywhere(id)) {
                 let asked = tab.terminal.lock().unwrap().focus_events;
                 if asked {
                     tab.write(bytes);
@@ -498,13 +567,31 @@ impl App {
     /// runs in any tab, or the project can't be saved, only on the second time.
     fn close_window(&mut self) {
         // Saved at every try: a try that only asks writes the same file again later.
-        let saved = self.save_project();
-        let running = self.tabs.iter().filter(|tab| tab.command.running()).count();
-        let question = match (saved, running) {
+        // Every project open in the window, the ones out of sight too.
+        let mut saved = self.save_project();
+        for workspace in &self.parked {
+            if let Some(open) = &workspace.project {
+                saved = saved.and(save_tabs(open, &workspace.tabs));
+            }
+        }
+        let running = |tabs: &[Tab]| tabs.iter().filter(|tab| tab.command.running()).count();
+        let here = running(&self.tabs);
+        let away: usize = self.parked.iter().map(|w| running(&w.tabs)).sum();
+        let question = match (saved, here + away) {
             (Err(e), _) => Some(format!("{e:#}: close again to quit")),
             (Ok(()), 0) => None,
-            (Ok(()), 1) => Some("a command runs in a tab: close again to quit".to_string()),
-            (Ok(()), n) => Some(format!("commands run in {n} tabs: close again to quit")),
+            (Ok(()), 1) if away == 0 => {
+                Some("a command runs in a tab: close again to quit".to_string())
+            }
+            (Ok(()), 1) => {
+                Some("a command runs in another project: close again to quit".to_string())
+            }
+            (Ok(()), n) if away == 0 => {
+                Some(format!("commands run in {n} tabs: close again to quit"))
+            }
+            (Ok(()), n) => Some(format!(
+                "commands run in {n} tabs, {away} in other projects: close again to quit"
+            )),
         };
         let ask = question.is_some();
         if self.confirm_close(Closing::Window, ask, question.unwrap_or_default()) {
@@ -512,31 +599,126 @@ impl App {
         }
     }
 
-    /// Writes the open project's file: its tabs as they are now, each in its last
-    /// folder. Only what you wrote in the file comes back, the name and the command:
-    /// Kel never adds a command, so opening a project never runs `git push` by itself.
-    /// A tab opened since (Ctrl+Shift+T) is saved as a plain one, with its folder.
-    ///
-    /// Only when the window closes: after `exit` in each tab, the file stays as it
-    /// was, not a project of no tabs.
+    /// Writes the file of the project on screen: its tabs as they are now (see
+    /// `save_tabs`). When you leave the project and when the window closes: after `exit` in
+    /// each tab, the file stays as it was, not a project of no tabs.
     fn save_project(&self) -> anyhow::Result<()> {
-        let Some(open) = &self.project else {
-            return Ok(()); // no project, or one that couldn't be read: not written over
+        match &self.project {
+            Some(open) => save_tabs(open, &self.tabs),
+            None => Ok(()), // no project, or one that couldn't be read: not written over
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Projects in one window
+    // -----------------------------------------------------------------------
+
+    /// Goes to the project `name` in this window, or home (`None`). The one on
+    /// screen is saved and goes out of sight, everything in it still running.
+    /// The other one comes back as it was left, or starts from its file if it
+    /// isn't open yet.
+    fn switch_to(&mut self, name: Option<&str>) {
+        if self.project.as_ref().map(|p| p.name.as_str()) == name {
+            return; // it's on screen
+        }
+        let open = self
+            .parked
+            .iter()
+            .position(|w| w.project.as_ref().map(|p| p.name.as_str()) == name);
+        let next = match open {
+            Some(index) => self.parked.remove(index),
+            None => match self.start_workspace(name) {
+                Ok(workspace) => workspace,
+                Err(e) => {
+                    self.set_status(Some(format!("{e:#}")));
+                    return;
+                }
+            },
         };
-        // Everything the file had but the tabs, or a line would be lost: the
-        // tabs are written again, the rest is kept as it was read.
-        let mut project = Project {
-            folder: open.folder.clone(),
-            color: open.color,
-            tabs: Vec::new(),
+        // Can't be saved: say so, and go anyway. The file is tried again when
+        // you leave next time, and when the window closes.
+        let saved = self.save_project();
+        let left = Workspace {
+            project: self.project.take(),
+            tabs: std::mem::take(&mut self.tabs),
+            active: self.active,
         };
-        let tabs = self.tabs.iter().map(|tab| TabRecipe {
-            name: tab.name.clone(),
-            folder: tab.cwd().and_then(|cwd| project.tab_folder(&cwd)),
-            command: tab.start_command.clone(),
+        self.parked.push(left);
+        self.enter(next);
+        if let Err(e) = saved {
+            self.set_status(Some(format!("{e:#}")));
+        }
+    }
+
+    /// `workspace` comes on screen: its tabs, its project's name and color.
+    fn enter(&mut self, workspace: Workspace) {
+        self.project = workspace.project;
+        self.tabs = workspace.tabs;
+        self.active = workspace.active.min(self.tabs.len() - 1);
+        // What was waiting for a second press or held by the mouse was the
+        // other project's.
+        self.pending_close = None;
+        self.tab_drag = None;
+        self.set_status(None);
+        self.on_resize(); // room for this project's name before the tabs
+        self.show_tab(self.active);
+    }
+
+    /// The tabs of the project `name` (`None`: home, one plain tab), started now:
+    /// as `kel <name>` would start them, as big as the tabs on screen.
+    fn start_workspace(&mut self, name: Option<&str>) -> anyhow::Result<Workspace> {
+        let project = name.map(project::load).transpose()?;
+        let recipes = project
+            .as_ref()
+            .map_or_else(|| vec![TabRecipe::default()], Project::tabs);
+        let (rows, cols) = match self.tabs.first() {
+            Some(tab) => {
+                let terminal = tab.terminal.lock().unwrap();
+                (terminal.grid.rows(), terminal.grid.cols())
+            }
+            None => (ROWS, COLS),
+        };
+        let mut tabs = Vec::new();
+        let mut failed = None;
+        for recipe in &recipes {
+            let folder = project.as_ref().map(|p| p.folder_of(recipe));
+            let id = self.next_id;
+            self.next_id += 1;
+            let screen = Terminal::new(rows, cols);
+            match Tab::spawn(
+                id,
+                &self.config.shell,
+                folder.as_deref(),
+                screen,
+                self.proxy.clone(),
+            ) {
+                Ok(mut tab) => {
+                    tab.name = recipe.name.clone();
+                    if let Some(command) = &recipe.command {
+                        tab.type_at_start(command, &self.config.shell);
+                    }
+                    tabs.push(tab);
+                }
+                Err(e) => failed = Some(e),
+            }
+        }
+        if tabs.is_empty() {
+            let e = failed.unwrap_or_else(|| anyhow::anyhow!("no tabs"));
+            return Err(e.context("can't open a tab"));
+        }
+        if let Some(e) = failed {
+            self.set_status(Some(format!("can't open a tab: {e:#}")));
+        }
+        let project = name.zip(project).map(|(name, project)| OpenProject {
+            name: name.to_string(),
+            folder: project.folder,
+            color: project.color,
         });
-        project.tabs = tabs.collect();
-        project::save(&open.name, &project)
+        Ok(Workspace {
+            project,
+            tabs,
+            active: 0,
+        })
     }
 
     /// Returns `true` if `what` may close now: nothing would be lost (`!running`),
@@ -749,8 +931,8 @@ impl App {
                 self.request_redraw();
             }
             Action::Install(name) => self.install(name),
-            Action::OpenProject(name) => self.open_project(&name),
-            Action::OpenHome => self.open_home(),
+            Action::OpenProject(name) => self.switch_to(Some(&name)),
+            Action::OpenHome => self.switch_to(None),
             Action::SaveProject(name) => self.save_as_project(name),
         }
     }
@@ -783,32 +965,6 @@ impl App {
         self.update_window_title();
         self.on_resize(); // room for the name before the tabs
         self.request_redraw();
-    }
-
-    /// Opens the project `name` in a new Kel window: Kel starts itself again, as
-    /// `kel <name>` does. This window and its tabs stay as they are.
-    fn open_project(&mut self, name: &str) {
-        if self.project.as_ref().is_some_and(|open| open.name == name) {
-            return; // it's this window
-        }
-        let started = std::env::current_exe()
-            .and_then(|kel| std::process::Command::new(kel).arg(name).spawn());
-        if let Err(e) = started {
-            self.set_status(Some(format!("can't open project \"{name}\": {e}")));
-        }
-    }
-
-    /// Opens Kel without a project in a new window, as `kel` alone does: home,
-    /// where you go to the projects from. Nothing if this window is that.
-    fn open_home(&mut self) {
-        if self.project.is_none() {
-            return; // it's this window
-        }
-        let started =
-            std::env::current_exe().and_then(|kel| std::process::Command::new(kel).spawn());
-        if let Err(e) = started {
-            self.set_status(Some(format!("can't open Kel: {e}")));
-        }
     }
 
     /// Runs the install script `name` in a new tab: Kel writes it to the temp
@@ -1002,6 +1158,27 @@ impl App {
 }
 
 // winit calls these methods when something happens; we never call them ourselves.
+/// Writes the project `open`'s file with `tabs`, each in its last folder. Only
+/// what you wrote in the file comes back, the name and the command: Kel never
+/// adds a command, so opening a project never runs `git push` by itself. A tab
+/// opened since (Ctrl+Shift+T) is saved as a plain one, with its folder.
+fn save_tabs(open: &OpenProject, tabs: &[Tab]) -> anyhow::Result<()> {
+    // Everything the file had but the tabs, or a line would be lost: the tabs
+    // are written again, the rest is kept as it was read.
+    let mut project = Project {
+        folder: open.folder.clone(),
+        color: open.color,
+        tabs: Vec::new(),
+    };
+    let tabs = tabs.iter().map(|tab| TabRecipe {
+        name: tab.name.clone(),
+        folder: tab.cwd().and_then(|cwd| project.tab_folder(&cwd)),
+        command: tab.start_command.clone(),
+    });
+    project.tabs = tabs.collect();
+    project::save(&open.name, &project)
+}
+
 impl ApplicationHandler<UserEvent> for App {
     /// Called when the app starts. A window can only be created from here.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -1049,7 +1226,7 @@ impl ApplicationHandler<UserEvent> for App {
             // light a dot in the tab bar.
             UserEvent::PtyOutput(id) => {
                 let on_screen = id == self.tab().id;
-                let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+                let Some(tab) = self.tab_anywhere(id) else {
                     return;
                 };
                 // The output can hold a new title (`ESC]0;...`), for any tab.
@@ -1068,7 +1245,7 @@ impl ApplicationHandler<UserEvent> for App {
             }
             // Not `send_to_shell`: an answer isn't typing, so the mouse selection stays.
             UserEvent::Reply(id, bytes) => {
-                if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) {
+                if let Some(tab) = self.tab_anywhere(id) {
                     tab.write(&bytes);
                 }
             }
@@ -1229,10 +1406,11 @@ impl App {
         let cols = self.layout.text.w / cell_w;
         let rows = self.layout.text.h / cell_h;
 
-        // All tabs, not only the one on screen: the others should already have
-        // the right size when you switch to them.
+        // All tabs, not only the one on screen, other projects' too: they should
+        // already have the right size when you switch to them.
         if rows > 0 && cols > 0 {
-            for tab in &mut self.tabs {
+            let parked = self.parked.iter_mut().flat_map(|w| w.tabs.iter_mut());
+            for tab in self.tabs.iter_mut().chain(parked) {
                 tab.resize(rows, cols);
             }
         }

@@ -39,9 +39,10 @@ pub enum Action {
     Find,
     /// Runs the install script of this name (see `setup`) in a new tab.
     Install(&'static str),
-    /// Opens the project of this name in a new window (see `project`).
+    /// Goes to the project of this name in this window (see `project`); the one
+    /// on screen goes out of sight, still running.
     OpenProject(String),
-    /// Opens Kel without a project in a new window: `home` in the sidebar.
+    /// Goes home in this window: Kel without a project, `home` in the sidebar.
     OpenHome,
     /// Saves the tabs as a new project of this name; the window becomes it.
     SaveProject(String),

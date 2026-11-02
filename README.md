@@ -184,8 +184,15 @@ A project is a file in `%APPDATA%\kel\projects`, a recipe for a set of tabs. The
 file's name is the project's: `projects\kel.toml` opens with `kel kel`
 (or `cargo run -- kel`). Each `kel` opens a new window.
 
-From an open Kel: the command palette (Ctrl+Shift+P) lists the projects, `Open project:
-kel`. It opens the project in a new window too; this one stays as it is.
+From an open Kel: the sidebar (`≡` or Ctrl+Shift+B) or the command palette
+(Ctrl+Shift+P, `Open project: kel`). The project comes in this window, and the one
+you were in goes out of sight: nothing in it stops, a `ping -t` keeps going, an
+unsaved nvim stays unsaved. Choose it again and it's as you left it. `home`, at
+the top of the sidebar, is Kel without a project.
+
+Leaving a project saves its file. Its last tab closed (`exit`): back home. Closing
+the window saves every open project, and asks first if a command runs in any of
+them.
 
 To make one, open the tabs you want, go to the project's folder in one of them, and
 type a new name in the palette: `Save the tabs as project: myapp`. The project's

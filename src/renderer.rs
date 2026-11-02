@@ -1029,7 +1029,7 @@ fn draw_sidebar(
             Row::Home { here } => {
                 let hole = radius - 1.5 * ui.scale;
                 fill_circle(pixels, width, cx, cy, radius, hole, dim);
-                ("home", if here { "this window" } else { "" })
+                ("home", if here { "here" } else { "" })
             }
             // A dot in the project's color.
             Row::Project(project) => {

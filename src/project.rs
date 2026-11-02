@@ -30,7 +30,8 @@ use std::path::{Path, PathBuf};
 
 /// On top of a file Kel wrote.
 const HEADER: &str = "\
-# Kel writes this file when its window closes: the tabs as they were then.
+# Kel writes this file when you leave the project or close the window: its tabs
+# as they were then.
 # Edit it while the project isn't open, or Kel writes over it. Comments don't stay.
 
 ";
@@ -146,7 +147,7 @@ pub fn names_in(folder: &Path) -> Vec<String> {
 }
 
 /// The projects as command palette lines: "Open project: kel", with its folder
-/// at the right. `current` is the project open in this window: "this window".
+/// at the right. `current` is the project on screen: "here".
 pub fn palette_items(current: Option<&str>) -> Vec<Item> {
     let Ok(dir) = dir() else {
         return Vec::new();
@@ -155,11 +156,11 @@ pub fn palette_items(current: Option<&str>) -> Vec<Item> {
         .into_iter()
         .map(|name| {
             let hint = if current == Some(name.as_str()) {
-                "this window".to_string()
+                "here".to_string()
             } else {
                 match load(&name) {
                     Ok(project) => short_folder(&project.folder),
-                    // Opening it shows why, in the new window.
+                    // Opening it shows why, in the tab bar.
                     Err(_) => "can't read its file".to_string(),
                 }
             };
@@ -173,7 +174,7 @@ pub fn palette_items(current: Option<&str>) -> Vec<Item> {
 }
 
 /// The projects as the sidebar lists them: each with its color and folder.
-/// `current` is the project open in this window: "this window".
+/// `current` is the project on screen: "here".
 pub fn sidebar_entries(current: Option<&str>) -> Vec<Entry> {
     let Ok(dir) = dir() else {
         return Vec::new();
@@ -183,7 +184,7 @@ pub fn sidebar_entries(current: Option<&str>) -> Vec<Entry> {
         .map(|name| {
             let here = current == Some(name.as_str());
             let (color, hint) = match load(&name) {
-                Ok(project) if here => (project.color, "this window".to_string()),
+                Ok(project) if here => (project.color, "here".to_string()),
                 Ok(project) => (project.color, short_folder(&project.folder)),
                 Err(_) => (None, "can't read its file".to_string()),
             };

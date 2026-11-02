@@ -7,7 +7,7 @@
 //! │ kel terminal           │
 //! │ ○ home                 │
 //! │ PROJECTS               │
-//! │ ● kel      this window │  ← chosen: lit
+//! │ ● kel             here │  ← chosen: lit
 //! │ ● web      …\code\web  │
 //! │ ────────────────────── │
 //! │ + Save the tabs as a…  │
@@ -38,16 +38,16 @@ pub struct Entry {
     pub name: String,
     /// Its `color`, for its dot. `None`: a gray dot.
     pub color: Option<u32>,
-    /// At the row's right end: where it is, or "this window".
+    /// At the row's right end: where it is, or "here".
     pub hint: String,
-    /// It's the project of this window.
+    /// It's the project on screen.
     pub current: bool,
 }
 
 /// What a row of the sidebar is.
 #[derive(Debug, PartialEq)]
 pub enum Row<'a> {
-    /// Kel without a project. `here`: this window is that.
+    /// Kel without a project. `here`: it is on screen.
     Home {
         here: bool,
     },

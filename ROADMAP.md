@@ -109,7 +109,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 ## 7. Command palette and catalog
 
 - [x] Command palette (Ctrl+Shift+P): a searchable list over the terminal, Kel's actions in it
-- [x] Projects in the palette: `Open project: kel` opens it in a new window
+- [x] Projects in the palette: `Open project: kel` (a new window then; in this one since
+      the workspaces)
 - [x] Install scripts in `setup/`, one per tool, skip what's there: `lazygit.ps1` (winget)
 - [x] Catalog: the palette lists `setup/` scripts (built into the exe) and runs one in a new tab
 - [x] Buttons for those who don't know the keys: `+` after the tabs (new tab), `×` on a tab
@@ -166,13 +167,18 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       say it's there), Ctrl+Shift+B, or the palette. Dims the rest, lists the projects with
       their colors, the last line saves the tabs as a new one. Over the terminal, so nothing
       reflows when it opens. First row `home`: Kel without a project, where you go to the
-      projects from (a new window for now; with workspaces, this one)
+      projects from
 - [ ] Sidebar: open on hover over `≡` (with a delay)? Tried without first; the pixel logo;
       scrolling when there are more projects than fit
-- [ ] Workspaces in one window: a general place and projects, switched from the palette or
-      the sidebar. Switching hides a set of tabs, nothing stops: a `ping -t` keeps going.
-      The general place is remembered too (a hidden `home` project, saved on close).
-      "Close project" ends its shells: each idle PowerShell is ~58 MB (measured)
+- [x] Workspaces in one window: home and projects, switched from the sidebar or the palette.
+      Switching hides a set of tabs, nothing stops: a `ping -t` keeps going. Leaving saves
+      the project's file; a project's last tab closed goes home. Home has no file: it lives
+      while Kel runs, a fresh one after a restart (to decide after using it)
+- [ ] Sidebar shows what's open and alive: a mark on the projects open in the window, the
+      busy ring where a command runs, the dot where there's new output. "Close project" ends
+      its shells: each idle PowerShell is ~58 MB (measured)
+- [ ] Home as a start screen (like Visual Studio's): the recent projects at start; typing
+      makes it a plain terminal (what's typed is kept until the shell is ready)
 - [ ] Window vibrancy
 
 ## Later
