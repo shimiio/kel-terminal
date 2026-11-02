@@ -157,7 +157,7 @@ what bothers in use can come first.
 Each one gets tried on screen first. Alternates with stage 8: one feature, one look.
 
 - [x] Project accent color: the project's name before the tabs, and the icon of the tab on
-      screen, in `color` from the project file (else the theme's `accent`). Tried on screen
+      screen, in `color` from the project file (else gray, or the theme's `accent`). Tried on screen
       against a line on the tab, a colored block, a colored frame: the name won
 - [ ] Maybe: a thin line in the project color on top of the tab on screen (tried on a mockup:
       with the name and the icon, three spots of color; decide after using the name a while)
@@ -171,7 +171,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] The exe's icon (Explorer, Start, a pinned shortcut): `build.rs` makes the `.ico` from
       `logo.rs` at each build (home's gray, 16..256 px) and puts it in `kel.exe` with
       `winresource`; the file's details say "Kel" (Task Manager)
-- [ ] Home neutral in the whole UI: the project's color as the accent, none in home
+- [x] Home neutral in the whole UI: the project's color is the only one (`accent_for`); home
+      and projects without one are gray. `accent` in `[colors]` is optional now
 - [ ] Maybe: a pixel font for the project name (built into the exe, see Fonts)
 - [x] Sidebar on the left: `≡` at the tab bar's start (a visible handle: hover alone wouldn't
       say it's there), Ctrl+Shift+B, or the palette. Dims the rest, lists the projects with

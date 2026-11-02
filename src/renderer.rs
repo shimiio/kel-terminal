@@ -101,7 +101,7 @@ pub struct Chrome<'a> {
     /// The search in the output, if it's open: its box, and its matches marked.
     pub search: Option<&'a Search>,
     /// The open project: its name, before the tabs, and its own color, if it has
-    /// one. That color is the window's accent then, instead of the theme's.
+    /// one. That color is the window's accent then (see `Theme::accent_for`).
     pub project: Option<(&'a str, Option<u32>)>,
     /// The link under the mouse while Ctrl is held: underlined. Lasting rows.
     pub link: Option<Found>,
@@ -578,9 +578,8 @@ fn draw_tab_bar(
     // Halfway between the text color and the window's: muted, still readable.
     let dim = blend(theme.frame, theme.foreground, 128);
     let b = layout.border;
-    // The window's accent: the project's own color, else the theme's.
-    let accent = chrome.project.and_then(|(_, color)| color);
-    let accent = accent.unwrap_or(theme.accent);
+    // The window's accent: the project's own color (home: none, gray).
+    let accent = theme.accent_for(chrome.project.and_then(|(_, color)| color));
     // The project's name, at the bar's start, where `Layout::set_lead` left room.
     if let Some((name, _)) = chrome.project {
         let bar = layout.tab_bar;
@@ -1032,8 +1031,7 @@ fn draw_sidebar(
     // The logo, small: its cursor the project's color (home: none, the text's),
     // blinking while the keys are the sidebar's.
     let at = (panel.x + pad, panel.y + ui.px(22));
-    let cursor = chrome.project.and_then(|(_, color)| color);
-    let cursor = cursor.unwrap_or(theme.foreground);
+    let cursor = theme.accent_for(chrome.project.and_then(|(_, color)| color));
     let cursor = cursor_on.then_some(cursor);
     draw_logo(pixels, width, at, ui.px(3), theme.foreground, cursor);
     let at = (panel.x + pad, sidebar::title_y(panel, layout.scale));
@@ -1149,10 +1147,11 @@ fn draw_card(
                 let cx = (bx + ui.px(10) + n * ui.px(22)) as f32;
                 match swatch {
                     Some(color) => fill_circle(pixels, width, cx, cy, radius, 0.0, *color),
-                    // None: the theme's accent, as a ring.
+                    // None: the window's color without one (gray), as a ring.
                     None => {
                         let hole = radius - 1.5 * ui.scale;
-                        fill_circle(pixels, width, cx, cy, radius, hole, theme.accent);
+                        let color = theme.accent_for(None);
+                        fill_circle(pixels, width, cx, cy, radius, hole, color);
                     }
                 }
                 if chosen == Some(n) {
@@ -1180,7 +1179,7 @@ fn draw_card(
         // A color's `#hex`: a dot of it before, as it's typed (none: not one yet).
         if !field.swatches.is_empty() {
             let cy = r.y as f32 + r.h as f32 / 2.0;
-            let color = field.color().map(|c| c.unwrap_or(theme.accent));
+            let color = field.color().map(|c| theme.accent_for(c));
             if let Some(color) = color {
                 let dot = 5.0 * ui.scale;
                 fill_circle(pixels, width, (tx + ui.px(5)) as f32, cy, dot, 0.0, color);
@@ -1281,7 +1280,7 @@ fn draw_project_row(
     let live = row.live;
     // Open in the window: bright. Not open: faded, its name too.
     let awake = row.here || live.open;
-    let color = row.color.unwrap_or(theme.foreground);
+    let color = theme.accent_for(row.color);
     let color = if awake {
         color
     } else {
@@ -1354,7 +1353,7 @@ fn draw_start(
 
     // The logo, big, its cursor blinking with the terminal's: type, it says.
     // Home: no color, the text's.
-    let cursor = cursor_on.then_some(theme.foreground);
+    let cursor = cursor_on.then_some(theme.accent_for(None));
     draw_logo(
         pixels,
         width,

@@ -89,7 +89,7 @@ Kel creates it on the first start, with a comment for every setting.
 | `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
 | `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
 | `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |
-| `[colors]` | dark gray theme | Text, background, cursor, selection, frame, border, the tab icons (`accent`) and the 16 basic colors |
+| `[colors]` | dark gray theme | Text, background, cursor, selection, frame, border, `accent` (home's color, none by default: gray) and the 16 basic colors |
 
 A setting missing from the file keeps its default, so deleting a line resets it.
 To get the original file back with all its comments, delete it and restart Kel.
@@ -242,7 +242,9 @@ can't be: opening the project starts them again.
 
 A project's window shows its name before the tabs, so you see which one it is at a
 glance. `color` is the project's own accent: the name and the icon of the tab on
-screen are in it. Without `color`, both are in the theme's `accent`.
+screen are in it, and the logo's cursor and the window's icon in the taskbar. Without
+`color` the project is gray, like home: Kel has no color of its own, it takes the color
+of what you work on (`accent` in `[colors]` gives home and such projects one).
 
 A tab's icon shows what runs in it (nvim, git), as the program's title says. In a
 plain shell, the tab's `name` picks it: a tab called `docker` has the whale, `run`

@@ -143,7 +143,7 @@ pub struct Field {
     pub note: &'static str,
     pub text: TextField,
     /// A color's field: the colors ←→ choose from, before its `#hex`. `None`:
-    /// no color of its own (the theme's accent). Empty for a text field.
+    /// no color of its own (gray, or the theme's accent). Empty for a text field.
     pub swatches: Vec<Option<u32>>,
 }
 
@@ -222,7 +222,7 @@ impl Card {
         swatches.push(None);
         let color = Field {
             swatches,
-            ..Field::text("Color", "the theme's", "←→ a color, or type a #hex", &hex)
+            ..Field::text("Color", "none", "←→ a color, or type a #hex", &hex)
         };
         let note = "A new name renames its file";
         Card {
@@ -422,7 +422,7 @@ mod tests {
         assert_eq!(card.color(), Ok(Some(0x9ece6a)));
         assert!(card.step_swatch(1));
         assert_eq!(card.color(), Ok(Some(0x7aa2f7)));
-        assert!(card.step_swatch(1)); // the last: none, the theme's accent
+        assert!(card.step_swatch(1)); // the last: none
         assert_eq!(card.color(), Ok(None));
         assert!(card.step_swatch(1)); // round to the first
         assert_eq!(card.color(), Ok(Some(0xf7768e)));

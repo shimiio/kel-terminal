@@ -142,8 +142,8 @@ impl Workspace {
 struct OpenProject {
     name: String,
     folder: PathBuf,
-    /// Its `color`: the name before the tabs and the icons. `None`: the theme's
-    /// accent.
+    /// Its `color`: the name before the tabs and the icons. `None`: none, gray
+    /// (see `Theme::accent_for`).
     color: Option<u32>,
 }
 
@@ -1863,7 +1863,7 @@ impl App {
         let cursor = self.project.as_ref().and_then(|p| p.color);
         let key = IconKey {
             letters: theme.foreground,
-            cursor: cursor.unwrap_or(theme.foreground),
+            cursor: theme.accent_for(cursor),
             back: theme.background,
             // 16 at 100%: the small one, by the title; the taskbar's twice that.
             size: (16.0 * window.scale_factor()).round() as usize,

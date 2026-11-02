@@ -54,7 +54,8 @@ cursor = "#808080"
 selection = "#264f78"
 frame = "#141414"    # the window around the panel
 border = "#333333"   # the panel's border line
-accent = "#569cd6"   # the tab icons
+# accent = "#569cd6" # home's color, and of projects without their own: the tab
+                     # icons, the logo's cursor. Without it: none, the text's gray
 # 16 colors: black, red, green, yellow, blue, magenta, cyan, white,
 # then the bright versions of the same 8.
 palette = [

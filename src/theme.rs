@@ -39,9 +39,11 @@ pub struct Theme {
     /// The panel's border line.
     #[serde(deserialize_with = "hex_color")]
     pub border: u32,
-    /// The tab icons: their white becomes this color.
-    #[serde(deserialize_with = "hex_color")]
-    pub accent: u32,
+    /// The color of home and of projects without their own: the logo's cursor,
+    /// the tab icons. None (the default): no color, the text's gray; a project's
+    /// own color is then the only color the window has. See `accent_for`.
+    #[serde(deserialize_with = "optional_hex")]
+    pub accent: Option<u32>,
     /// The 16 basic colors: 0-7 normal (codes 30-37), 8-15 bright (codes 90-97).
     #[serde(deserialize_with = "hex_palette")]
     pub palette: [u32; 16],
@@ -56,7 +58,7 @@ impl Default for Theme {
             selection: 0x264f78, // blue
             frame: 0x141414,     // a bit darker than the background
             border: 0x333333,    // a bit lighter
-            accent: 0x569cd6,    // blue
+            accent: None,        // none: home is gray
             palette: [
                 0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00, 0x0037da, 0x881798, 0x3a96dd, 0xcccccc,
                 0x767676, 0xe74856, 0x16c60c, 0xf9f1a5, 0x3b78ff, 0xb4009e, 0x61d6d6, 0xf2f2f2,
@@ -66,6 +68,14 @@ impl Default for Theme {
 }
 
 impl Theme {
+    /// The window's color where a project with `color` is on screen (`None`:
+    /// home, or a project without one): its own color, else the theme's
+    /// `accent`, else the text's gray. Kel has no color of its own: it takes
+    /// the color of what you work on.
+    pub fn accent_for(&self, color: Option<u32>) -> u32 {
+        color.or(self.accent).unwrap_or(self.foreground)
+    }
+
     /// The pixels for `color`. `default` is what `Color::Default` means here:
     /// `self.foreground` for text, `self.background` for a background.
     pub fn rgb(&self, color: Color, default: u32) -> u32 {
@@ -149,6 +159,18 @@ mod tests {
         assert_eq!(parse_hex("ff8000"), None); // no #
         assert_eq!(parse_hex("#f80"), None); // too short
         assert_eq!(parse_hex("#+f8000"), None); // not hex digits
+    }
+
+    #[test]
+    fn the_window_s_color() {
+        let mut theme = Theme::default();
+        // No accent: home is the text's gray, a project its own color.
+        assert_eq!(theme.accent_for(None), theme.foreground);
+        assert_eq!(theme.accent_for(Some(0xe0af68)), 0xe0af68);
+        // An accent set: home's, and of projects without their own.
+        theme.accent = Some(0x569cd6);
+        assert_eq!(theme.accent_for(None), 0x569cd6);
+        assert_eq!(theme.accent_for(Some(0xe0af68)), 0xe0af68);
     }
 
     #[test]

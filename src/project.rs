@@ -46,7 +46,8 @@ pub struct Project {
     /// The project's folder: tabs start here; their own folders are inside it.
     pub folder: PathBuf,
     /// The project's own accent color: its name before the tabs and the tab
-    /// icons. Without it, the theme's `accent`. A window then says which project
+    /// icons. Without it, none: gray (or the theme's `accent`, if it has one).
+    /// A window then says which project
     /// it is at a glance.
     #[serde(
         default,
