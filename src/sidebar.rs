@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! ┌────────────────────────┐
-//! │ kel▌                   │  ← the logo, its cursor the project's color
+//! │ kel▌                   │  ← the logo: its cursor the project's color, blinking
 //! │ ○ home                 │
 //! │ PROJECTS               │
 //! │ ● kel             here │  ← chosen: lit

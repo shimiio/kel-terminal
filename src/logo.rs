@@ -13,7 +13,8 @@
 //!
 //! The letters are the text's color; the cursor is the project's (home: the
 //! text's too, Kel has no color of its own). Big on the start screen, where the
-//! cursor blinks; small in the sidebar, still. And `k▌` alone, the window's
+//! cursor blinks; small in the sidebar, blinking while it's open (the start
+//! screen's stands then: a cursor blinks where the keys go). And `k▌` alone, the window's
 //! icon in the taskbar (see `icon`), its cursor the project's color too. The
 //! renderer draws the pixels at the size it wants.
 

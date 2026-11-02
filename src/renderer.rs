@@ -488,9 +488,15 @@ impl Renderer {
             }
         }
 
-        // On top of the terminal, whatever the terminal shows.
+        // On top of the terminal, whatever the terminal shows. A logo's cursor
+        // blinks where the keys go; one under something else stands, on.
+        let over_start = chrome.sidebar.is_some()
+            || chrome.palette.is_some()
+            || chrome.search.is_some()
+            || chrome.card.is_some();
+        let over_sidebar = chrome.palette.is_some() || chrome.card.is_some();
         if let Some(start) = chrome.start {
-            let on = cursor_on;
+            let on = cursor_on || over_start;
             draw_start(
                 &mut buffer,
                 width,
@@ -521,6 +527,7 @@ impl Renderer {
                 layout,
                 chrome,
                 sidebar,
+                cursor_on || over_sidebar,
                 font,
                 &mut self.ui,
             );
@@ -1005,6 +1012,7 @@ fn draw_sidebar(
     layout: &Layout,
     chrome: &Chrome,
     sidebar: &Sidebar,
+    cursor_on: bool,
     font: &Font,
     ui: &mut Ui,
 ) {
@@ -1021,11 +1029,13 @@ fn draw_sidebar(
     let pad = ui.px(18);
     let text_w = panel.w.saturating_sub(2 * pad);
 
-    // The logo, small: its cursor the project's color (home: none, the text's).
+    // The logo, small: its cursor the project's color (home: none, the text's),
+    // blinking while the keys are the sidebar's.
     let at = (panel.x + pad, panel.y + ui.px(22));
     let cursor = chrome.project.and_then(|(_, color)| color);
     let cursor = cursor.unwrap_or(theme.foreground);
-    draw_logo(pixels, width, at, ui.px(3), theme.foreground, Some(cursor));
+    let cursor = cursor_on.then_some(cursor);
+    draw_logo(pixels, width, at, ui.px(3), theme.foreground, cursor);
     let at = (panel.x + pad, sidebar::title_y(panel, layout.scale));
     draw_ui_text(pixels, width, font, ui, "PROJECTS", at, text_w, dim);
 
