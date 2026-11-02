@@ -48,6 +48,8 @@ pub enum Action {
     CloseProject,
     /// Opens the card of the tab on screen: its name and command.
     EditTab,
+    /// Opens the card of the project on screen, in the sidebar: its name and color.
+    EditProject,
     /// Saves the tabs as a new project of this name; the window becomes it.
     SaveProject(String),
 }

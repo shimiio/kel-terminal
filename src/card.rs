@@ -1,5 +1,6 @@
 //! The card: a small box next to what it changes, for what was only in the
-//! project's file before. A tab's name and command (double-click the tab):
+//! project's file before. A project's name and color (F2 or a right click in the
+//! sidebar), a tab's name and command (double-click the tab, or a right click):
 //!
 //! ```text
 //!  ▶ server ×  >_ powershell
@@ -15,6 +16,7 @@
 
 use crate::layout::{Rect, scaled};
 use crate::tab::TabId;
+use crate::theme;
 
 /// A line of text being typed, with a cursor in it (counted in letters).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -125,9 +127,11 @@ impl TextField {
 }
 
 /// What a card changes.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Target {
     Tab(TabId),
+    /// The project of this name: its name as it was when the card opened.
+    Project(String),
 }
 
 /// One line of the card: what it is, and what's typed in it.
@@ -138,6 +142,42 @@ pub struct Field {
     /// Under the fields while it has the cursor: what it does.
     pub note: &'static str,
     pub text: TextField,
+    /// A color's field: the colors ←→ choose from, before its `#hex`. `None`:
+    /// no color of its own (the theme's accent). Empty for a text field.
+    pub swatches: Vec<Option<u32>>,
+}
+
+impl Field {
+    fn text(label: &'static str, empty: &'static str, note: &'static str, text: &str) -> Field {
+        Field {
+            label,
+            empty,
+            note,
+            text: TextField::new(text),
+            swatches: Vec::new(),
+        }
+    }
+
+    /// The color typed: `Some(None)` for none (empty), `None` if it isn't one
+    /// (yet). The `#` can be left out.
+    pub fn color(&self) -> Option<Option<u32>> {
+        let text = self.text.text().trim();
+        if text.is_empty() {
+            return Some(None);
+        }
+        let hex = if text.starts_with('#') {
+            text.to_string()
+        } else {
+            format!("#{text}")
+        };
+        theme::parse_hex(&hex).map(Some)
+    }
+
+    /// Which of the swatches is the color typed, if one is.
+    pub fn swatch(&self) -> Option<usize> {
+        let color = self.color()?;
+        self.swatches.iter().position(|&s| s == color)
+    }
 }
 
 pub struct Card {
@@ -145,30 +185,51 @@ pub struct Card {
     fields: Vec<Field>,
     /// The field with the cursor.
     focus: usize,
+    /// Why what's typed can't be kept (a name taken, not a color): under the
+    /// fields, in red, until the next key.
+    pub error: Option<String>,
 }
 
 impl Card {
     /// The card of tab `id`: its name, and in a project its command (home has no
     /// file to keep one in).
     pub fn tab(id: TabId, name: Option<&str>, command: Option<&str>, in_project: bool) -> Card {
-        let mut fields = vec![Field {
-            label: "Name",
-            empty: "the program's title",
-            note: "Empty: the program's title",
-            text: TextField::new(name.unwrap_or("")),
-        }];
+        let name = name.unwrap_or("");
+        let mut fields = vec![Field::text(
+            "Name",
+            "the program's title",
+            "Empty: the program's title",
+            name,
+        )];
         if in_project {
-            fields.push(Field {
-                label: "Command",
-                empty: "none",
-                note: "Runs when the project opens",
-                text: TextField::new(command.unwrap_or("")),
-            });
+            let command = command.unwrap_or("");
+            let note = "Runs when the project opens";
+            fields.push(Field::text("Command", "none", note, command));
         }
         Card {
             target: Target::Tab(id),
             fields,
             focus: 0,
+            error: None,
+        }
+    }
+
+    /// The card of the project `name`: its name, and its color among `colors`
+    /// (the theme's) or a `#hex` of its own.
+    pub fn project(name: &str, color: Option<u32>, colors: &[u32]) -> Card {
+        let hex = color.map_or(String::new(), |c| format!("#{c:06x}"));
+        let mut swatches: Vec<Option<u32>> = colors.iter().map(|&c| Some(c)).collect();
+        swatches.push(None);
+        let color = Field {
+            swatches,
+            ..Field::text("Color", "the theme's", "←→ a color, or type a #hex", &hex)
+        };
+        let note = "A new name renames its file";
+        Card {
+            target: Target::Project(name.to_string()),
+            fields: vec![Field::text("Name", "a name", note, name), color],
+            focus: 0,
+            error: None,
         }
     }
 
@@ -189,6 +250,37 @@ impl Card {
     pub fn next_field(&mut self, step: isize) {
         let n = self.fields.len() as isize;
         self.focus = (self.focus as isize + step).rem_euclid(n) as usize;
+    }
+
+    /// ←→ in a color's field: the next swatch (or the first, from a color of
+    /// its own), its `#hex` typed in. Returns `false` in a text field: there ←→
+    /// move the cursor.
+    pub fn step_swatch(&mut self, step: isize) -> bool {
+        let field = &mut self.fields[self.focus];
+        let n = field.swatches.len() as isize;
+        if n == 0 {
+            return false;
+        }
+        let next = match field.swatch() {
+            Some(i) => (i as isize + step).rem_euclid(n),
+            None if step > 0 => 0,
+            None => n - 1,
+        };
+        let hex = field.swatches[next as usize].map_or(String::new(), |c| format!("#{c:06x}"));
+        field.text = TextField::new(&hex);
+        true
+    }
+
+    /// The color typed in the field "Color": `Err` if it isn't one.
+    pub fn color(&self) -> Result<Option<u32>, String> {
+        let field = self.fields.iter().find(|f| f.label == "Color");
+        let Some(field) = field else {
+            return Ok(None);
+        };
+        let text = field.text.text().trim();
+        field
+            .color()
+            .ok_or_else(|| format!("\"{text}\" isn't a color like #ff8000"))
     }
 
     /// A click on field `i`: the cursor goes there.
@@ -320,6 +412,34 @@ mod tests {
         let card = Card::tab(1, None, None, false);
         assert!(!card.has("Command"));
         assert_eq!(card.value("Name"), None);
+    }
+
+    #[test]
+    fn a_project_s_color() {
+        let colors = [0xf7768e, 0x9ece6a, 0x7aa2f7];
+        let mut card = Card::project("kel", Some(0x9ece6a), &colors);
+        card.next_field(1); // the color
+        assert_eq!(card.color(), Ok(Some(0x9ece6a)));
+        assert!(card.step_swatch(1));
+        assert_eq!(card.color(), Ok(Some(0x7aa2f7)));
+        assert!(card.step_swatch(1)); // the last: none, the theme's accent
+        assert_eq!(card.color(), Ok(None));
+        assert!(card.step_swatch(1)); // round to the first
+        assert_eq!(card.color(), Ok(Some(0xf7768e)));
+        // A color of its own, typed, with or without '#'.
+        card.focused().jump(true);
+        for _ in 0..7 {
+            card.focused().backspace();
+        }
+        card.focused().insert("e0af68");
+        assert_eq!(card.color(), Ok(Some(0xe0af68)));
+        assert!(card.step_swatch(-1)); // not a swatch: from the end
+        assert_eq!(card.color(), Ok(None));
+        card.focused().insert("#12");
+        assert!(card.color().is_err());
+        // In the name ←→ are the cursor's.
+        card.next_field(1);
+        assert!(!card.step_swatch(1));
     }
 
     #[test]

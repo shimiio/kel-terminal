@@ -97,7 +97,7 @@ impl Theme {
 }
 
 /// "#ff8000" → 0xff8000. `None` if it isn't `#` and 6 hex digits.
-fn parse_hex(text: &str) -> Option<u32> {
+pub fn parse_hex(text: &str) -> Option<u32> {
     let digits = text.strip_prefix('#')?;
     if digits.len() != 6 || !digits.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;

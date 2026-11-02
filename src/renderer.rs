@@ -1069,7 +1069,7 @@ fn draw_sidebar(
     let footer = sidebar::footer_y(panel, layout.scale);
     let (text, color) = match chrome.question {
         Some(question) => (question, theme.foreground),
-        None => ("Enter   Del closes   Esc", dim),
+        None => ("F2 edit   Del close   Esc", dim),
     };
     let fits = text_w / ui.advance.max(1);
     let lines: Vec<&str> = match text.split_once(": ") {
@@ -1119,8 +1119,32 @@ fn draw_card(
             label_w,
             dim,
         );
+        // A color's field: its swatches first, the chosen one ringed. The box
+        // for the `#hex` after them.
+        let mut bx = r.x + pad + label_w;
+        if !field.swatches.is_empty() {
+            let cy = r.y as f32 + r.h as f32 / 2.0;
+            let radius = 6.0 * ui.scale;
+            let chosen = field.swatch();
+            for (n, swatch) in field.swatches.iter().enumerate() {
+                let cx = (bx + ui.px(10) + n * ui.px(22)) as f32;
+                match swatch {
+                    Some(color) => fill_circle(pixels, width, cx, cy, radius, 0.0, *color),
+                    // None: the theme's accent, as a ring.
+                    None => {
+                        let hole = radius - 1.5 * ui.scale;
+                        fill_circle(pixels, width, cx, cy, radius, hole, theme.accent);
+                    }
+                }
+                if chosen == Some(n) {
+                    let outer = radius + 3.0 * ui.scale;
+                    let hole = outer - RING_WIDTH * ui.scale;
+                    fill_circle(pixels, width, cx, cy, outer, hole, theme.foreground);
+                }
+            }
+            bx += field.swatches.len() * ui.px(22) + ui.px(8);
+        }
         // The box it's typed in: lighter where the cursor is.
-        let bx = r.x + pad + label_w;
         let (by, bh) = (r.y + ui.px(3), r.h.saturating_sub(ui.px(6)));
         let bw = (r.x + r.w).saturating_sub(bx);
         let lit = if focused { 20 } else { 8 };
@@ -1133,8 +1157,18 @@ fn draw_card(
             bh,
             blend(back, theme.foreground, lit),
         );
-        let tx = bx + ui.px(6);
-        let chars = bw.saturating_sub(ui.px(12)) / ui.advance.max(1);
+        let mut tx = bx + ui.px(6);
+        // A color's `#hex`: a dot of it before, as it's typed (none: not one yet).
+        if !field.swatches.is_empty() {
+            let cy = r.y as f32 + r.h as f32 / 2.0;
+            let color = field.color().map(|c| c.unwrap_or(theme.accent));
+            if let Some(color) = color {
+                let dot = 5.0 * ui.scale;
+                fill_circle(pixels, width, (tx + ui.px(5)) as f32, cy, dot, 0.0, color);
+            }
+            tx += ui.px(16);
+        }
+        let chars = (bx + bw).saturating_sub(tx + ui.px(6)) / ui.advance.max(1);
         let (shown, cursor) = field.text.visible(chars);
         let text_w = chars * ui.advance;
         if field.text.text().is_empty() {
@@ -1158,10 +1192,14 @@ fn draw_card(
             fill_rect(pixels, width, cx, text_y, ui.px(2), ui.line_h, theme.cursor);
         }
     }
-    // Under the fields: what the one with the cursor does, and the keys.
+    // Under the fields: what the one with the cursor does, and the keys. Or,
+    // in red, why what's typed can't be kept.
     let n = card.fields().len();
     let note = card.fields()[card.focus()].note;
-    let hint = format!("{note}   Enter   Esc");
+    let (hint, color) = match &card.error {
+        Some(error) => (error.clone(), theme.palette[9]),
+        None => (format!("{note}   Enter   Esc"), dim),
+    };
     let y = card::hint_y(rect, layout.scale, n) + ui.px(6);
     let w = rect.w.saturating_sub(2 * pad);
     draw_ui_text(
@@ -1172,7 +1210,7 @@ fn draw_card(
         &hint,
         (rect.x + 2 * pad, y),
         w,
-        dim,
+        color,
     );
 }
 

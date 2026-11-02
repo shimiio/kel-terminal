@@ -15,7 +15,7 @@ use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{Chrome, Renderer, TabLabel};
 use crate::search::Search;
 use crate::setup;
-use crate::sidebar::{Live, Row, Sidebar};
+use crate::sidebar::{self, Live, Row, Sidebar};
 use crate::start::{self, Start};
 use crate::tab::{Tab, TabId};
 use crate::term::{Found, Terminal};
@@ -1045,7 +1045,14 @@ impl App {
                             hint: "double-click a tab".to_string(),
                             action: Action::EditTab,
                         });
-                        // The project on screen can be closed.
+                        // The project on screen can be changed, and closed.
+                        if let Some(name) = current {
+                            items.push(Item {
+                                label: format!("Edit project: {name}"),
+                                hint: "name and color".to_string(),
+                                action: Action::EditProject,
+                            });
+                        }
                         if let Some(name) = current {
                             items.push(Item {
                                 label: format!("Close project: {name}"),
@@ -1075,6 +1082,11 @@ impl App {
             Action::OpenProject(name) => self.switch_to(Some(&name)),
             Action::OpenHome => self.switch_to(None),
             Action::EditTab => self.open_tab_card(self.active),
+            Action::EditProject => {
+                if let Some(name) = self.project.as_ref().map(|p| p.name.clone()) {
+                    self.open_project_card(&name);
+                }
+            }
             Action::CloseProject => {
                 if let Some(name) = self.project.as_ref().map(|p| p.name.clone()) {
                     self.close_project(&name, "choose Close project again");
@@ -1148,6 +1160,7 @@ impl App {
             Key::Named(NamedKey::ArrowDown) => sidebar.move_selection(1),
             Key::Named(NamedKey::Enter) => self.sidebar_choose(),
             Key::Named(NamedKey::Delete) => self.sidebar_close(),
+            Key::Named(NamedKey::F2) => self.sidebar_edit(),
             _ => {}
         }
         self.request_redraw();
@@ -1171,10 +1184,21 @@ impl App {
     /// Where the open card is: under its tab.
     fn card_rect(&self) -> Option<Rect> {
         let card = self.card.as_ref()?;
-        let Target::Tab(id) = card.target;
-        let index = self.tabs.iter().position(|tab| tab.id == id)?;
-        let anchor = self.layout.tabs(self.tabs.len())[index];
         let (window, scale) = (self.layout.window, self.layout.scale);
+        let anchor = match &card.target {
+            Target::Tab(id) => {
+                let index = self.tabs.iter().position(|tab| tab.id == *id)?;
+                self.layout.tabs(self.tabs.len())[index]
+            }
+            // Under its row in the sidebar (row 0 is home).
+            Target::Project(name) => {
+                let sidebar = self.sidebar.as_ref()?;
+                let projects = sidebar.projects();
+                let index = projects.iter().position(|p| p.name == *name)?;
+                let panel = self.layout.sidebar();
+                sidebar::row_rect(panel, scale, index + 1, projects.len())
+            }
+        };
         Some(card::rect(anchor, window, scale, card.fields().len()))
     }
 
@@ -1186,8 +1210,11 @@ impl App {
         let Some(card) = &mut self.card else {
             return;
         };
+        card.error = None;
         match &event.logical_key {
             Key::Named(NamedKey::Escape) => self.card = None,
+            Key::Named(NamedKey::ArrowLeft) if card.step_swatch(-1) => {}
+            Key::Named(NamedKey::ArrowRight) if card.step_swatch(1) => {}
             Key::Named(NamedKey::Enter) => self.apply_card(),
             Key::Named(NamedKey::Tab) => card.next_field(if shift { -1 } else { 1 }),
             Key::Named(NamedKey::ArrowUp) => card.next_field(-1),
@@ -1220,10 +1247,29 @@ impl App {
     /// command go into the project's file at once. The command runs the next
     /// time the project opens, not now.
     fn apply_card(&mut self) {
-        let Some(card) = self.card.take() else {
+        let Some(mut card) = self.card.take() else {
             return;
         };
-        let Target::Tab(id) = card.target;
+        let id = match &card.target {
+            Target::Tab(id) => *id,
+            Target::Project(old) => {
+                let old = old.clone();
+                let new = card.value("Name").unwrap_or_default();
+                let changed = card.color().and_then(|color| {
+                    self.change_project(&old, &new, color)
+                        .map_err(|e| format!("{e:#}"))
+                });
+                if let Err(e) = changed {
+                    // It stays open, saying why.
+                    card.error = Some(e);
+                    self.card = Some(card);
+                } else {
+                    self.refresh_sidebar();
+                }
+                self.request_redraw();
+                return;
+            }
+        };
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
             return;
         };
@@ -1236,6 +1282,87 @@ impl App {
         }
         self.update_window_title();
         self.request_redraw();
+    }
+
+    /// Opens the card of the project `name`, under its row in the sidebar: its
+    /// name and color. The sidebar opens first if it isn't open.
+    fn open_project_card(&mut self, name: &str) {
+        if self.sidebar.is_none() {
+            self.run(Action::Sidebar);
+        }
+        // An open project's color is the window's (the file gets it on save).
+        let open = self
+            .project
+            .iter()
+            .chain(self.parked.iter().filter_map(|w| w.project.as_ref()));
+        let color = match open.into_iter().find(|p| p.name == name) {
+            Some(open) => open.color,
+            None => project::load(name).ok().and_then(|p| p.color),
+        };
+        let palette = &self.config.colors.palette;
+        // The theme's red, green, yellow, blue, magenta, cyan.
+        let colors = &palette[1..=6];
+        self.card = Some(Card::project(name, color, colors));
+        self.request_redraw();
+    }
+
+    /// The project `old` is `new` now, and `color`: its file is renamed and
+    /// written. One open in the window takes them at once: its name before the
+    /// tabs, its color.
+    fn change_project(&mut self, old: &str, new: &str, color: Option<u32>) -> anyhow::Result<()> {
+        if new != old {
+            project::rename(old, new)?;
+            let parked = self.parked.iter_mut().filter_map(|w| w.project.as_mut());
+            for open in self.project.iter_mut().chain(parked) {
+                if open.name == old {
+                    open.name = new.to_string();
+                }
+            }
+        }
+        if let Some(open) = self.project.as_mut().filter(|p| p.name == new) {
+            open.color = color;
+            self.save_project()?;
+            self.update_window_title();
+            self.on_resize(); // the name before the tabs: another length
+            return Ok(());
+        }
+        for workspace in &mut self.parked {
+            if let Workspace {
+                project: Some(open),
+                tabs,
+                ..
+            } = workspace
+                && open.name == new
+            {
+                open.color = color;
+                return save_tabs(open, tabs);
+            }
+        }
+        project::set_color(new, color)
+    }
+
+    /// The sidebar again, from the files: a project renamed, closed, or another
+    /// one on screen. The same row stays chosen.
+    fn refresh_sidebar(&mut self) {
+        let Some(sidebar) = &self.sidebar else {
+            return;
+        };
+        let selected = sidebar.selected();
+        let current = self.project.as_ref().map(|p| p.name.as_str());
+        let mut sidebar = Sidebar::new(project::sidebar_entries(current));
+        sidebar.select(selected);
+        self.sidebar = Some(sidebar);
+    }
+
+    /// F2 (or a right click) in the sidebar: the chosen project's card.
+    fn sidebar_edit(&mut self) {
+        let Some(sidebar) = &self.sidebar else {
+            return;
+        };
+        if let Row::Project(p) = sidebar.row(sidebar.selected()) {
+            let name = p.name.clone();
+            self.open_project_card(&name);
+        }
     }
 
     /// A key while the start screen shows: ↑↓ choose a project, Enter opens it,
@@ -1286,10 +1413,7 @@ impl App {
         };
         self.close_project(&name, "Del again to close");
         // The project on screen may be another one now: home.
-        let current = self.project.as_ref().map(|p| p.name.as_str());
-        let mut sidebar = Sidebar::new(project::sidebar_entries(current));
-        sidebar.select(selected);
-        self.sidebar = Some(sidebar);
+        self.refresh_sidebar();
     }
 
     /// Does the sidebar's chosen row, and closes it: opens that project, or the
@@ -1988,11 +2112,15 @@ impl App {
             if !panel.contains(x, y) {
                 self.sidebar = None;
                 self.request_redraw();
-            } else if let Some(row) = sidebar.row_at(panel, self.layout.scale, x, y)
-                && button == MouseButton::Left
-            {
+            } else if let Some(row) = sidebar.row_at(panel, self.layout.scale, x, y) {
                 sidebar.select(row);
-                self.sidebar_choose();
+                match button {
+                    MouseButton::Left => self.sidebar_choose(),
+                    // A right click: its card (a project's).
+                    MouseButton::Right => self.sidebar_edit(),
+                    _ => {}
+                }
+                self.request_redraw();
             }
             return;
         }
@@ -2013,6 +2141,16 @@ impl App {
             }
             self.request_redraw();
             return;
+        }
+        // A right click on a tab: its card.
+        if button == MouseButton::Right && state == ElementState::Pressed {
+            let (x, y) = self.mouse_pos;
+            let hit = self.layout.title_hit(x, y, self.tabs.len());
+            if let Some(TitleHit::Tab { index, .. }) = hit {
+                self.show_tab(index);
+                self.open_tab_card(index);
+                return;
+            }
         }
         // A middle click on a tab closes it, as in a browser.
         if button == MouseButton::Middle && state == ElementState::Pressed {

@@ -268,6 +268,29 @@ pub fn valid_name(name: &str) -> bool {
         && !device
 }
 
+/// Renames the project `old` to `new`: its file. Not to a name a file can't
+/// have, and not over another project.
+pub fn rename(old: &str, new: &str) -> anyhow::Result<()> {
+    if !valid_name(new) {
+        anyhow::bail!("\"{new}\" can't be a project's name");
+    }
+    // "kel" → "Kel" is the same file on Windows: not another project.
+    if !new.eq_ignore_ascii_case(old) && exists(new) {
+        anyhow::bail!("project \"{new}\" already exists");
+    }
+    let dir = dir()?;
+    let file = |name: &str| dir.join(format!("{name}.toml"));
+    std::fs::rename(file(old), file(new)).with_context(|| format!("can't rename project \"{old}\""))
+}
+
+/// Writes `color` into the file of the project `name`, which isn't open (an open
+/// one keeps its color in the window, and writes it with its tabs).
+pub fn set_color(name: &str, color: Option<u32>) -> anyhow::Result<()> {
+    let mut project = load(name)?;
+    project.color = color;
+    save(name, &project)
+}
+
 /// Whether the project `name` has a file already.
 pub fn exists(name: &str) -> bool {
     dir().is_ok_and(|dir| dir.join(format!("{name}.toml")).exists())
