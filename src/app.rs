@@ -100,6 +100,14 @@ struct PendingClose {
 /// clicked: a hand isn't still.
 const TAB_DRAG_START: usize = 6;
 
+/// A project held by the mouse in the sidebar: a click opens it on release, a
+/// drag (past `TAB_DRAG_START`) moves it up or down.
+struct SidebarDrag {
+    /// Where the press was, in pixels from the window's top.
+    from_y: usize,
+    moving: bool,
+}
+
 /// A tab held by the mouse (see `drag_tab`).
 struct TabDrag {
     /// Where the press was, in pixels from the window's left edge.
@@ -223,6 +231,8 @@ pub struct App {
     card: Option<Card>,
     /// The last click on a tab: a second one on it soon after opens its card.
     last_tab_click: Option<(TabId, Instant)>,
+    /// A project held by the mouse in the sidebar.
+    sidebar_drag: Option<SidebarDrag>,
 }
 
 impl App {
@@ -367,6 +377,7 @@ impl App {
             start,
             card: None,
             last_tab_click: None,
+            sidebar_drag: None,
         })
     }
 
@@ -1151,11 +1162,14 @@ impl App {
     /// A key while the sidebar is open: Up/Down choose a row, Enter does it, Esc
     /// closes. Everything else waits until it's closed.
     fn sidebar_key(&mut self, event: &KeyEvent) {
+        let alt = self.modifiers.alt_key();
         let Some(sidebar) = &mut self.sidebar else {
             return;
         };
         match &event.logical_key {
             Key::Named(NamedKey::Escape) => self.sidebar = None,
+            Key::Named(NamedKey::ArrowUp) if alt => self.sidebar_shift(-1),
+            Key::Named(NamedKey::ArrowDown) if alt => self.sidebar_shift(1),
             Key::Named(NamedKey::ArrowUp) => sidebar.move_selection(-1),
             Key::Named(NamedKey::ArrowDown) => sidebar.move_selection(1),
             Key::Named(NamedKey::Enter) => self.sidebar_choose(),
@@ -1398,6 +1412,31 @@ impl App {
         }
         self.request_redraw();
         true
+    }
+
+    /// Alt+↑ (-1) or Alt+↓ (1) in the sidebar: the chosen project moves one
+    /// place up or down, and the order is kept.
+    fn sidebar_shift(&mut self, step: isize) {
+        let Some(sidebar) = &mut self.sidebar else {
+            return;
+        };
+        let Some(from) = sidebar.selected().checked_sub(1) else {
+            return; // home
+        };
+        let to = from.wrapping_add_signed(step);
+        if sidebar.move_project(from, to) {
+            self.save_sidebar_order();
+        }
+    }
+
+    /// The order the sidebar shows now goes into `order.txt`.
+    fn save_sidebar_order(&mut self) {
+        let Some(sidebar) = &self.sidebar else {
+            return;
+        };
+        if let Err(e) = project::save_order(&sidebar.names()) {
+            self.set_status(Some(format!("{e:#}")));
+        }
     }
 
     /// Del in the sidebar: closes the chosen project, if it's open (see
@@ -1967,8 +2006,22 @@ impl App {
         }
         self.update_hovered();
         // The sidebar is open: the row under the mouse is chosen, nothing else.
+        // A project held: it follows the mouse, a place at a time.
         if let Some(sidebar) = &mut self.sidebar {
-            let row = sidebar.row_at(self.layout.sidebar(), self.layout.scale, x, y);
+            let (panel, scale) = (self.layout.sidebar(), self.layout.scale);
+            if let Some(drag) = &mut self.sidebar_drag {
+                let start = crate::layout::scaled(TAB_DRAG_START, scale);
+                if drag.moving || y.abs_diff(drag.from_y) >= start {
+                    drag.moving = true;
+                    let from = sidebar.selected().saturating_sub(1);
+                    let to = sidebar.project_slot(panel, scale, y);
+                    if sidebar.move_project(from, to) {
+                        self.request_redraw();
+                    }
+                }
+                return;
+            }
+            let row = sidebar.row_at(panel, scale, x, y);
             if let Some(row) = row.filter(|&row| row != sidebar.selected()) {
                 sidebar.select(row);
                 self.request_redraw();
@@ -2103,6 +2156,20 @@ impl App {
             self.request_redraw();
             return;
         }
+        // A project held in the sidebar, let go: moved, its new place is kept;
+        // not moved, it was a click: it opens.
+        if state == ElementState::Released
+            && button == MouseButton::Left
+            && let Some(drag) = self.sidebar_drag.take()
+        {
+            if drag.moving {
+                self.save_sidebar_order();
+            } else {
+                self.sidebar_choose();
+            }
+            self.request_redraw();
+            return;
+        }
         // The sidebar: a click on a row does it, one outside the panel closes it.
         if let Some(sidebar) = &mut self.sidebar
             && state == ElementState::Pressed
@@ -2114,7 +2181,15 @@ impl App {
                 self.request_redraw();
             } else if let Some(row) = sidebar.row_at(panel, self.layout.scale, x, y) {
                 sidebar.select(row);
+                let project = matches!(sidebar.row(row), Row::Project(_));
                 match button {
+                    // A project: held, it can be dragged; let go, it opens.
+                    MouseButton::Left if project => {
+                        self.sidebar_drag = Some(SidebarDrag {
+                            from_y: y,
+                            moving: false,
+                        });
+                    }
                     MouseButton::Left => self.sidebar_choose(),
                     // A right click: its card (a project's).
                     MouseButton::Right => self.sidebar_edit(),

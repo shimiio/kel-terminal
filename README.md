@@ -54,6 +54,7 @@ the new program.
 | Ctrl+Shift+P | Command palette: type a few letters (`ntb` finds "New tab"), Up/Down, Enter; Esc or a click closes it |
 | Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C). A line too long for the window comes out as one line, not cut where it wrapped |
 | Ctrl+Shift+V | Paste |
+| Alt+↑ / Alt+↓ in the sidebar | Moves the chosen project up or down; or drag it with the mouse. The order is kept in `projects\order.txt` (new projects go last, by name) |
 | F2 in the sidebar | The project's card (or a right click on it, or `Edit project` in the palette): its name, which renames its file, and its color: ←→ through the theme's, or a `#hex` typed, a dot showing it as it's typed |
 | Double-click a tab | Its card (or a right click): the tab's name (empty: the program's title) and, in a project, its command, which runs when the project opens. Enter or a click outside keeps it, in the project's file at once; Esc doesn't. Also `Edit tab` in the palette |
 | Ctrl+Shift+B | The sidebar of projects (or `≡` at the tab bar's start). First `home`: Kel without a project. Then the projects, each with its color; Enter or a click goes to one, Del closes an open one, the last line saves the tabs as a new one. Esc or a click outside closes the sidebar |

@@ -153,7 +153,7 @@ pub fn palette_items(current: Option<&str>) -> Vec<Item> {
     let Ok(dir) = dir() else {
         return Vec::new();
     };
-    names_in(&dir)
+    names_ordered(&dir)
         .into_iter()
         .map(|name| {
             let hint = if current == Some(name.as_str()) {
@@ -180,12 +180,55 @@ pub fn sidebar_entries(current: Option<&str>) -> Vec<Entry> {
     let Ok(dir) = dir() else {
         return Vec::new();
     };
-    let entries = names_in(&dir).into_iter().map(|name| {
+    let entries = names_ordered(&dir).into_iter().map(|name| {
         let here = current == Some(name.as_str());
         entry(name, here)
     });
     entries.collect()
 }
+
+/// The projects in `folder`, in the order you put them in the sidebar (see
+/// `ordered`).
+fn names_ordered(folder: &Path) -> Vec<String> {
+    ordered(names_in(folder), &read_order(folder))
+}
+
+/// `names` (the projects there are, by name) in the order `order` lists them:
+/// the ones it lists first, as listed; the rest after them, by name (new ones).
+/// A name it lists that's gone is left out.
+fn ordered(mut names: Vec<String>, order: &[String]) -> Vec<String> {
+    let mut sorted: Vec<String> = Vec::new();
+    for name in order {
+        if names.contains(name) && !sorted.contains(name) {
+            sorted.push(name.clone());
+        }
+    }
+    names.retain(|name| !sorted.contains(name));
+    sorted.extend(names);
+    sorted
+}
+
+/// The order of the projects: `order.txt` next to them, a name a line. None
+/// written yet: an empty one (by name, then).
+fn read_order(folder: &Path) -> Vec<String> {
+    let text = std::fs::read_to_string(folder.join(ORDER_FILE)).unwrap_or_default();
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// Keeps `names` as the projects' order (dragged in the sidebar, or Alt+↑↓).
+pub fn save_order(names: &[String]) -> anyhow::Result<()> {
+    let folder = dir()?;
+    std::fs::create_dir_all(&folder)?;
+    let text: String = names.iter().map(|name| format!("{name}\n")).collect();
+    std::fs::write(folder.join(ORDER_FILE), text).context("can't save the projects' order")
+}
+
+/// The projects' order, next to their files. Not `.toml`: not a project.
+const ORDER_FILE: &str = "order.txt";
 
 /// The projects used last, newest first, at most `count`, for the start screen:
 /// by when their file was written, which Kel does when you leave a project or
@@ -280,7 +323,18 @@ pub fn rename(old: &str, new: &str) -> anyhow::Result<()> {
     }
     let dir = dir()?;
     let file = |name: &str| dir.join(format!("{name}.toml"));
-    std::fs::rename(file(old), file(new)).with_context(|| format!("can't rename project \"{old}\""))
+    std::fs::rename(file(old), file(new))
+        .with_context(|| format!("can't rename project \"{old}\""))?;
+    // Its place in the order stays.
+    let order = read_order(&dir);
+    if order.iter().any(|name| name == old) {
+        let order: Vec<String> = order
+            .into_iter()
+            .map(|name| if name == old { new.to_string() } else { name })
+            .collect();
+        save_order(&order)?;
+    }
+    Ok(())
 }
 
 /// Writes `color` into the file of the project `name`, which isn't open (an open
@@ -327,6 +381,18 @@ pub fn save(name: &str, project: &Project) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_order_of_the_projects() {
+        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let there = names(&["api", "kel", "notes", "web"]);
+        // No order yet: by name.
+        assert_eq!(ordered(there.clone(), &[]), there);
+        // web and kel moved up; notes and api, not listed, after them by name;
+        // "old" is gone, a second "kel" doesn't count.
+        let order = names(&["web", "old", "kel", "kel"]);
+        assert_eq!(ordered(there, &order), ["web", "kel", "api", "notes"]);
+    }
 
     #[test]
     fn recent_projects_newest_first() {

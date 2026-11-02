@@ -186,7 +186,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] A project's card (F2 or a right click in the sidebar): its name (the file renamed) and
       color (the theme's colors, or a `#hex` typed, its dot showing it as it's typed). A right
       click on a tab opens its card too
-- [ ] The projects' order in the sidebar: drag one, or Alt+↑↓; kept in `projects\order.txt`
+- [x] The projects' order in the sidebar: drag one, or Alt+↑↓; kept in `projects\order.txt`
+      (new ones last, by name). The start screen stays by when they were used
 - [ ] Window vibrancy
 
 ## Later

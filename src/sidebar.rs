@@ -149,6 +149,36 @@ impl Sidebar {
         }
     }
 
+    /// The projects' names, in the order shown.
+    pub fn names(&self) -> Vec<String> {
+        self.projects.iter().map(|p| p.name.clone()).collect()
+    }
+
+    /// Moves the project at place `from` to place `to` (places among the
+    /// projects, not rows); the ones between shift by one. The moved one stays
+    /// chosen if it was. Returns `false` if nothing moved.
+    pub fn move_project(&mut self, from: usize, to: usize) -> bool {
+        let n = self.projects.len();
+        if from == to || from >= n || to >= n {
+            return false;
+        }
+        let project = self.projects.remove(from);
+        self.projects.insert(to, project);
+        if self.selected == from + 1 {
+            self.selected = to + 1;
+        }
+        true
+    }
+
+    /// The place among the projects for one dragged to `y`: the one there, or
+    /// the first or last past the ends.
+    pub fn project_slot(&self, panel: Rect, scale: f32, y: usize) -> usize {
+        let n = self.projects.len();
+        let first = row_rect(panel, scale, 1, n).y;
+        let row_h = scaled(ROW_HEIGHT, scale).max(1);
+        (y.saturating_sub(first) / row_h).min(n.saturating_sub(1))
+    }
+
     /// The row at (x, y) in the window, if one is there and fits in `panel`.
     pub fn row_at(&self, panel: Rect, scale: f32, x: usize, y: usize) -> Option<usize> {
         (0..self.rows()).find(|&row| {
@@ -262,6 +292,28 @@ mod tests {
             panic!("home is first");
         };
         assert!(live.open && !live.busy);
+    }
+
+    #[test]
+    fn moving_a_project() {
+        let names = ["api", "kel", "notes", "web"];
+        let mut sidebar = Sidebar::new(names.iter().map(|n| entry(n, false)).collect());
+        sidebar.select(4); // web (row 0 is home)
+        assert!(sidebar.move_project(3, 0));
+        assert_eq!(sidebar.names(), ["web", "api", "kel", "notes"]);
+        assert_eq!(sidebar.selected(), 1); // web, still chosen
+        assert!(!sidebar.move_project(0, 4)); // no place 4
+        // Dragged to y: projects from 8 + 120, 32 high.
+        let panel = Rect {
+            x: 8,
+            y: 8,
+            w: 280,
+            h: 600,
+        };
+        assert_eq!(sidebar.project_slot(panel, 1.0, 130), 0);
+        assert_eq!(sidebar.project_slot(panel, 1.0, 200), 2);
+        assert_eq!(sidebar.project_slot(panel, 1.0, 50), 0); // above: the first
+        assert_eq!(sidebar.project_slot(panel, 1.0, 500), 3); // below: the last
     }
 
     #[test]
