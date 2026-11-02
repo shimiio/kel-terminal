@@ -24,6 +24,12 @@ unicode-width = "0.2"
 ttf-parser = "0.25.1"
 ab_glyph = "0.2.32"
 
+# Only while building: the icon into kel.exe (see build.rs). winresource runs the
+# Windows SDK's rc.exe; png writes the icon's pictures.
+[build-dependencies]
+winresource = "0.1"
+png = "0.18.1"
+
 # Debug builds: optimize the libraries (rasterizing letters is ~35x slower without it),
 # keep our own code lightly optimized so it still compiles fast.
 [profile.dev]
