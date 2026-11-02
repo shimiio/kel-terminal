@@ -30,6 +30,8 @@ pub enum Action {
     OpenConfig,
     /// Opens the command palette, or closes it.
     Palette,
+    /// Opens the search in the output, or closes it.
+    Find,
     /// Runs the install script of this name (see `setup`) in a new tab.
     Install(&'static str),
     /// Opens the project of this name in a new window (see `project`).
@@ -73,6 +75,7 @@ pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
         (KeyCode::Digit0, _) => Action::ZoomReset,
         (KeyCode::Comma, _) => Action::OpenConfig,
         (KeyCode::KeyP, true) => Action::Palette,
+        (KeyCode::KeyF, true) => Action::Find,
         _ => return None,
     };
     Some(action)
@@ -94,6 +97,7 @@ pub fn palette_items() -> Vec<Item> {
         item("Last tab", "Ctrl+9", Action::LastTab),
         item("Paste", "Ctrl+Shift+V", Action::Paste),
         item("Copy the selection", "Ctrl+Shift+C", Action::Copy),
+        item("Find in the output", "Ctrl+Shift+F", Action::Find),
         item("Stop the running command", "Ctrl+C", Action::Interrupt),
         item("Zoom in: bigger font", "Ctrl+=", Action::ZoomIn),
         item("Zoom out: smaller font", "Ctrl+-", Action::ZoomOut),
@@ -389,6 +393,7 @@ mod tests {
             "0" => KeyCode::Digit0,
             "9" => KeyCode::Digit9,
             "C" => KeyCode::KeyC,
+            "F" => KeyCode::KeyF,
             "T" => KeyCode::KeyT,
             "V" => KeyCode::KeyV,
             "W" => KeyCode::KeyW,

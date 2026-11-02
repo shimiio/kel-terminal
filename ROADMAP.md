@@ -132,7 +132,10 @@ what bothers in use can come first.
       way ConPTY does (measured: it draws its screen again right after, from the top). A
       shorter window keeps the rows above in the scrollback (they were lost); the 10 000 limit
       counts lines, not rows. A long line copies as one line
-- [ ] Search in scrollback (Ctrl+Shift+F)
+- [x] Search in scrollback (Ctrl+Shift+F): in lines, not rows (a word cut at the edge is found),
+      any case; the matches keep their place while output comes (rows have lasting numbers).
+      ~5 ms per letter in a full scrollback (measured). Scrolled up, the view now stays on its
+      text while output comes
 - [ ] Clickable links
 - [ ] Save the tabs as a new project from the palette (the typed text is the name)
 

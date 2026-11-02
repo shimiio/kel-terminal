@@ -12,6 +12,7 @@ use crate::font::{Font, Fonts, Metrics};
 use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::palette::Palette;
+use crate::search::{self, Search};
 use crate::term::{CursorShape, Grid, Underline, Width, char_width};
 use crate::theme::Theme;
 use std::collections::HashMap;
@@ -35,6 +36,11 @@ const DOT_RADIUS: f32 = 3.0;
 const RING_WIDTH: f32 = 1.5;
 /// The close button under the mouse: the red of Windows' own.
 const CLOSE_HOVER: u32 = 0xc42b1c;
+
+/// The search box: this wide, in letters (less in a narrow window).
+const SEARCH_CHARS: usize = 36;
+/// How much of the dim yellow the other matches get over their background (of 255).
+const MATCH_TINT: u32 = 100;
 
 /// The command palette: at most this wide (in letters) and this many lines.
 const PALETTE_CHARS: usize = 64;
@@ -78,6 +84,8 @@ pub struct Chrome<'a> {
     pub question: Option<&'a str>,
     /// The command palette, if it's open: drawn over everything else.
     pub palette: Option<&'a Palette>,
+    /// The search in the output, if it's open: its box, and its matches marked.
+    pub search: Option<&'a Search>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -333,6 +341,13 @@ impl Renderer {
         let text_scale = self.text_scale;
         let text_px = |n: usize| scaled(n, text_scale);
 
+        // The search's matches in view, by lasting row (see `Grid::dropped`).
+        let top = grid.first_visible_row();
+        let marks = chrome
+            .search
+            .map(|s| s.marks(top, top + grid.rows()))
+            .unwrap_or_default();
+
         // Two passes over the grid: first all backgrounds, then all letters on top.
         // A letter can be wider than its cell (Nerd Font icons are ~1.5 cells). In one
         // pass, the next cell's background would be painted over its right part.
@@ -358,6 +373,13 @@ impl Renderer {
                     let fg = theme.rgb(cell.fg, theme.foreground);
                     let bg = theme.rgb(cell.bg, theme.background);
                     let (fg, bg) = if cell.inverse { (bg, fg) } else { (fg, bg) };
+                    // The chosen match: dark letters on bright yellow; the others,
+                    // a yellow tint over their background. Both from the theme.
+                    let (fg, bg) = match search::mark_at(&marks, top + row, col) {
+                        Some(true) => (theme.background, theme.palette[11]),
+                        Some(false) => (fg, blend(bg, theme.palette[3], MATCH_TINT)),
+                        None => (fg, bg),
+                    };
                     let bg = if selected { theme.selection } else { bg };
                     let (fg, bg) = if block { (bg, theme.cursor) } else { (fg, bg) };
 
@@ -414,7 +436,19 @@ impl Renderer {
             }
         }
 
-        // Last, so it's on top of the terminal, whatever the terminal shows.
+        // On top of the terminal, whatever the terminal shows.
+        if let Some(search) = chrome.search {
+            draw_search(
+                &mut buffer,
+                width,
+                theme,
+                layout,
+                search,
+                font,
+                &mut self.ui,
+            );
+        }
+        // Last: the palette is on top of everything.
         if let Some(palette) = chrome.palette {
             draw_palette(
                 &mut buffer,
@@ -841,6 +875,87 @@ fn draw_palette(
             theme.foreground,
         );
     }
+}
+
+/// The search box, in the terminal panel's top right corner:
+///
+/// ```text
+/// ┌────────────────────────────┐
+/// │ > error|          3 of 17  │  what's typed, a cursor, which match
+/// └────────────────────────────┘
+/// ```
+fn draw_search(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    search: &Search,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    let area = layout.inside;
+    let pad = ui.px(PALETTE_PADDING);
+    let b = layout.border.max(1);
+    let box_w = (SEARCH_CHARS * ui.advance + 2 * (pad + b)).min(area.w.saturating_sub(4 * pad));
+    if box_w < 12 * ui.advance {
+        return; // a window too narrow for it
+    }
+    let box_h = ui.line_h + 2 * (pad + b);
+    let x = area.x + area.w - box_w - 2 * pad;
+    let y = area.y + 2 * pad;
+    let r = Rect {
+        x,
+        y,
+        w: box_w,
+        h: box_h,
+    };
+    outline(pixels, width, r, b, theme.border);
+    fill_rect(
+        pixels,
+        width,
+        x + b,
+        y + b,
+        box_w - 2 * b,
+        box_h - 2 * b,
+        theme.frame,
+    );
+    let text_w = box_w - 2 * (b + pad);
+    let (text_x, text_y) = (x + b + pad, y + b + pad);
+
+    // The status at the right end: dim, or red when nothing is found.
+    let status = search.status().unwrap_or_default();
+    let color = match search.current() {
+        Some(_) => blend(theme.frame, theme.foreground, 128),
+        None => theme.palette[9],
+    };
+    let status_w = (status.chars().count() * ui.advance).min(text_w / 2);
+    let status_x = text_x + text_w - status_w;
+    let at = (status_x, text_y);
+    draw_ui_text(pixels, width, font, ui, &status, at, status_w, color);
+
+    // What's typed, and a bar for the cursor after it.
+    let query = format!("> {}", search.query());
+    let query_w = text_w.saturating_sub(status_w + ui.advance);
+    let at = (text_x, text_y);
+    let typed = draw_ui_text(
+        pixels,
+        width,
+        font,
+        ui,
+        &query,
+        at,
+        query_w,
+        theme.foreground,
+    );
+    fill_rect(
+        pixels,
+        width,
+        text_x + typed,
+        text_y,
+        ui.px(2),
+        ui.line_h,
+        theme.cursor,
+    );
 }
 
 /// One line of UI text from (x, y), cut off where it would pass `max_w` pixels.

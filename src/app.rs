@@ -12,6 +12,7 @@ use crate::mouse::{self, Tracking};
 use crate::palette::Palette;
 use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{Chrome, Renderer, TabLabel};
+use crate::search::Search;
 use crate::setup;
 use crate::tab::{Tab, TabId};
 use crate::term::Terminal;
@@ -155,6 +156,8 @@ pub struct App {
     project: Option<(String, PathBuf)>,
     /// The command palette, while it's open. It gets the keys then, not the shell.
     palette: Option<Palette>,
+    /// The search in the output, while it's open. It gets the keys then too.
+    search: Option<Search>,
 }
 
 impl App {
@@ -282,6 +285,7 @@ impl App {
             status,
             project: project_name.zip(project.map(|project| project.folder)),
             palette: None,
+            search: None,
         })
     }
 
@@ -366,8 +370,10 @@ impl App {
         self.update_window_title();
         // A tab came or went: the tabs and the + moved, maybe under the mouse.
         self.update_hovered();
-        // The selection and the half-scrolled line belonged to the other tab.
+        // The selection, the search and the half-scrolled line belonged to the
+        // other tab.
         self.selection = None;
+        self.search = None;
         self.scroll_rest = 0.0;
         self.update_focus();
         self.request_redraw();
@@ -613,7 +619,16 @@ impl App {
                     let _ = std::process::Command::new("explorer.exe").arg(path).spawn();
                 }
             }
+            Action::Find => {
+                self.search = match self.search {
+                    Some(_) => None,
+                    None => Some(Search::new()),
+                };
+                self.palette = None;
+                self.request_redraw();
+            }
             Action::Palette => {
+                self.search = None;
                 self.palette = match self.palette {
                     Some(_) => None,
                     None => {
@@ -664,6 +679,72 @@ impl App {
             let shell = self.config.shell.clone();
             let tab = self.tabs.last_mut().unwrap();
             tab.type_when_ready(&setup::command(&path), &shell);
+        }
+    }
+
+    /// A key while the search is open: it's for the search, never the shell.
+    /// Letters go into its box (and it finds again right away), Enter or Up goes
+    /// to the match before (older output), Shift+Enter or Down to the next one,
+    /// Esc closes. Ctrl+Shift+V pastes into the box.
+    fn search_key(&mut self, event: &KeyEvent, shortcut: Option<Action>) {
+        let Some(search) = &mut self.search else {
+            return;
+        };
+        let back = if self.modifiers.shift_key() { 1 } else { -1 };
+        match &event.logical_key {
+            _ if shortcut == Some(Action::Paste) => {
+                if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                    // A match is in one line: the first line of what's copied.
+                    search.type_text(text.lines().next().unwrap_or(""));
+                    self.find(true);
+                }
+            }
+            Key::Named(NamedKey::Escape) => self.search = None,
+            Key::Named(NamedKey::Enter) => self.find_step(back),
+            Key::Named(NamedKey::ArrowUp) => self.find_step(-1),
+            Key::Named(NamedKey::ArrowDown) => self.find_step(1),
+            Key::Named(NamedKey::Backspace) => {
+                search.backspace();
+                self.find(true);
+            }
+            // Typed letters, not Ctrl+letter (see `palette_key`).
+            _ if !self.modifiers.control_key() => {
+                if let Some(text) = event.text.as_deref() {
+                    let text: String = text.chars().filter(|c| !c.is_control()).collect();
+                    search.type_text(&text);
+                    self.find(true);
+                }
+            }
+            _ => {}
+        }
+        self.request_redraw();
+    }
+
+    /// Finds the search's text again in the tab on screen, and scrolls to the
+    /// chosen match. `keep_place`: see `Search::set_found`.
+    fn find(&mut self, keep_place: bool) {
+        let Some(search) = &mut self.search else {
+            return;
+        };
+        let mut terminal = self.tabs[self.active].terminal.lock().unwrap();
+        // ~600 000 letters in a full scrollback: a few ms, so on every letter.
+        search.set_found(terminal.grid.find(search.query()), keep_place);
+        if let Some(found) = search.current() {
+            terminal.grid.show_row(found.start.0);
+        }
+    }
+
+    /// The match before (-1) or after (1). Finds again first: output that came
+    /// since may have new matches.
+    fn find_step(&mut self, step: isize) {
+        self.find(true);
+        let Some(search) = &mut self.search else {
+            return;
+        };
+        search.step(step);
+        if let Some(found) = search.current() {
+            let mut terminal = self.tabs[self.active].terminal.lock().unwrap();
+            terminal.grid.show_row(found.start.0);
         }
     }
 
@@ -913,6 +994,7 @@ impl App {
             status: self.status.as_deref(),
             question: self.pending_close.as_ref().map(|p| p.message.as_str()),
             palette: self.palette.as_ref(),
+            search: self.search.as_ref(),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -950,6 +1032,8 @@ impl App {
                 tab.resize(rows, cols);
             }
         }
+        // The rows were cut again: the matches are somewhere else now.
+        self.find(false);
     }
 
     /// A key was pressed: one of Kel's shortcuts (see `keys::shortcut`),
@@ -957,8 +1041,15 @@ impl App {
     fn on_key(&mut self, event: KeyEvent) {
         self.restart_blink();
         let shortcut = keys::shortcut(event.physical_key, self.modifiers);
-        if self.palette.is_some() && shortcut != Some(Action::Palette) {
+        // Ctrl+Shift+P and Ctrl+Shift+F still work in the palette and the search:
+        // they close one, or swap one for the other.
+        let switch = matches!(shortcut, Some(Action::Palette | Action::Find));
+        if self.palette.is_some() && !switch {
             self.palette_key(&event);
+            return;
+        }
+        if self.search.is_some() && !switch {
+            self.search_key(&event, shortcut);
             return;
         }
         if let Some(action) = shortcut {

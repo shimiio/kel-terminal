@@ -70,6 +70,15 @@ impl Line {
     }
 }
 
+/// A match of a search (`Grid::find`): its first and last cell, both inside, as
+/// (row, col). The rows are lasting ones (see `Grid::dropped`), so a match
+/// stays on its text while new output comes and old lines go.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Found {
+    pub start: (usize, usize),
+    pub end: (usize, usize),
+}
+
 /// A wide character (emoji, Chinese) takes two cells: its own, `Wide`, and the
 /// next one, `Spacer`, which shows nothing by itself: the letter in the cell
 /// before reaches over it.
@@ -138,6 +147,12 @@ pub struct Grid {
     scrollback: VecDeque<Line>,
     /// How many lines end in the scrollback: its rows that aren't `wrapped`.
     scrollback_lines: usize,
+    /// How many rows were thrown away from the scrollback's top so far. A row's
+    /// lasting number is `dropped` + its place in scrollback + screen: it stays
+    /// the same while new rows come at the bottom and old ones go at the top.
+    /// e.g. a row at scrollback[9500]: after 600 rows went, it's at [8900], and
+    /// `dropped` is 600: 9500 still.
+    dropped: usize,
     /// How many lines the view is scrolled up into the scrollback. 0 = the live screen.
     scroll_offset: usize,
     rows: usize,
@@ -178,6 +193,7 @@ impl Grid {
             lines: vec![Line::blank(cols, Cell::default()); rows],
             scrollback: VecDeque::new(),
             scrollback_lines: 0,
+            dropped: 0,
             scroll_offset: 0,
             rows,
             cols,
@@ -414,6 +430,11 @@ impl Grid {
             self.scrollback_lines += 1;
         }
         self.scrollback.push_back(line);
+        // Scrolled up, reading: the view stays on the same text while new rows
+        // come (it would move up a row with each one).
+        if self.scroll_offset > 0 {
+            self.scroll_offset += 1;
+        }
         // Past the limit: the oldest line goes, all its rows.
         while self.scrollback_lines > SCROLLBACK_LIMIT {
             match self.scrollback.pop_front() {
@@ -421,7 +442,9 @@ impl Grid {
                 Some(_) => {}
                 None => self.scrollback_lines = 0,
             }
+            self.dropped += 1;
         }
+        self.scroll_offset = self.scroll_offset.min(self.scrollback.len());
     }
 
     /// Writes `c` at the cursor with the pen's colors, and moves the cursor right:
@@ -562,6 +585,65 @@ impl Grid {
         self.scroll_offset = 0
     }
 
+    /// The lasting number (see `dropped`) of the row at the top of the view.
+    pub fn first_visible_row(&self) -> usize {
+        self.dropped + self.scrollback.len() - self.scroll_offset
+    }
+
+    /// Scrolls so the lasting row `row` is in view: nothing moves if it's in view
+    /// already, else it's put a third of the way down, with what came before it
+    /// above.
+    pub fn show_row(&mut self, row: usize) {
+        let Some(index) = row.checked_sub(self.dropped) else {
+            return; // thrown away
+        };
+        if self.saved_screen.is_some() {
+            return;
+        }
+        let sb = self.scrollback.len();
+        let top = sb - self.scroll_offset;
+        if (top..top + self.rows).contains(&index) {
+            return;
+        }
+        let new_top = index.saturating_sub(self.rows / 3);
+        self.scroll_offset = sb.saturating_sub(new_top);
+    }
+
+    /// Every place `query` is in the scrollback and on the screen, top to
+    /// bottom, in any case: `error` finds `Error` too. It looks in lines, not
+    /// rows: a word cut at the window's edge (`err` | `or`) is found.
+    pub fn find(&self, query: &str) -> Vec<Found> {
+        let query: Vec<char> = query.chars().map(fold_case).collect();
+        let mut found = Vec::new();
+        if query.is_empty() {
+            return found;
+        }
+        // The line so far: its letters, and for each one (row, first col, last
+        // col): a wide letter takes 2 cells.
+        let mut text = Vec::new();
+        let mut cells = Vec::new();
+        for (i, line) in self.scrollback.iter().chain(&self.lines).enumerate() {
+            let row = self.dropped + i;
+            for (col, cell) in line.cells.iter().enumerate() {
+                match cell.width {
+                    Width::Spacer => {}
+                    Width::Wide => cells.push((row, col, col + 1)),
+                    Width::Narrow => cells.push((row, col, col)),
+                }
+                if cell.width != Width::Spacer {
+                    text.push(fold_case(cell.ch));
+                }
+            }
+            if !line.wrapped {
+                find_in(&text, &cells, &query, &mut found);
+                text.clear();
+                cells.clear();
+            }
+        }
+        find_in(&text, &cells, &query, &mut found);
+        found
+    }
+
     pub fn carriage_return(&mut self) {
         self.cursor_col = 0;
     }
@@ -642,6 +724,7 @@ impl Grid {
             }
             2 => self.lines.fill(blank),
             3 => {
+                self.dropped += self.scrollback.len();
                 self.scrollback.clear();
                 self.scrollback_lines = 0;
                 self.scroll_offset = 0;
@@ -730,6 +813,29 @@ impl Grid {
         Cell {
             bg: self.bg,
             ..Cell::default()
+        }
+    }
+}
+
+/// `c` as the search compares it: small letters, so `E` and `e` are the same.
+fn fold_case(c: char) -> char {
+    c.to_lowercase().next().unwrap_or(c)
+}
+
+/// The places `query` is in one line's `text`, without overlapping: "aa" is
+/// twice in "aaaa", not 3 times. `cells`: where each letter of `text` is.
+fn find_in(text: &[char], cells: &[(usize, usize, usize)], query: &[char], found: &mut Vec<Found>) {
+    let mut i = 0;
+    while i + query.len() <= text.len() {
+        if text[i..i + query.len()] == *query {
+            let (first, last) = (cells[i], cells[i + query.len() - 1]);
+            found.push(Found {
+                start: (first.0, first.1),
+                end: (last.0, last.2),
+            });
+            i += query.len();
+        } else {
+            i += 1;
         }
     }
 }
@@ -1015,6 +1121,96 @@ mod tests {
         g.resize(2, 10); // all of them are there to join
         assert_eq!(g.scrollback().len(), SCROLLBACK_LIMIT + 1);
         assert_eq!(line_text(&g.scrollback()[0]), "abcdef");
+    }
+
+    #[test]
+    fn find_in_any_case() {
+        let g = grid(4, 20, "an Error\nno\nERROR, error");
+        let found = g.find("error");
+        let starts: Vec<_> = found.iter().map(|f| f.start).collect();
+        assert_eq!(starts, [(0, 3), (2, 0), (2, 7)]);
+        assert_eq!(found[0].end, (0, 7));
+        assert!(g.find("").is_empty());
+        assert!(g.find("warning").is_empty());
+    }
+
+    #[test]
+    fn find_a_word_cut_at_the_edge() {
+        // "err" at the end of row 0, "or" at the start of row 1.
+        let g = grid(3, 6, "an error");
+        assert_eq!(g.render(), "an err\nor");
+        let found = g.find("error");
+        assert_eq!(
+            found,
+            [Found {
+                start: (0, 3),
+                end: (1, 1)
+            }]
+        );
+    }
+
+    #[test]
+    fn find_wide_letters() {
+        let g = grid(2, 10, "a中文b");
+        // 中 is cells 1-2, 文 3-4: the match ends on 文's second cell.
+        assert_eq!(
+            g.find("中文"),
+            [Found {
+                start: (0, 1),
+                end: (0, 4)
+            }]
+        );
+        assert_eq!(g.find("文b")[0].end, (0, 5));
+    }
+
+    #[test]
+    fn found_rows_last_while_old_lines_go() {
+        let text = format!("needle\n{}", "x\n".repeat(SCROLLBACK_LIMIT - 1));
+        let mut g = grid(2, 10, &text);
+        let before = g.find("needle");
+        assert_eq!(before[0].start, (0, 0));
+        // 2 more lines: "needle" and the first x are thrown away.
+        for _ in 0..2 {
+            g.put_char('y');
+            g.carriage_return();
+            g.newline();
+        }
+        assert!(g.find("needle").is_empty());
+        // A later one keeps its number: the 'y' lines.
+        let ys = g.find("y");
+        assert_eq!(ys[0].start.0, SCROLLBACK_LIMIT);
+    }
+
+    #[test]
+    fn show_row_scrolls_only_when_needed() {
+        let text: String = (0..50).map(|i| format!("{i}\n")).collect();
+        let mut g = grid(10, 10, &text);
+        assert_eq!(g.first_visible_row(), 41); // rows 41-50 on screen
+        g.show_row(45);
+        assert_eq!(g.scroll_offset(), 0); // in view already
+        g.show_row(20);
+        assert_eq!(g.first_visible_row(), 17); // a third of the way down
+        g.show_row(48); // back on the screen: the view goes to the bottom
+        assert_eq!(g.scroll_offset(), 0);
+    }
+
+    #[test]
+    fn reading_up_the_view_stays_put() {
+        let text: String = (0..30).map(|i| format!("{i}\n")).collect();
+        let mut g = grid(5, 10, &text);
+        g.scroll_view(10);
+        let top = g.first_visible_row();
+        let shown = g.visible_cell(0, 0);
+        for c in "new\nmore\n".chars() {
+            if c == '\n' {
+                g.carriage_return();
+                g.newline();
+            } else {
+                g.put_char(c);
+            }
+        }
+        assert_eq!(g.first_visible_row(), top);
+        assert_eq!(g.visible_cell(0, 0), shown);
     }
 
     #[test]
