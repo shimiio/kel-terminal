@@ -37,6 +37,12 @@ const RING_WIDTH: f32 = 1.5;
 /// The close button under the mouse: the red of Windows' own.
 const CLOSE_HOVER: u32 = 0xc42b1c;
 
+/// The project's name before the tabs: from this far into the tab bar, and this
+/// far from the first tab. A longer name than `PROJECT_NAME_CHARS` letters is cut.
+const PROJECT_NAME_LEFT: usize = 4;
+const PROJECT_NAME_GAP: usize = 14;
+const PROJECT_NAME_CHARS: usize = 16;
+
 /// The search box: this wide, in letters (less in a narrow window).
 const SEARCH_CHARS: usize = 36;
 /// How much of the dim yellow the other matches get over their background (of 255).
@@ -86,6 +92,9 @@ pub struct Chrome<'a> {
     pub palette: Option<&'a Palette>,
     /// The search in the output, if it's open: its box, and its matches marked.
     pub search: Option<&'a Search>,
+    /// The open project: its name, before the tabs, and its own color, if it has
+    /// one. That color is the window's accent then, instead of the theme's.
+    pub project: Option<(&'a str, Option<u32>)>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -239,6 +248,19 @@ impl Renderer {
 
     /// New colors. The cells keep which color they want, so the next frame
     /// shows everything in the new theme, even text that is already there.
+    /// How much room the project `name` needs before the tabs, at `scale` (see
+    /// `Layout::set_lead`). No project: none.
+    pub fn project_lead(&mut self, name: Option<&str>, scale: f32) -> usize {
+        let Some(name) = name else {
+            return 0;
+        };
+        if scale != self.ui.scale {
+            let _ = self.ui.set_scale(&self.fonts[0], scale);
+        }
+        let name_w = project_name_shown(name).chars().count() * self.ui.advance;
+        self.ui.px(PROJECT_NAME_LEFT) + name_w + self.ui.px(PROJECT_NAME_GAP)
+    }
+
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
     }
@@ -482,6 +504,20 @@ fn draw_tab_bar(
     // Halfway between the text color and the window's: muted, still readable.
     let dim = blend(theme.frame, theme.foreground, 128);
     let b = layout.border;
+    // The window's accent: the project's own color, else the theme's.
+    let accent = chrome.project.and_then(|(_, color)| color);
+    let accent = accent.unwrap_or(theme.accent);
+    // The project's name, at the bar's start, where `Layout::set_lead` left room.
+    if let Some((name, _)) = chrome.project {
+        let bar = layout.tab_bar;
+        let shown = project_name_shown(name);
+        let at = (
+            bar.x + ui.px(PROJECT_NAME_LEFT),
+            bar.y + bar.h.saturating_sub(ui.line_h) / 2,
+        );
+        let max_w = shown.chars().count() * ui.advance;
+        draw_ui_text(pixels, width, font, ui, &shown, at, max_w, accent);
+    }
     for (i, (tab, label)) in layout.tabs(tabs.len()).iter().zip(tabs).enumerate() {
         let on_screen = i == active;
         let color = if on_screen {
@@ -511,7 +547,7 @@ fn draw_tab_bar(
         let icon_x = tab.x + padding;
         let icon_y = tab.y + tab.h.saturating_sub(icon_h) / 2;
         let tint = match (on_screen, icon.tinted) {
-            (true, true) => Some(theme.accent),
+            (true, true) => Some(accent),
             (true, false) => None,
             (false, _) => Some(dim),
         };
@@ -875,6 +911,17 @@ fn draw_palette(
             theme.foreground,
         );
     }
+}
+
+/// The project's name as the tab bar shows it: at most `PROJECT_NAME_CHARS`
+/// letters, e.g. "a-very-long-project-name" → "a-very-long-pro…".
+fn project_name_shown(name: &str) -> String {
+    if name.chars().count() <= PROJECT_NAME_CHARS {
+        return name.to_string();
+    }
+    let mut shown: String = name.chars().take(PROJECT_NAME_CHARS - 1).collect();
+    shown.push('…');
+    shown
 }
 
 /// The search box, in the terminal panel's top right corner:

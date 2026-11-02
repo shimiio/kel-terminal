@@ -152,6 +152,9 @@ pub struct Layout {
     pub border: usize,
     tab_width: usize,
     bar_button_w: usize,
+    /// Room at the tab bar's start, before the first tab: the open project's name
+    /// goes there (see `set_lead`). 0 without a project.
+    lead: usize,
 }
 
 impl Spacing {
@@ -210,6 +213,7 @@ impl Spacing {
             border,
             tab_width: s(self.tab_width),
             bar_button_w: s(BAR_BUTTON_WIDTH),
+            lead: 0,
         }
     }
 
@@ -266,11 +270,17 @@ impl Layout {
     /// Where each of `count` tabs is, left to right in the tab bar. They leave room
     /// for the `+` and `⌄` buttons after them. e.g. an 846-pixel bar: 3 tabs are
     /// 180 wide each; 10 tabs get (846 - 2 x 28) / 10 = 79 each.
+    /// Leaves `lead` pixels at the tab bar's start, before the first tab, for the
+    /// project's name. At most half the bar: the tabs need room too.
+    pub fn set_lead(&mut self, lead: usize) {
+        self.lead = lead.min(self.tab_bar.w / 2);
+    }
+
     pub fn tabs(&self, count: usize) -> Vec<Rect> {
         let w = self.tab_w(count);
         (0..count)
             .map(|i| Rect {
-                x: self.tab_bar.x + i * w,
+                x: self.tab_bar.x + self.lead + i * w,
                 w,
                 ..self.tab_bar
             })
@@ -279,13 +289,16 @@ impl Layout {
 
     /// One tab's width, when there are `count`.
     fn tab_w(&self, count: usize) -> usize {
-        let room = self.tab_bar.w.saturating_sub(2 * self.bar_button_w);
+        let room = self
+            .tab_bar
+            .w
+            .saturating_sub(self.lead + 2 * self.bar_button_w);
         self.tab_width.min(room / count.max(1))
     }
 
     /// The `+` and `⌄` buttons, right after the last of `count` tabs.
     pub fn bar_buttons(&self, count: usize) -> (Rect, Rect) {
-        let x = self.tab_bar.x + count * self.tab_w(count);
+        let x = self.tab_bar.x + self.lead + count * self.tab_w(count);
         let button = |i: usize| Rect {
             x: x + i * self.bar_button_w,
             w: self.bar_button_w,
@@ -466,6 +479,22 @@ mod tests {
         assert_eq!(hit(600), None); // the empty bar
         assert_eq!(hit(990), Some(TitleHit::Window(WindowButton::Close)));
         // Many tabs: the buttons still fit before the window buttons.
+        let (_, palette) = layout.bar_buttons(30);
+        assert!(palette.x + palette.w <= layout.tab_bar.x + layout.tab_bar.w);
+    }
+
+    #[test]
+    fn the_project_name_goes_before_the_tabs() {
+        let mut layout = Spacing::default().layout(1000, 700, 1.0);
+        layout.set_lead(50);
+        let tabs = layout.tabs(2);
+        assert_eq!(tabs[0].x, 8 + 50);
+        assert_eq!(tabs[1].x, tabs[0].x + tabs[0].w);
+        let (new_tab, _) = layout.bar_buttons(2);
+        assert_eq!(new_tab.x, tabs[1].x + tabs[1].w);
+        // A click on the name: the empty bar, which moves the window.
+        assert_eq!(layout.title_hit(30, 20, 2), None);
+        // Many tabs still fit, with the name.
         let (_, palette) = layout.bar_buttons(30);
         assert!(palette.x + palette.w <= layout.tab_bar.x + layout.tab_bar.w);
     }

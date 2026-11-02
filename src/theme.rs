@@ -5,7 +5,7 @@
 //! the theme when it draws, so a new theme recolors text already on the screen.
 
 use serde::de::Error;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serializer};
 
 /// A color as the program asked for it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -110,6 +110,20 @@ fn hex_color<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error
     let text = String::deserialize(deserializer)?;
     parse_hex(&text)
         .ok_or_else(|| D::Error::custom(format!("\"{text}\" is not a color like \"#ff8000\"")))
+}
+
+/// Reads a color that may be missing (with `#[serde(default)]`), e.g. a project's
+/// `color`: there, it's `Some`.
+pub fn optional_hex<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<u32>, D::Error> {
+    hex_color(deserializer).map(Some)
+}
+
+/// Writes a color back as the file has it: 0xe0af68 → "#e0af68".
+pub fn write_hex<S: Serializer>(color: &Option<u32>, serializer: S) -> Result<S::Ok, S::Error> {
+    match color {
+        Some(color) => serializer.serialize_str(&format!("#{color:06x}")),
+        None => serializer.serialize_none(),
+    }
 }
 
 /// Reads the palette from the config: exactly 16 colors.

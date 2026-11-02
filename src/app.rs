@@ -91,6 +91,15 @@ struct PendingClose {
     until: Instant,
 }
 
+/// The project open in this window (`kel <name>`): what's kept of its file.
+struct OpenProject {
+    name: String,
+    folder: PathBuf,
+    /// Its `color`: the name before the tabs and the icons. `None`: the theme's
+    /// accent.
+    color: Option<u32>,
+}
+
 pub struct App {
     // Created in `resumed`, so they are `None` until the window exists.
     window: Option<Rc<Window>>,
@@ -151,9 +160,9 @@ pub struct App {
     resize_edge: Option<ResizeDirection>,
     /// Something went wrong (a config error...), shown in the tab bar until it's fixed.
     status: Option<String>,
-    /// The open project, if Kel was started with one (`kel <name>`): its name and
-    /// folder. Saved when the window closes (see `save_project`).
-    project: Option<(String, PathBuf)>,
+    /// The open project, if Kel was started with one (`kel <name>`). Saved when
+    /// the window closes (see `save_project`).
+    project: Option<OpenProject>,
     /// The command palette, while it's open. It gets the keys then, not the shell.
     palette: Option<Palette>,
     /// The search in the output, while it's open. It gets the keys then too.
@@ -283,7 +292,13 @@ impl App {
             pending_close: None,
             resize_edge: None,
             status,
-            project: project_name.zip(project.map(|project| project.folder)),
+            project: project_name
+                .zip(project)
+                .map(|(name, project)| OpenProject {
+                    name,
+                    folder: project.folder,
+                    color: project.color,
+                }),
             palette: None,
             search: None,
         })
@@ -445,11 +460,14 @@ impl App {
     /// Only when the window closes: after `exit` in each tab, the file stays as it
     /// was, not a project of no tabs.
     fn save_project(&self) -> anyhow::Result<()> {
-        let Some((name, folder)) = &self.project else {
+        let Some(open) = &self.project else {
             return Ok(()); // no project, or one that couldn't be read: not written over
         };
+        // Everything the file had but the tabs, or a line would be lost: the
+        // tabs are written again, the rest is kept as it was read.
         let mut project = Project {
-            folder: folder.clone(),
+            folder: open.folder.clone(),
+            color: open.color,
             tabs: Vec::new(),
         };
         let tabs = self.tabs.iter().map(|tab| TabRecipe {
@@ -458,7 +476,7 @@ impl App {
             command: tab.start_command.clone(),
         });
         project.tabs = tabs.collect();
-        project::save(name, &project)
+        project::save(&open.name, &project)
     }
 
     /// Returns `true` if `what` may close now: nothing would be lost (`!running`),
@@ -488,7 +506,7 @@ impl App {
     fn update_window_title(&self) {
         if let Some(window) = &self.window {
             let title = match &self.project {
-                Some((project, _)) => format!("{} - {project} - Kel", self.tab().label()),
+                Some(project) => format!("{} - {} - Kel", self.tab().label(), project.name),
                 None => format!("{} - Kel", self.tab().label()),
             };
             window.set_title(&title);
@@ -633,7 +651,7 @@ impl App {
                     Some(_) => None,
                     None => {
                         // Kel's actions first, then the projects, then the install scripts.
-                        let current = self.project.as_ref().map(|(name, _)| name.as_str());
+                        let current = self.project.as_ref().map(|p| p.name.as_str());
                         let mut items = keys::palette_items();
                         items.extend(project::palette_items(current));
                         items.extend(setup::palette_items());
@@ -650,7 +668,7 @@ impl App {
     /// Opens the project `name` in a new Kel window: Kel starts itself again, as
     /// `kel <name>` does. This window and its tabs stay as they are.
     fn open_project(&mut self, name: &str) {
-        if self.project.as_ref().is_some_and(|(open, _)| open == name) {
+        if self.project.as_ref().is_some_and(|open| open.name == name) {
             return; // it's this window
         }
         let started = std::env::current_exe()
@@ -995,6 +1013,7 @@ impl App {
             question: self.pending_close.as_ref().map(|p| p.message.as_str()),
             palette: self.palette.as_ref(),
             search: self.search.as_ref(),
+            project: self.project.as_ref().map(|p| (p.name.as_str(), p.color)),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -1010,15 +1029,21 @@ impl App {
     /// The window changed size: resize the grid and tell the shell.
     /// Uses the window's *current* size, because the event's size can be outdated.
     fn on_resize(&mut self) {
+        let scale = self.ui_scale();
+        // Room for the project's name before the tabs: its letters at this scale.
+        let name = self.project.as_ref().map(|p| p.name.as_str());
+        let Some(lead) = self.renderer.as_mut().map(|r| r.project_lead(name, scale)) else {
+            return;
+        };
         let (Some(renderer), Some(window)) = (&self.renderer, &self.window) else {
             return;
         };
         let size = window.inner_size();
-        let scale = self.ui_scale();
         self.layout = self
             .config
             .layout
             .layout(size.width as usize, size.height as usize, scale);
+        self.layout.set_lead(lead);
         // The grid gets as many cells as fit in the text area,
         // e.g. 970x670 pixels with 11x24 cells: 88 cols, 27 rows.
         let (cell_w, cell_h) = renderer.cell_size();

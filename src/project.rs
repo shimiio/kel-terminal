@@ -9,6 +9,7 @@
 //!
 //! ```toml
 //! folder = 'C:\code\kel-terminal'   # single quotes: a '\' stays a '\'
+//! color = "#e0af68"                 # optional: its name and icons in this color
 //!
 //! [[tab]]
 //! name = "editor"
@@ -21,6 +22,7 @@
 use crate::config;
 use crate::keys::Action;
 use crate::palette::Item;
+use crate::theme;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -40,6 +42,16 @@ const HEADER: &str = "\
 pub struct Project {
     /// The project's folder: tabs start here; their own folders are inside it.
     pub folder: PathBuf,
+    /// The project's own accent color: its name before the tabs and the tab
+    /// icons. Without it, the theme's `accent`. A window then says which project
+    /// it is at a glance.
+    #[serde(
+        default,
+        deserialize_with = "theme::optional_hex",
+        serialize_with = "theme::write_hex",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub color: Option<u32>,
     /// `[[tab]]` in the file, one per tab, left to right.
     #[serde(default, rename = "tab", skip_serializing_if = "Vec::is_empty")]
     pub tabs: Vec<TabRecipe>,
@@ -245,6 +257,22 @@ folder = 'D:\other'
         );
         assert_eq!(tab_folder(r"C:\code\kelp"), Some(r"C:\code\kelp".into()));
         assert_eq!(tab_folder(r"C:\code"), Some(r"C:\code".into()));
+    }
+
+    #[test]
+    fn the_color_reads_and_stays() {
+        let text = "folder = 'C:\\code'\ncolor = \"#E0af68\"\n";
+        let project: Project = config::parse_toml("kel.toml", text).unwrap();
+        assert_eq!(project.color, Some(0xe0af68));
+        // Written back in small letters, right after the folder.
+        let saved = project.to_file().unwrap();
+        assert!(saved.contains("color = \"#e0af68\""), "{saved}");
+        // No color: no line.
+        let plain: Project = config::parse_toml("kel.toml", "folder = 'C:\\code'").unwrap();
+        assert_eq!(plain.color, None);
+        assert!(!plain.to_file().unwrap().contains("color"));
+        let bad = config::parse_toml::<Project>("kel.toml", "folder = 'C:'\ncolor = \"orange\"");
+        assert!(bad.unwrap_err().to_string().contains("not a color"));
     }
 
     #[test]

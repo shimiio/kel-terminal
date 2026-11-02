@@ -192,6 +192,7 @@ is renamed first, and removed once no Kel runs it).
 
 ```toml
 folder = 'C:\code\kel-terminal'   # single quotes, so a '\' stays a '\'
+color = "#e0af68"                 # optional, see below
 
 [[tab]]
 name = "editor"      # shown in the tab bar instead of the program's title
@@ -208,6 +209,10 @@ folder = "docs"      # inside the project's folder; a full path works too
 Every line of a `[[tab]]` is optional: `[[tab]]` alone is a shell in the project's
 folder. A file without any is one such tab. The running programs aren't saved, they
 can't be: opening the project starts them again.
+
+A project's window shows its name before the tabs, so you see which one it is at a
+glance. `color` is the project's own accent: the name and the icon of the tab on
+screen are in it. Without `color`, both are in the theme's `accent`.
 
 When the window closes (the × button or Alt+F4), Kel writes the file again with the
 tabs open then, so the project opens next time as you left it:

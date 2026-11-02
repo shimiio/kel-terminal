@@ -143,7 +143,11 @@ what bothers in use can come first.
 
 Each one gets tried on screen first. Alternates with stage 8: one feature, one look.
 
-- [ ] Project accent color: fills the tab icons, colors the project name
+- [x] Project accent color: the project's name before the tabs, and the icon of the tab on
+      screen, in `color` from the project file (else the theme's `accent`). Tried on screen
+      against a line on the tab, a colored block, a colored frame: the name won
+- [ ] Maybe: a thin line in the project color on top of the tab on screen (tried on a mockup:
+      with the name and the icon, three spots of color; decide after using the name a while)
 - [ ] Pixel-art tab icons (made in Aseprite, PNG), outlines filled with the accent color
 - [ ] Pixel font for the UI: the Kel logo, the project name (built into the exe, see Fonts)
 - [ ] Sidebar on the left (hover with a short delay, or a key): dims the rest, lists projects
