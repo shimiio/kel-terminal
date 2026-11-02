@@ -1,6 +1,7 @@
-//! The start screen: what home shows when it's new (Kel started without a
-//! project, or home again after "Close project"), over its terminal, like Visual
-//! Studio's start window.
+//! The start screen: what home shows whenever you come to it (Kel started
+//! without a project, home chosen in the sidebar, a project closed), over its
+//! terminal, like Visual Studio's start window. Home is position 0: a calm place
+//! to start from. Not while a command runs there: you came back to watch it.
 //!
 //! ```text
 //!        kel▌            (the logo, its cursor blinking)

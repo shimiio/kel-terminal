@@ -126,8 +126,6 @@ struct Workspace {
     tabs: Vec<Tab>,
     /// The tab that was on screen, shown again on the way back.
     active: usize,
-    /// Home's start screen, if it was still up when you left.
-    start: Option<Start>,
 }
 
 impl Workspace {
@@ -767,7 +765,12 @@ impl App {
     /// isn't open yet.
     fn switch_to(&mut self, name: Option<&str>) {
         if self.project.as_ref().map(|p| p.name.as_str()) == name {
-            return; // it's on screen
+            // It's on screen. Home again: back to its start screen, position 0.
+            if self.start.is_none() {
+                self.start = self.start_screen();
+                self.request_redraw();
+            }
+            return;
         }
         let open = self.parked.iter().position(|w| w.name() == name);
         let next = match open {
@@ -787,8 +790,8 @@ impl App {
             project: self.project.take(),
             tabs: std::mem::take(&mut self.tabs),
             active: self.active,
-            start: self.start.take(),
         };
+        self.start = None;
         self.parked.push(left);
         self.enter(next);
         if let Err(e) = saved {
@@ -809,7 +812,17 @@ impl App {
         self.on_resize(); // room for this project's name before the tabs
         self.show_tab(self.active);
         // After `show_tab`, which puts a start screen away.
-        self.start = workspace.start;
+        self.start = self.start_screen();
+    }
+
+    /// Home's start screen as you come back to it, whatever you did there
+    /// before: the projects used last, as they are now. Home is position 0, a
+    /// calm place to start from. `None` in a project, and while a command runs
+    /// in the tab on screen: you came back to watch it. Under the screen, the
+    /// terminal stays as it was (a key puts the screen away).
+    fn start_screen(&self) -> Option<Start> {
+        let idle = !self.tab().command.running();
+        (self.project.is_none() && idle).then(|| Start::new(project::recent_entries(start::RECENT)))
     }
 
     /// The tabs of the project `name` (`None`: home, one plain tab), started now:
@@ -862,15 +875,11 @@ impl App {
             folder: project.folder,
             color: project.color,
         });
-        // A new home: the start screen.
-        let start = project
-            .is_none()
-            .then(|| Start::new(project::recent_entries(start::RECENT)));
+        // Home's start screen comes with `enter`.
         Ok(Workspace {
             project,
             tabs,
             active: 0,
-            start,
         })
     }
 
