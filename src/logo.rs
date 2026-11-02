@@ -37,7 +37,7 @@ pub const HEIGHT: usize = 7;
 pub const WIDTH: usize = K[0].len() + GAP + E[0].len() + GAP + L[0].len() + GAP + CURSOR_WIDTH;
 
 /// The icon's mark, `k▌`: its width.
-const MARK_WIDTH: usize = K[0].len() + GAP + CURSOR_WIDTH;
+pub const MARK_WIDTH: usize = K[0].len() + GAP + CURSOR_WIDTH;
 
 /// A lit pixel of the logo: where (from its top left, in its pixels) and
 /// whether it's the cursor's.
@@ -51,6 +51,11 @@ pub struct Pixel {
 /// The logo's lit pixels, the letters' first, then the cursor's.
 pub fn pixels() -> Vec<Pixel> {
     lay_out(&[K, E, L])
+}
+
+/// The mark alone, `k▌`: the window's icon, and the tab of home's start screen.
+pub fn mark_pixels() -> Vec<Pixel> {
+    lay_out(&[K])
 }
 
 /// `letters` side by side, a gap between, then the cursor: their lit pixels.
@@ -92,7 +97,7 @@ pub fn icon(size: usize, letters: u32, cursor: u32, back: u32) -> Vec<u8> {
     let left = size.saturating_sub(MARK_WIDTH * px) / 2;
     let top = size.saturating_sub(HEIGHT * px) / 2;
     let mut colors = vec![back; size * size];
-    for p in lay_out(&[K]) {
+    for p in mark_pixels() {
         let color = if p.cursor { cursor } else { letters };
         for y in top + p.y * px..top + (p.y + 1) * px {
             for x in left + p.x * px..left + (p.x + 1) * px {

@@ -7,6 +7,7 @@
 use crate::card::{self, Card, Target};
 use crate::config::{self, Config};
 use crate::font::{self, Fonts};
+use crate::icons;
 use crate::keys::{self, Action};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton};
 use crate::logo;
@@ -1823,12 +1824,24 @@ impl App {
             start.update_live(|name| self.live_of(name));
             self.start = Some(start);
         }
+        // Home's start screen up: its tab says so, "home" and Kel's mark. A key
+        // puts the screen away, and the tab is the shell's again.
+        let start = self.start.is_some().then_some(self.active);
         let labels: Vec<TabLabel> = self
             .tabs
             .iter()
-            .map(|tab| TabLabel {
-                title: tab.label(),
-                icon: tab.icon(),
+            .enumerate()
+            .map(|(i, tab)| TabLabel {
+                title: if start == Some(i) {
+                    "home"
+                } else {
+                    tab.label()
+                },
+                icon: if start == Some(i) {
+                    icons::KEL
+                } else {
+                    tab.icon()
+                },
                 activity: tab.activity,
                 busy: tab.command.busy(),
                 done: tab.command.done,

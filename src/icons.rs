@@ -5,6 +5,7 @@
 //! One file then fits any color. An icon with real colors is drawn as it is.
 //! On a muted tab every icon, colored or not, is tinted with the muted text color.
 
+use crate::logo;
 use anyhow::Context;
 use std::collections::HashMap;
 
@@ -20,6 +21,9 @@ const FILES: [(&str, &[u8]); 5] = [
 
 /// The icon of a tab whose title and name pick none.
 const DEFAULT: &str = "terminal";
+
+/// The tab of home's start screen: Kel's own mark, `k▌` (see `kel_icon`).
+pub const KEL: &str = "kel";
 
 /// Words in a tab's title or name that pick an icon, checked in this order.
 const WORDS: [(&str, &str); 7] = [
@@ -93,17 +97,35 @@ impl Icons {
     /// Reads all the icons. They are part of Kel itself, so a broken one is a bug,
     /// not a user's mistake (a test reads them all).
     pub fn load() -> Icons {
-        Icons(
-            FILES
-                .iter()
-                .map(|(name, png)| (*name, decode(png).expect("a built-in icon")))
-                .collect(),
-        )
+        let mut icons: HashMap<_, _> = FILES
+            .iter()
+            .map(|(name, png)| (*name, decode(png).expect("a built-in icon")))
+            .collect();
+        icons.insert(KEL, kel_icon());
+        Icons(icons)
     }
 
     /// The icon named `name`, or the default one.
     pub fn get(&self, name: &str) -> &Icon {
         self.0.get(name).unwrap_or(&self.0[DEFAULT])
+    }
+}
+
+/// Kel's mark `k▌` from the logo's pixels, in the middle of 16 x 16, white:
+/// tinted like the others (gray in home).
+fn kel_icon() -> Icon {
+    let (w, h) = (16, 16);
+    let mut pixels = vec![[0, 0, 0, 0]; w * h];
+    let left = (w - logo::MARK_WIDTH) / 2;
+    let top = (h - logo::HEIGHT) / 2;
+    for p in logo::mark_pixels() {
+        pixels[(top + p.y) * w + left + p.x] = [255, 255, 255, 255];
+    }
+    Icon {
+        w,
+        h,
+        pixels,
+        tinted: true,
     }
 }
 
@@ -151,7 +173,8 @@ mod tests {
     #[test]
     fn built_in_icons_load() {
         let icons = Icons::load();
-        for (name, _) in FILES {
+        let names = FILES.iter().map(|(name, _)| *name).chain([KEL]);
+        for name in names {
             let icon = icons.get(name);
             assert_eq!((icon.w, icon.h), (16, 16), "{name}");
             assert!(icon.tinted, "{name}");

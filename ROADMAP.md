@@ -173,7 +173,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       `winresource`; the file's details say "Kel" (Task Manager)
 - [x] Home is position 0: coming back to it (the sidebar, the palette, a project closed)
       shows its start screen again, the projects used last fresh; home chosen while in home
-      too. Not while a command runs in its tab: you came back to watch it
+      too. Not while a command runs in its tab: you came back to watch it. Its tab says
+      "home", with Kel's mark `k▌`, while the screen is up
 - [x] Home neutral in the whole UI: the project's color is the only one (`accent_for`); home
       and projects without one are gray. `accent` in `[colors]` is optional now
 - [ ] Maybe: a pixel font for the project name (built into the exe, see Fonts)
