@@ -1001,7 +1001,7 @@ impl App {
             .iter()
             .map(|tab| TabLabel {
                 title: tab.label(),
-                icon: tab.icon,
+                icon: tab.icon(),
                 activity: tab.activity,
                 busy: tab.command.busy(),
                 done: tab.command.done,

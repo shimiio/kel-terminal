@@ -66,7 +66,11 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 - [x] Activity dot on a background tab with new output
 - [x] Tab/window title from OSC 0/2
 - [x] Tab icons: pixel art PNGs in `assets/icons/`, built into the binary, tinted with a color;
-      picked by the program in the title (nvim, cargo...)
+      picked by the program in the title (nvim, cargo...); in a plain shell, by the tab's
+      name (docker, run/start)
+- [ ] Icon by the command that runs (`docker compose up` → docker): PowerShell would send
+      the command's text (like VS Code's `ESC]633;E`), its first word picks the icon.
+      Order: the command, the title, the tab's name
 - [x] Display scaling: the UI and the font follow Windows' scale (100%, 150%...),
       `ui_scale` in the config on top; pixel art only at whole steps (×1, ×2, ×3)
 

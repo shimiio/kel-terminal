@@ -214,6 +214,10 @@ A project's window shows its name before the tabs, so you see which one it is at
 glance. `color` is the project's own accent: the name and the icon of the tab on
 screen are in it. Without `color`, both are in the theme's `accent`.
 
+A tab's icon shows what runs in it (nvim, git), as the program's title says. In a
+plain shell, the tab's `name` picks it: a tab called `docker` has the whale, `run`
+or `start` a ▶. The name itself stays whatever runs.
+
 When the window closes (the × button or Alt+F4), Kel writes the file again with the
 tabs open then, so the project opens next time as you left it:
 

@@ -93,8 +93,6 @@ pub struct Tab {
     /// A command waiting for the shell to be ready, to be typed then (see
     /// `type_when_ready`). Only once, and not saved with the project.
     to_type: Option<String>,
-    /// The icon's name, picked by the title (see `icons::for_title`).
-    pub icon: &'static str,
     /// New output since the tab was last on screen: a dot in the tab bar.
     pub activity: bool,
     /// When the grid last changed size (see `RESIZE_ECHO`).
@@ -137,7 +135,6 @@ impl Tab {
         Ok(Tab {
             id,
             title: shell_name.clone(),
-            icon: icons::for_title(&shell_name),
             name: None,
             shell_name,
             started_in: cwd.map(Path::to_path_buf),
@@ -163,6 +160,13 @@ impl Tab {
     /// What the tab bar shows: the project's name for the tab, else the title.
     pub fn label(&self) -> &str {
         self.name.as_deref().unwrap_or(&self.title)
+    }
+
+    /// The icon's name: by what runs (the title), else by the tab's name (see
+    /// `icons::pick`). Picked on each draw: a few words compared, and a renamed
+    /// tab or a new title shows right away.
+    pub fn icon(&self) -> &'static str {
+        icons::pick(&self.title, self.name.as_deref())
     }
 
     /// The project's command for this tab: typed at start (see `type_when_ready`),
@@ -221,7 +225,6 @@ impl Tab {
         if title == self.title {
             return false;
         }
-        self.icon = icons::for_title(&title);
         self.title = title;
         true
     }

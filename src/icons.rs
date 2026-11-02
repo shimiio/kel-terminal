@@ -10,37 +10,50 @@ use std::collections::HashMap;
 
 /// The icons: a name and the PNG file. `include_bytes!` puts the file's bytes into
 /// the .exe when Kel is built, so Kel needs no files next to it.
-const FILES: [(&str, &[u8]); 3] = [
+const FILES: [(&str, &[u8]); 5] = [
     ("terminal", include_bytes!("../assets/icons/terminal.png")),
     ("nvim", include_bytes!("../assets/icons/nvim.png")),
     ("git", include_bytes!("../assets/icons/git.png")),
+    ("docker", include_bytes!("../assets/icons/docker.png")),
+    ("start", include_bytes!("../assets/icons/start.png")),
 ];
 
-/// The icon of a tab whose title picks none.
+/// The icon of a tab whose title and name pick none.
 const DEFAULT: &str = "terminal";
 
-/// Words in a tab's title that pick an icon, checked in this order.
-const WORDS: [(&str, &str); 4] = [
+/// Words in a tab's title or name that pick an icon, checked in this order.
+const WORDS: [(&str, &str); 7] = [
     ("nvim", "nvim"),
     ("vim", "nvim"),
     ("lazygit", "git"),
     ("git", "git"),
+    ("docker", "docker"),
+    ("start", "start"),
+    ("run", "start"),
 ];
 
-/// The icon for a tab's title. The title's words are compared whole, in any case:
-/// "Cargo.toml - Nvim" and "nvim ." get the nvim icon, "dsnvim" doesn't.
-pub fn for_title(title: &str) -> &'static str {
+/// A tab's icon. First what runs in it, as its title says: a tab you called
+/// "docker" shows nvim's icon while nvim is open in it. When the title says
+/// nothing (a plain shell), the tab's `name`: a "docker" tab has the whale.
+pub fn pick(title: &str, name: Option<&str>) -> &'static str {
+    find(title)
+        .or_else(|| name.and_then(find))
+        .unwrap_or(DEFAULT)
+}
+
+/// The icon a text's words pick, if any. Words are compared whole, in any case:
+/// "Cargo.toml - Nvim" and "nvim ." have nvim, "dsnvim" doesn't.
+fn find(text: &str) -> Option<&'static str> {
     // Words: the pieces between anything that isn't a letter or a digit, e.g.
     // "Cargo.toml - Nvim" → "Cargo", "toml", "Nvim".
     let has_word = |word: &str| {
-        title
-            .split(|c: char| !c.is_alphanumeric())
+        text.split(|c: char| !c.is_alphanumeric())
             .any(|w| w.eq_ignore_ascii_case(word))
     };
     WORDS
         .iter()
         .find(|(word, _)| has_word(word))
-        .map_or(DEFAULT, |(_, icon)| icon)
+        .map(|(_, icon)| *icon)
 }
 
 pub struct Icon {
@@ -147,6 +160,7 @@ mod tests {
 
     #[test]
     fn icon_from_the_title() {
+        let for_title = |title| pick(title, None);
         assert_eq!(for_title("Cargo.toml - Nvim"), "nvim");
         assert_eq!(for_title("nvim ."), "nvim");
         assert_eq!(for_title("dsnvim"), "terminal");
@@ -154,6 +168,15 @@ mod tests {
         assert_eq!(for_title("powershell"), "terminal");
         // nvim comes before git in the list, even in a folder called "git".
         assert_eq!(for_title(r"main.rs (C:\git\kel) - Nvim"), "nvim");
+    }
+
+    #[test]
+    fn icon_from_the_name_when_the_title_says_nothing() {
+        assert_eq!(pick("powershell", Some("docker")), "docker");
+        assert_eq!(pick("powershell", Some("Run")), "start");
+        assert_eq!(pick("powershell", Some("dev server")), "terminal");
+        // What runs comes first: nvim, in a tab called "docker".
+        assert_eq!(pick("main.rs - Nvim", Some("docker")), "nvim");
     }
 
     #[test]
