@@ -122,7 +122,11 @@ what bothers in use can come first.
       Nerd Font). fontdue read every glyph of the font up front, 4 styles × ~12 600; ab_glyph
       keeps the file and reads a letter when it's first drawn. With an emoji and a Chinese
       letter on screen (their fallback fonts loaded): 453 MB → 46 MB
-- [ ] Memory of a tab with a full scrollback (10 000 lines): measure
+- [x] Memory of a tab with a full scrollback (10 000 lines, maximized, 171 columns): 65 MB →
+      4.4 MB for short lines, 52 → 17 MB for a folder listing. A line kept every cell to the
+      window's edge (36 bytes each); now only up to its last non-empty one
+- [ ] Later, if needed: a smaller cell (36 → ~16 bytes: a color in 4 bytes, flags in bits),
+      and `scrollback = 10000` in the config
 - [ ] Reflow lines on resize: a narrower window wraps long lines, a wider one joins them back
 - [ ] Search in scrollback (Ctrl+Shift+F)
 - [ ] Clickable links

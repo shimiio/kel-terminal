@@ -304,7 +304,7 @@ impl Perform for Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::term::Width;
+    use crate::term::{Cell, Width};
     use vte::Parser;
 
     /// Feeds `input` into a fresh 5x10 terminal, like bytes arriving from the shell.
@@ -511,6 +511,27 @@ mod tests {
         assert_eq!(t.grid.scrollback().len(), 2);
         assert_eq!(t.grid.scrollback()[0][0].ch, '1'); // oldest line starts with '1'
         assert_eq!(t.grid.render(), "3\n4\n5\n6\n7"); // the screen shows the rest
+    }
+
+    #[test]
+    fn scrollback_keeps_only_the_text() {
+        // "ab"; a red "b" on green, and green to the edge (`ESC[K` erases in
+        // the pen's background); an empty line. 8 lines, 5 on screen: 3 go up.
+        let t = feed("ab\r\n\x1b[31;42mb\x1b[K\x1b[0m\r\n\r\n3\r\n4\r\n5\r\n6\r\n7");
+        let lines = t.grid.scrollback();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].len(), 2); // "ab"
+        assert_eq!(lines[1].len(), 10); // the green spaces go to the edge
+        assert_eq!(lines[1][9].bg, Color::Indexed(2));
+        assert!(lines[2].is_empty()); // an empty line keeps nothing
+    }
+
+    #[test]
+    fn short_lines_show_as_before() {
+        let mut t = feed("ab\r\n2\r\n3\r\n4\r\n5\r\n6");
+        t.grid.scroll_view(1); // up into the scrollback: "ab" is the top row
+        assert_eq!(t.grid.visible_cell(0, 1).ch, 'b');
+        assert_eq!(t.grid.visible_cell(0, 9), Cell::default()); // past its end: empty
     }
 
     #[test]

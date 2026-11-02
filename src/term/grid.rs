@@ -91,7 +91,8 @@ impl Default for Cell {
 pub struct Grid {
     /// The live screen: `rows` lines, each `cols` cells. `cells[row][col]`.
     cells: Vec<Vec<Cell>>,
-    /// Lines that scrolled off the top, oldest first.
+    /// Lines that scrolled off the top, oldest first. Only up to their last
+    /// non-empty cell (see `newline`), so most are shorter than `cols`.
     scrollback: VecDeque<Vec<Cell>>,
     /// How many lines the view is scrolled up into the scrollback. 0 = the live screen.
     scroll_offset: usize,
@@ -193,8 +194,19 @@ impl Grid {
     /// the top line goes into the scrollback and a blank line appears at the bottom.
     pub fn newline(&mut self) {
         if self.cursor_row + 1 >= self.rows {
-            let line = self.cells.remove(0);
+            let mut line = self.cells.remove(0);
             if self.saved_screen.is_none() {
+                // The empty cells at its end stay behind: `line 123` in a window
+                // 171 wide keeps 8 cells, not 171 (36 bytes each: 10 000 lines
+                // took 65 MB, measured). `visible_cell` shows a missing cell as
+                // an empty one. Only cells exactly like an empty one go: a space
+                // with a background color (a bar to the edge) still shows.
+                let end = line
+                    .iter()
+                    .rposition(|cell| *cell != Cell::default())
+                    .map_or(0, |last| last + 1);
+                line.truncate(end);
+                line.shrink_to_fit(); // gives the memory back, `truncate` alone doesn't
                 self.scrollback.push_back(line);
                 if self.scrollback.len() > SCROLLBACK_LIMIT {
                     self.scrollback.pop_front();
