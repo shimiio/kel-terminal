@@ -24,6 +24,7 @@
 //! - `renderer`: turns that grid into pixels.
 //! - `search`: the search in the output (Ctrl+Shift+F): what's typed, the matches.
 //! - `sidebar`: the panel of projects (`≡`, Ctrl+Shift+B).
+//! - `start`: the start screen of a new home: the recent projects.
 //! - `links`: `https://...` in the output, opened with Ctrl+click.
 //! - `setup`: the install scripts from `setup/`, built into the exe.
 //! - `shell_integration`: makes the shell tell Kel its folder, and when a command
@@ -48,6 +49,7 @@ pub mod search;
 pub mod setup;
 pub mod shell_integration;
 pub mod sidebar;
+pub mod start;
 pub mod tab;
 pub mod term;
 pub mod theme;

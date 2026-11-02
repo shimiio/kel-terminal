@@ -13,7 +13,8 @@ use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::palette::Palette;
 use crate::search::{self, Search};
-use crate::sidebar::{self, Row, Sidebar};
+use crate::sidebar::{self, Entry, Live, Row, Sidebar};
+use crate::start::{self, Start};
 use crate::term::Found;
 use crate::term::{CursorShape, Grid, Underline, Width, char_width};
 use crate::theme::Theme;
@@ -104,6 +105,8 @@ pub struct Chrome<'a> {
     pub link: Option<Found>,
     /// The sidebar, if it's open: over the left of the window, the rest dimmed.
     pub sidebar: Option<&'a Sidebar>,
+    /// The start screen, if it shows: over the terminal.
+    pub start: Option<&'a Start>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -482,6 +485,9 @@ impl Renderer {
         }
 
         // On top of the terminal, whatever the terminal shows.
+        if let Some(start) = chrome.start {
+            draw_start(&mut buffer, width, theme, layout, start, font, &mut self.ui);
+        }
         if let Some(search) = chrome.search {
             draw_search(
                 &mut buffer,
@@ -1011,9 +1017,7 @@ fn draw_sidebar(
             fill_rect(pixels, width, r.x, r.y, r.w, r.h, lit);
         }
         let text_y = r.y + r.h.saturating_sub(ui.line_h) / 2;
-        let radius = 4.0 * ui.scale;
-        let (cx, cy) = ((r.x + ui.px(14)) as f32, r.y as f32 + r.h as f32 / 2.0);
-        let row_look = match sidebar.row(row) {
+        let look = match sidebar.row(row) {
             Row::Save => {
                 // After a line across.
                 let line_y = r.y - ui.px(8);
@@ -1026,73 +1030,17 @@ fn draw_sidebar(
                 continue;
             }
             // A ring, not a dot: no project, no color of its own.
-            Row::Home { here, live } => ("home", "", theme.foreground, true, here, live),
-            // A dot in the project's color.
-            Row::Project(p) => {
-                let color = p.color.unwrap_or(theme.foreground);
-                (
-                    p.name.as_str(),
-                    p.hint.as_str(),
-                    color,
-                    false,
-                    p.current,
-                    p.live,
-                )
-            }
+            Row::Home { here, live } => ProjectRow {
+                name: "home",
+                folder: "",
+                color: None,
+                ring: true,
+                here,
+                live,
+            },
+            Row::Project(entry) => ProjectRow::of(entry),
         };
-        let (name, folder, color, ring, here, live) = row_look;
-        // Open in the window: bright. Not open: faded, its name too.
-        let awake = here || live.open;
-        let color = if awake {
-            color
-        } else {
-            blend(back, color, 100)
-        };
-        let hole = if ring { radius - 1.5 * ui.scale } else { 0.0 };
-        fill_circle(pixels, width, cx, cy, radius, hole, color);
-        // A command runs there: a ring around it, as around a tab's mark.
-        if live.busy {
-            let outer = radius + 3.0 * ui.scale;
-            let hole = outer - RING_WIDTH * ui.scale;
-            fill_circle(pixels, width, cx, cy, outer, hole, color);
-        }
-        // At the right: on screen, what it's doing, or where it is.
-        let hint = match () {
-            _ if here => "here",
-            _ if live.busy => "running",
-            _ if live.open => "open",
-            _ => folder,
-        };
-        let name_x = r.x + ui.px(28);
-        let hint = keep_end(hint, (r.w / 2) / ui.advance.max(1));
-        let hint_w = hint.chars().count() * ui.advance;
-        let hint_x = r.x + r.w - ui.px(10) - hint_w;
-        // New output not seen yet: a dot before the hint, as on a tab.
-        let mark_w = if live.activity && !here {
-            let dot = DOT_RADIUS * ui.scale;
-            let mx = hint_x as f32 - ui.px(8) as f32 - dot;
-            fill_circle(pixels, width, mx, cy, dot, 0.0, theme.foreground);
-            ui.px(16)
-        } else {
-            0
-        };
-        let name_w = hint_x.saturating_sub(name_x + mark_w + ui.px(8));
-        let fg = if awake {
-            theme.foreground
-        } else {
-            blend(back, theme.foreground, 170)
-        };
-        draw_ui_text(pixels, width, font, ui, name, (name_x, text_y), name_w, fg);
-        draw_ui_text(
-            pixels,
-            width,
-            font,
-            ui,
-            &hint,
-            (hint_x, text_y),
-            hint_w,
-            dim,
-        );
+        draw_project_row(pixels, width, theme, font, ui, back, r, &look);
     }
     if projects.is_empty() {
         // Where the first project would be.
@@ -1117,6 +1065,173 @@ fn draw_sidebar(
     for (i, line) in lines.into_iter().enumerate() {
         let at = (panel.x + pad, top + i * ui.line_h);
         draw_ui_text(pixels, width, font, ui, line, at, text_w, color);
+    }
+}
+
+/// A row of projects, in the sidebar or on the start screen.
+struct ProjectRow<'a> {
+    name: &'a str,
+    /// Where it is: shown when it isn't open.
+    folder: &'a str,
+    /// Its dot's color; `None`: the text's.
+    color: Option<u32>,
+    /// A ring, not a dot: home, no project of its own.
+    ring: bool,
+    /// It's on screen.
+    here: bool,
+    live: Live,
+}
+
+impl<'a> ProjectRow<'a> {
+    fn of(entry: &'a Entry) -> ProjectRow<'a> {
+        ProjectRow {
+            name: &entry.name,
+            folder: &entry.hint,
+            color: entry.color,
+            ring: false,
+            here: entry.current,
+            live: entry.live,
+        }
+    }
+}
+
+/// A project in the row `r`, on the background `back`: a dot of its color (a
+/// ring around it if a command runs there), its name, and at the right where it
+/// is, or what it's doing. Bright if it's open in the window, faded if not.
+#[allow(clippy::too_many_arguments)]
+fn draw_project_row(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    font: &Font,
+    ui: &mut Ui,
+    back: u32,
+    r: Rect,
+    row: &ProjectRow,
+) {
+    let dim = blend(back, theme.foreground, 128);
+    let text_y = r.y + r.h.saturating_sub(ui.line_h) / 2;
+    let radius = 4.0 * ui.scale;
+    let (cx, cy) = ((r.x + ui.px(14)) as f32, r.y as f32 + r.h as f32 / 2.0);
+    let live = row.live;
+    // Open in the window: bright. Not open: faded, its name too.
+    let awake = row.here || live.open;
+    let color = row.color.unwrap_or(theme.foreground);
+    let color = if awake {
+        color
+    } else {
+        blend(back, color, 100)
+    };
+    let hole = if row.ring {
+        radius - 1.5 * ui.scale
+    } else {
+        0.0
+    };
+    fill_circle(pixels, width, cx, cy, radius, hole, color);
+    // A command runs there: a ring around it, as around a tab's mark.
+    if live.busy {
+        let outer = radius + 3.0 * ui.scale;
+        let hole = outer - RING_WIDTH * ui.scale;
+        fill_circle(pixels, width, cx, cy, outer, hole, color);
+    }
+    // At the right: on screen, what it's doing, or where it is.
+    let hint = match () {
+        _ if row.here => "here",
+        _ if live.busy => "running",
+        _ if live.open => "open",
+        _ => row.folder,
+    };
+    let name_x = r.x + ui.px(28);
+    let hint = keep_end(hint, (r.w / 2) / ui.advance.max(1));
+    let hint_w = hint.chars().count() * ui.advance;
+    let hint_x = r.x + r.w - ui.px(10) - hint_w;
+    // New output not seen yet: a dot before the hint, as on a tab.
+    let mark_w = if live.activity && !row.here {
+        let dot = DOT_RADIUS * ui.scale;
+        let mx = hint_x as f32 - ui.px(8) as f32 - dot;
+        fill_circle(pixels, width, mx, cy, dot, 0.0, theme.foreground);
+        ui.px(16)
+    } else {
+        0
+    };
+    let name_w = hint_x.saturating_sub(name_x + mark_w + ui.px(8));
+    let fg = if awake {
+        theme.foreground
+    } else {
+        blend(back, theme.foreground, 170)
+    };
+    let at = (name_x, text_y);
+    draw_ui_text(pixels, width, font, ui, row.name, at, name_w, fg);
+    let at = (hint_x, text_y);
+    draw_ui_text(pixels, width, font, ui, &hint, at, hint_w, dim);
+}
+
+/// The start screen (see `start`) over the terminal: Kel's name, the projects
+/// used last, the keys.
+#[allow(clippy::too_many_arguments)]
+fn draw_start(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    start: &Start,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    let area = layout.inside;
+    let back = theme.background;
+    fill_rect(pixels, width, area.x, area.y, area.w, area.h, back);
+    let dim = blend(back, theme.foreground, 128);
+    let projects = start.projects();
+    let col = start::column(layout.text, layout.scale, projects.len());
+    let left = col.x + ui.px(10);
+
+    // The logo (a pixel one later), and the list's title.
+    let logo_w = draw_ui_text(
+        pixels,
+        width,
+        font,
+        ui,
+        "kel",
+        (left, col.y),
+        col.w,
+        theme.accent,
+    );
+    let at = (left + logo_w + ui.advance, col.y);
+    draw_ui_text(pixels, width, font, ui, "terminal", at, col.w, dim);
+    let at = (left, start::title_y(col, layout.scale));
+    draw_ui_text(pixels, width, font, ui, "RECENT PROJECTS", at, col.w, dim);
+
+    for (row, entry) in projects.iter().enumerate() {
+        let r = start::row_rect(col, layout.scale, row);
+        if !start::fits(layout.text, r) {
+            break;
+        }
+        if start.lit(row) {
+            let lit = blend(back, theme.foreground, 22);
+            fill_rect(pixels, width, r.x, r.y, r.w, r.h, lit);
+        }
+        draw_project_row(
+            pixels,
+            width,
+            theme,
+            font,
+            ui,
+            back,
+            r,
+            &ProjectRow::of(entry),
+        );
+    }
+    if projects.is_empty() {
+        let r = start::row_rect(col, layout.scale, 0);
+        let at = (left, r.y + r.h.saturating_sub(ui.line_h) / 2);
+        let text = "none yet: Ctrl+Shift+P, \"Save the tabs as project\"";
+        draw_ui_text(pixels, width, font, ui, text, at, col.w, dim);
+    }
+    let hint_y = start::hint_y(col, layout.scale, projects.len());
+    if hint_y + ui.line_h <= layout.text.y + layout.text.h {
+        let text = "Type to start   ↑↓ Enter opens a project   Esc";
+        draw_ui_text(pixels, width, font, ui, text, (left, hint_y), col.w, dim);
     }
 }
 

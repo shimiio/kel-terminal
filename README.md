@@ -195,6 +195,11 @@ faded one for the rest; a ring around it where a command runs ("running"), a sma
 dot where there's output you haven't seen. Del on an open project closes it: saved,
 its shells ended. The palette has `Close project: kel` for the one on screen.
 
+A new home (Kel started without a project, or home again after `Close project`)
+shows the start screen over its terminal: the projects used last. ↑↓ and Enter, or a
+click, open one; typing puts the screen away and goes to the shell, which has been
+starting behind it; Esc only puts it away.
+
 Leaving a project saves its file. Its last tab closed (`exit`): back home. Home's
 last tab closed: Kel closes, saving the projects, unless a command runs in one of
 them, which comes on screen instead. Closing the window saves every open project,
@@ -270,6 +275,7 @@ the file keeps the tabs it had, not none.
 | `src/keys.rs` | Kel's shortcuts (one table), and the bytes every other key sends to the shell |
 | `src/mouse.rs` | The bytes that tell a program what the mouse does, if it asked for the mouse |
 | `src/search.rs` | The search in the output: what's typed, the matches, which one is chosen |
+| `src/start.rs` | Home's start screen: the recent projects, which one is chosen, where each one is |
 | `src/sidebar.rs` | The sidebar of projects: its rows, which one is chosen, where each one is |
 | `src/links.rs` | `https://...` in the output: where a link starts and ends |
 | `src/palette.rs` | The command palette's state: what's typed, which lines match, which one is chosen |

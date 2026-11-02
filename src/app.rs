@@ -15,6 +15,7 @@ use crate::renderer::{Chrome, Renderer, TabLabel};
 use crate::search::Search;
 use crate::setup;
 use crate::sidebar::{Live, Row, Sidebar};
+use crate::start::{self, Start};
 use crate::tab::{Tab, TabId};
 use crate::term::{Found, Terminal};
 use std::path::PathBuf;
@@ -115,6 +116,8 @@ struct Workspace {
     tabs: Vec<Tab>,
     /// The tab that was on screen, shown again on the way back.
     active: usize,
+    /// Home's start screen, if it was still up when you left.
+    start: Option<Start>,
 }
 
 impl Workspace {
@@ -213,6 +216,8 @@ pub struct App {
     tab_drag: Option<TabDrag>,
     /// The sidebar of projects, while it's open. It gets the keys and the clicks.
     sidebar: Option<Sidebar>,
+    /// Home's start screen, until a key or a click puts it away (see `start`).
+    start: Option<Start>,
 }
 
 impl App {
@@ -304,6 +309,9 @@ impl App {
         let next_id = recipes.len() as TabId;
         // No window yet: the real layout comes with the first `on_resize`.
         let layout = config.layout.layout(0, 0, 1.0);
+        // Home: the start screen. Not over the problems, they're to be read.
+        let start = (project_name.is_none() && problems.is_empty())
+            .then(|| Start::new(project::recent_entries(start::RECENT)));
 
         Ok(App {
             window: None,
@@ -351,6 +359,7 @@ impl App {
             link: None,
             tab_drag: None,
             sidebar: None,
+            start,
         })
     }
 
@@ -512,6 +521,8 @@ impl App {
         self.search = None;
         self.link = None;
         self.scroll_rest = 0.0;
+        // Another tab (a new one, a click on one): the shell, not the start screen.
+        self.start = None;
         self.update_focus();
         self.request_redraw();
     }
@@ -742,6 +753,7 @@ impl App {
             project: self.project.take(),
             tabs: std::mem::take(&mut self.tabs),
             active: self.active,
+            start: self.start.take(),
         };
         self.parked.push(left);
         self.enter(next);
@@ -762,6 +774,8 @@ impl App {
         self.set_status(None);
         self.on_resize(); // room for this project's name before the tabs
         self.show_tab(self.active);
+        // After `show_tab`, which puts a start screen away.
+        self.start = workspace.start;
     }
 
     /// The tabs of the project `name` (`None`: home, one plain tab), started now:
@@ -814,10 +828,15 @@ impl App {
             folder: project.folder,
             color: project.color,
         });
+        // A new home: the start screen.
+        let start = project
+            .is_none()
+            .then(|| Start::new(project::recent_entries(start::RECENT)));
         Ok(Workspace {
             project,
             tabs,
             active: 0,
+            start,
         })
     }
 
@@ -1119,6 +1138,41 @@ impl App {
         self.request_redraw();
     }
 
+    /// A key while the start screen shows: ↑↓ choose a project, Enter opens it,
+    /// Esc puts the screen away. Any other key puts it away too, and goes on as
+    /// usual: typing starts the shell's line, a shortcut does its thing. The
+    /// sidebar and the palette open over it. Returns `true` if the key was the
+    /// start screen's.
+    fn start_key(&mut self, event: &KeyEvent, shortcut: Option<&Action>) -> bool {
+        if matches!(shortcut, Some(Action::Sidebar | Action::Palette)) {
+            return false;
+        }
+        let Some(start) = &mut self.start else {
+            return false;
+        };
+        match &event.logical_key {
+            Key::Named(NamedKey::ArrowUp) => start.move_selection(-1),
+            Key::Named(NamedKey::ArrowDown) => start.move_selection(1),
+            Key::Named(NamedKey::Enter) if start.chosen().is_some() => {
+                if let Some(action) = start.chosen() {
+                    self.run(action);
+                }
+            }
+            Key::Named(NamedKey::Escape) => self.start = None,
+            // Shift, Ctrl, Alt alone: the start of a shortcut, maybe.
+            Key::Named(NamedKey::Shift | NamedKey::Control | NamedKey::Alt | NamedKey::Super) => {
+                return true;
+            }
+            _ => {
+                self.start = None;
+                self.request_redraw();
+                return false;
+            }
+        }
+        self.request_redraw();
+        true
+    }
+
     /// Del in the sidebar: closes the chosen project, if it's open (see
     /// `close_project`). The sidebar stays, and shows it closed.
     fn sidebar_close(&mut self) {
@@ -1414,6 +1468,11 @@ impl ApplicationHandler<UserEvent> for App {
                 self.mouse_inside = false;
                 self.set_hovered(None);
                 self.update_link();
+                if let Some(start) = &mut self.start
+                    && start.hover(None)
+                {
+                    self.request_redraw();
+                }
             }
             WindowEvent::MouseInput { state, button, .. } => self.on_mouse_button(state, button),
             WindowEvent::Focused(focused) => {
@@ -1473,6 +1532,10 @@ impl App {
             sidebar.update_live(|name| self.live_of(name));
             self.sidebar = Some(sidebar);
         }
+        if let Some(mut start) = self.start.take() {
+            start.update_live(|name| self.live_of(name));
+            self.start = Some(start);
+        }
         let labels: Vec<TabLabel> = self
             .tabs
             .iter()
@@ -1496,6 +1559,7 @@ impl App {
             project: self.project.as_ref().map(|p| (p.name.as_str(), p.color)),
             link: self.link.as_ref().map(|(found, _)| *found),
             sidebar: self.sidebar.as_ref(),
+            start: self.start.as_ref(),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -1579,6 +1643,9 @@ impl App {
             self.search_key(&event, shortcut);
             return;
         }
+        if self.start.is_some() && self.start_key(&event, shortcut.as_ref()) {
+            return;
+        }
         if let Some(action) = shortcut {
             self.run(action);
             return;
@@ -1594,6 +1661,9 @@ impl App {
 
     /// Mouse wheel or touchpad: scroll the view into the scrollback.
     fn on_mouse_wheel(&mut self, delta: MouseScrollDelta) {
+        if self.start.is_some() {
+            return; // nothing to scroll under it
+        }
         let Some(renderer) = &self.renderer else {
             return;
         };
@@ -1675,6 +1745,14 @@ impl App {
             }
             return;
         }
+        // The start screen: the row under the mouse is lit.
+        if let Some(start) = &mut self.start {
+            let row = start.row_at(self.layout.text, self.layout.scale, x, y);
+            if start.hover(row) {
+                self.request_redraw();
+            }
+            return;
+        }
         if moved {
             self.update_link();
         }
@@ -1701,6 +1779,7 @@ impl App {
     fn update_link(&mut self) {
         let look = self.modifiers.control_key()
             && self.sidebar.is_none()
+            && self.start.is_none()
             && self.mouse_inside
             && self.over_text()
             && !self.selecting;
@@ -1793,6 +1872,24 @@ impl App {
                 sidebar.select(row);
                 self.sidebar_choose();
             }
+            return;
+        }
+        // The start screen: a click on a project opens it, one elsewhere over
+        // the terminal puts the screen away.
+        if let Some(start) = &self.start
+            && state == ElementState::Pressed
+            && self
+                .layout
+                .inside
+                .contains(self.mouse_pos.0, self.mouse_pos.1)
+        {
+            let (x, y) = self.mouse_pos;
+            let row = start.row_at(self.layout.text, self.layout.scale, x, y);
+            match row.and_then(|row| start.open(row)) {
+                Some(action) if button == MouseButton::Left => self.run(action),
+                _ => self.start = None,
+            }
+            self.request_redraw();
             return;
         }
         // A middle click on a tab closes it, as in a browser.

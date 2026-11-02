@@ -27,6 +27,7 @@ use crate::theme;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// On top of a file Kel wrote.
 const HEADER: &str = "\
@@ -179,24 +180,55 @@ pub fn sidebar_entries(current: Option<&str>) -> Vec<Entry> {
     let Ok(dir) = dir() else {
         return Vec::new();
     };
-    names_in(&dir)
+    let entries = names_in(&dir).into_iter().map(|name| {
+        let here = current == Some(name.as_str());
+        entry(name, here)
+    });
+    entries.collect()
+}
+
+/// The projects used last, newest first, at most `count`, for the start screen:
+/// by when their file was written, which Kel does when you leave a project or
+/// close the window.
+pub fn recent_entries(count: usize) -> Vec<Entry> {
+    let Ok(dir) = dir() else {
+        return Vec::new();
+    };
+    let written = names_in(&dir).into_iter().map(|name| {
+        let file = dir.join(format!("{name}.toml"));
+        let time = std::fs::metadata(file).and_then(|m| m.modified());
+        (time.unwrap_or(SystemTime::UNIX_EPOCH), name)
+    });
+    let names = newest_first(written.collect(), count);
+    names.into_iter().map(|name| entry(name, false)).collect()
+}
+
+/// The names of the `count` newest, newest first. The same time (two files
+/// written in one go): by name.
+fn newest_first(mut written: Vec<(SystemTime, String)>, count: usize) -> Vec<String> {
+    written.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    written
         .into_iter()
-        .map(|name| {
-            let here = current == Some(name.as_str());
-            let (color, hint) = match load(&name) {
-                Ok(project) if here => (project.color, "here".to_string()),
-                Ok(project) => (project.color, short_folder(&project.folder)),
-                Err(_) => (None, "can't read its file".to_string()),
-            };
-            Entry {
-                name,
-                color,
-                hint,
-                current: here,
-                live: Default::default(), // App knows: `Sidebar::update_live`
-            }
-        })
+        .take(count)
+        .map(|(_, name)| name)
         .collect()
+}
+
+/// The project `name` as a row of the sidebar or the start screen: its color,
+/// and where it is ("here" if it's on screen).
+fn entry(name: String, here: bool) -> Entry {
+    let (color, hint) = match load(&name) {
+        Ok(project) if here => (project.color, "here".to_string()),
+        Ok(project) => (project.color, short_folder(&project.folder)),
+        Err(_) => (None, "can't read its file".to_string()),
+    };
+    Entry {
+        name,
+        color,
+        hint,
+        current: here,
+        live: Default::default(), // App knows: `update_live`
+    }
 }
 
 /// The palette's line for saving the tabs as the project `typed`: "Save the tabs
@@ -272,6 +304,19 @@ pub fn save(name: &str, project: &Project) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_projects_newest_first() {
+        let at = |s| SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(s);
+        let written = vec![
+            (at(10), "old".to_string()),
+            (at(30), "web".to_string()),
+            (at(20), "kel".to_string()),
+            (at(30), "api".to_string()), // the same time as web: by name
+        ];
+        assert_eq!(newest_first(written.clone(), 3), ["api", "web", "kel"]);
+        assert_eq!(newest_first(written, 10).len(), 4);
+    }
 
     const EXAMPLE: &str = r#"
 folder = 'C:\code\kel'
