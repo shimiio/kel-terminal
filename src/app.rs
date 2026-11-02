@@ -750,6 +750,7 @@ impl App {
             }
             Action::Install(name) => self.install(name),
             Action::OpenProject(name) => self.open_project(&name),
+            Action::OpenHome => self.open_home(),
             Action::SaveProject(name) => self.save_as_project(name),
         }
     }
@@ -794,6 +795,19 @@ impl App {
             .and_then(|kel| std::process::Command::new(kel).arg(name).spawn());
         if let Err(e) = started {
             self.set_status(Some(format!("can't open project \"{name}\": {e}")));
+        }
+    }
+
+    /// Opens Kel without a project in a new window, as `kel` alone does: home,
+    /// where you go to the projects from. Nothing if this window is that.
+    fn open_home(&mut self) {
+        if self.project.is_none() {
+            return; // it's this window
+        }
+        let started =
+            std::env::current_exe().and_then(|kel| std::process::Command::new(kel).spawn());
+        if let Err(e) = started {
+            self.set_status(Some(format!("can't open Kel: {e}")));
         }
     }
 

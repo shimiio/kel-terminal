@@ -1,10 +1,11 @@
 //! The sidebar (`≡` at the tab bar's start, or Ctrl+Shift+B): a panel over the
-//! left of the window, the rest dimmed. It lists the projects, each with its
-//! color, and ends with "Save the tabs as a project".
+//! left of the window, the rest dimmed. First `home`, Kel without a project; then
+//! the projects, each with its color; last "Save the tabs as a project".
 //!
 //! ```text
 //! ┌────────────────────────┐
 //! │ kel terminal           │
+//! │ ○ home                 │
 //! │ PROJECTS               │
 //! │ ● kel      this window │  ← chosen: lit
 //! │ ● web      …\code\web  │
@@ -22,12 +23,13 @@
 use crate::keys::Action;
 use crate::layout::{Rect, scaled};
 
-/// Where the list starts, from the panel's top; a row's height; the room before
-/// the "Save" row (a line goes there). Pixels at 100%.
-const LIST_TOP: usize = 86;
+/// Where `home` is, from the panel's top; where the projects start (their title
+/// above them); a row's height; the room before "Save" (a line goes there); the
+/// bottom, under the list, for the keys' hint. Pixels at 100%.
+const HOME_TOP: usize = 52;
+const LIST_TOP: usize = 120;
 const ROW_HEIGHT: usize = 32;
 const SAVE_GAP: usize = 16;
-/// The bottom of the panel, under the list: the keys' hint.
 const FOOTER: usize = 48;
 
 /// One project in the list.
@@ -42,16 +44,29 @@ pub struct Entry {
     pub current: bool,
 }
 
+/// What a row of the sidebar is.
+#[derive(Debug, PartialEq)]
+pub enum Row<'a> {
+    /// Kel without a project. `here`: this window is that.
+    Home {
+        here: bool,
+    },
+    Project(&'a Entry),
+    /// "Save the tabs as a project".
+    Save,
+}
+
 pub struct Sidebar {
     projects: Vec<Entry>,
-    /// The chosen row: a project, or `projects.len()` for "Save".
+    /// The chosen row: 0 is `home`, then the projects, then "Save".
     selected: usize,
 }
 
 impl Sidebar {
-    /// The sidebar with these projects, this window's chosen (else the first).
+    /// The sidebar with these projects. This window's row is chosen: its
+    /// project's, or `home` without one.
     pub fn new(projects: Vec<Entry>) -> Sidebar {
-        let selected = projects.iter().position(|p| p.current).unwrap_or(0);
+        let selected = projects.iter().position(|p| p.current).map_or(0, |i| i + 1);
         Sidebar { projects, selected }
     }
 
@@ -59,9 +74,22 @@ impl Sidebar {
         &self.projects
     }
 
-    /// The rows: every project, and "Save" last.
+    /// The rows: `home`, every project, "Save".
     pub fn rows(&self) -> usize {
-        self.projects.len() + 1
+        self.projects.len() + 2
+    }
+
+    /// What row `row` is.
+    pub fn row(&self, row: usize) -> Row<'_> {
+        match row {
+            0 => Row::Home {
+                here: !self.projects.iter().any(|p| p.current),
+            },
+            _ => match self.projects.get(row - 1) {
+                Some(project) => Row::Project(project),
+                None => Row::Save,
+            },
+        }
     }
 
     pub fn selected(&self) -> usize {
@@ -81,12 +109,13 @@ impl Sidebar {
         self.selected = (self.selected as isize + step).rem_euclid(n) as usize;
     }
 
-    /// What Enter (or a click) on the chosen row does: open that project, or for
-    /// "Save", the palette, where the new project's name is typed.
+    /// What Enter (or a click) on the chosen row does: go home, open that
+    /// project, or for "Save", the palette, where the new project's name is typed.
     pub fn chosen(&self) -> Action {
-        match self.projects.get(self.selected) {
-            Some(project) => Action::OpenProject(project.name.clone()),
-            None => Action::Palette,
+        match self.row(self.selected) {
+            Row::Home { .. } => Action::OpenHome,
+            Row::Project(project) => Action::OpenProject(project.name.clone()),
+            Row::Save => Action::Palette,
         }
     }
 
@@ -99,18 +128,28 @@ impl Sidebar {
     }
 }
 
-/// Where row `row` is in the sidebar `panel`, with `projects` projects above
-/// "Save". e.g. at 100%, a panel from y = 8: row 0 at y = 8 + 86, row 1 at
-/// 8 + 86 + 32; with 2 projects, "Save" at 8 + 86 + 64 + 16.
+/// Where row `row` is in the sidebar `panel`, with `projects` projects. e.g. at
+/// 100%, a panel from y = 8: `home` at 8 + 52; the projects at 8 + 120, 8 + 152…;
+/// with 2 of them, "Save" at 8 + 120 + 64 + 16. With none, "Save" leaves a row
+/// for "no projects yet".
 pub fn row_rect(panel: Rect, scale: f32, row: usize, projects: usize) -> Rect {
     let s = |n: usize| scaled(n, scale);
-    let gap = if row >= projects { s(SAVE_GAP) } else { 0 };
+    let y = match row {
+        0 => s(HOME_TOP),
+        _ if row <= projects => s(LIST_TOP) + (row - 1) * s(ROW_HEIGHT),
+        _ => s(LIST_TOP) + projects.max(1) * s(ROW_HEIGHT) + s(SAVE_GAP),
+    };
     Rect {
         x: panel.x + s(8),
-        y: panel.y + s(LIST_TOP) + row * s(ROW_HEIGHT) + gap,
+        y: panel.y + y,
         w: panel.w.saturating_sub(s(16)),
         h: s(ROW_HEIGHT),
     }
+}
+
+/// Where the projects' title ("PROJECTS") goes: just above them.
+pub fn title_y(panel: Rect, scale: f32) -> usize {
+    panel.y + scaled(LIST_TOP - 24, scale)
 }
 
 /// Whether the row `r` fits above the footer. More projects than fit: the last
@@ -138,26 +177,31 @@ mod tests {
     }
 
     #[test]
-    fn this_window_s_project_is_chosen_first() {
+    fn this_window_s_row_is_chosen_first() {
         let sidebar = Sidebar::new(vec![entry("api", false), entry("kel", true)]);
-        assert_eq!(sidebar.selected(), 1);
+        assert_eq!(sidebar.selected(), 2);
         assert_eq!(sidebar.chosen(), Action::OpenProject("kel".into()));
-        // No project here: the first one.
+        assert_eq!(sidebar.row(0), Row::Home { here: false });
+        // No project here: home.
         let sidebar = Sidebar::new(vec![entry("api", false)]);
-        assert_eq!(sidebar.selected(), 0);
+        assert_eq!(sidebar.row(0), Row::Home { here: true });
+        assert_eq!(sidebar.chosen(), Action::OpenHome);
     }
 
     #[test]
-    fn the_save_row_is_last() {
+    fn home_first_save_last() {
         let mut sidebar = Sidebar::new(vec![entry("api", false), entry("kel", false)]);
-        assert_eq!(sidebar.rows(), 3);
-        sidebar.move_selection(-1); // up from the first: "Save"
+        assert_eq!(sidebar.rows(), 4);
+        assert_eq!(sidebar.row(3), Row::Save);
+        sidebar.move_selection(-1); // up from home: "Save"
         assert_eq!(sidebar.chosen(), Action::Palette);
-        sidebar.move_selection(1); // and round to the first
+        sidebar.move_selection(1); // and round to home
+        assert_eq!(sidebar.chosen(), Action::OpenHome);
+        sidebar.move_selection(1);
         assert_eq!(sidebar.chosen(), Action::OpenProject("api".into()));
-        // No projects at all: only "Save".
+        // No projects at all: home and "Save".
         let sidebar = Sidebar::new(Vec::new());
-        assert_eq!((sidebar.rows(), sidebar.chosen()), (1, Action::Palette));
+        assert_eq!((sidebar.rows(), sidebar.row(1)), (2, Row::Save));
     }
 
     #[test]
@@ -169,14 +213,18 @@ mod tests {
             w: 280,
             h: 600,
         };
-        // Rows at 94..126 and 126..158, then the gap, "Save" at 174..206.
-        assert_eq!(sidebar.row_at(panel, 1.0, 50, 100), Some(0));
-        assert_eq!(sidebar.row_at(panel, 1.0, 50, 130), Some(1));
-        assert_eq!(sidebar.row_at(panel, 1.0, 50, 165), None); // the gap
-        assert_eq!(sidebar.row_at(panel, 1.0, 50, 180), Some(2));
-        assert_eq!(sidebar.row_at(panel, 1.0, 50, 50), None); // the logo
+        // home at 60..92; projects at 128..160 and 160..192; the gap; "Save"
+        // at 208..240.
+        let at = |y| sidebar.row_at(panel, 1.0, 50, y);
+        assert_eq!(at(70), Some(0));
+        assert_eq!(at(130), Some(1));
+        assert_eq!(at(170), Some(2));
+        assert_eq!(at(200), None); // the gap
+        assert_eq!(at(220), Some(3));
+        assert_eq!(at(30), None); // the logo
+        assert_eq!(at(110), None); // the projects' title
         // A short panel: "Save" doesn't fit above the footer, it isn't there.
-        let short = Rect { h: 200, ..panel };
-        assert_eq!(sidebar.row_at(short, 1.0, 50, 180), None);
+        let short = Rect { h: 230, ..panel };
+        assert_eq!(sidebar.row_at(short, 1.0, 50, 220), None);
     }
 }

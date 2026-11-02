@@ -41,6 +41,8 @@ pub enum Action {
     Install(&'static str),
     /// Opens the project of this name in a new window (see `project`).
     OpenProject(String),
+    /// Opens Kel without a project in a new window: `home` in the sidebar.
+    OpenHome,
     /// Saves the tabs as a new project of this name; the window becomes it.
     SaveProject(String),
 }

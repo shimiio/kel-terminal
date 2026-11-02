@@ -54,7 +54,7 @@ the new program.
 | Ctrl+Shift+P | Command palette: type a few letters (`ntb` finds "New tab"), Up/Down, Enter; Esc or a click closes it |
 | Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C). A line too long for the window comes out as one line, not cut where it wrapped |
 | Ctrl+Shift+V | Paste |
-| Ctrl+Shift+B | The sidebar of projects (or `≡` at the tab bar's start): each with its color; Enter or a click opens one, the last line saves the tabs as a new one. Esc or a click outside closes |
+| Ctrl+Shift+B | The sidebar of projects (or `≡` at the tab bar's start). First `home`: Kel without a project. Then the projects, each with its color; Enter or a click opens one, the last line saves the tabs as a new one. Esc or a click outside closes |
 | Ctrl+Shift+F | Find in the output (not the typed commands: that's PowerShell's Ctrl+R). Type: every match is marked, the newest one chosen. Enter or Up: the one before, Shift+Enter or Down: the next one. Any case: `error` finds `ERROR`, also cut at the window's edge. Esc closes |
 | Ctrl+click | Opens the `https://` link under the mouse in the browser (also in nvim). Hold Ctrl and the link is underlined. A link cut at the window's edge is one link; a `.` or `,` after it isn't part of it |
 | Ctrl+C | Stop the running command |

@@ -13,7 +13,7 @@ use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::palette::Palette;
 use crate::search::{self, Search};
-use crate::sidebar::{self, Sidebar};
+use crate::sidebar::{self, Row, Sidebar};
 use crate::term::Found;
 use crate::term::{CursorShape, Grid, Underline, Width, char_width};
 use crate::theme::Theme;
@@ -991,12 +991,12 @@ fn draw_sidebar(
     let pad = ui.px(18);
     let text_w = panel.w.saturating_sub(2 * pad);
 
-    // The logo (a pixel one later), and the list's title.
+    // The logo (a pixel one later), and the projects' title.
     let at = (panel.x + pad, panel.y + ui.px(20));
     let logo_w = draw_ui_text(pixels, width, font, ui, "kel", at, text_w, accent);
     let at = (at.0 + logo_w + ui.advance, at.1);
     draw_ui_text(pixels, width, font, ui, "terminal", at, text_w, dim);
-    let at = (panel.x + pad, panel.y + ui.px(58));
+    let at = (panel.x + pad, sidebar::title_y(panel, layout.scale));
     draw_ui_text(pixels, width, font, ui, "PROJECTS", at, text_w, dim);
 
     let projects = sidebar.projects();
@@ -1011,52 +1011,47 @@ fn draw_sidebar(
             fill_rect(pixels, width, r.x, r.y, r.w, r.h, lit);
         }
         let text_y = r.y + r.h.saturating_sub(ui.line_h) / 2;
-        let Some(project) = projects.get(row) else {
-            // "Save", after a line across.
-            let line_y = r.y - ui.px(8);
-            fill_rect(
-                pixels,
-                width,
-                panel.x + pad,
-                line_y,
-                text_w,
-                1,
-                theme.border,
-            );
-            let color = if chosen { theme.foreground } else { dim };
-            let label = "+ Save the tabs as a project";
-            let at = (r.x + ui.px(10), text_y);
-            draw_ui_text(pixels, width, font, ui, label, at, r.w, color);
-            continue;
-        };
-        // A dot in the project's color, its name, and where it is at the right.
         let radius = 4.0 * ui.scale;
-        let cx = (r.x + ui.px(14)) as f32;
-        let cy = r.y as f32 + r.h as f32 / 2.0;
-        let dot = project.color.unwrap_or(dim);
-        fill_circle(pixels, width, cx, cy, radius, 0.0, dot);
+        let (cx, cy) = ((r.x + ui.px(14)) as f32, r.y as f32 + r.h as f32 / 2.0);
+        let (name, hint) = match sidebar.row(row) {
+            Row::Save => {
+                // After a line across.
+                let line_y = r.y - ui.px(8);
+                let line = theme.border;
+                fill_rect(pixels, width, panel.x + pad, line_y, text_w, 1, line);
+                let color = if chosen { theme.foreground } else { dim };
+                let label = "+ Save the tabs as a project";
+                let at = (r.x + ui.px(10), text_y);
+                draw_ui_text(pixels, width, font, ui, label, at, r.w, color);
+                continue;
+            }
+            // A ring, not a dot: no project, no color of its own.
+            Row::Home { here } => {
+                let hole = radius - 1.5 * ui.scale;
+                fill_circle(pixels, width, cx, cy, radius, hole, dim);
+                ("home", if here { "this window" } else { "" })
+            }
+            // A dot in the project's color.
+            Row::Project(project) => {
+                let dot = project.color.unwrap_or(dim);
+                fill_circle(pixels, width, cx, cy, radius, 0.0, dot);
+                (project.name.as_str(), project.hint.as_str())
+            }
+        };
+        // The name, and at the right where it is.
         let name_x = r.x + ui.px(28);
-        let hint_room = r.w / 2;
-        let hint = keep_end(&project.hint, hint_room / ui.advance.max(1));
+        let hint = keep_end(hint, (r.w / 2) / ui.advance.max(1));
         let hint_w = hint.chars().count() * ui.advance;
         let name_w = (r.x + r.w).saturating_sub(name_x + hint_w + ui.px(18));
-        let at = (name_x, text_y);
-        draw_ui_text(
-            pixels,
-            width,
-            font,
-            ui,
-            &project.name,
-            at,
-            name_w,
-            theme.foreground,
-        );
+        let fg = theme.foreground;
+        draw_ui_text(pixels, width, font, ui, name, (name_x, text_y), name_w, fg);
         let at = (r.x + r.w - ui.px(10) - hint_w, text_y);
         draw_ui_text(pixels, width, font, ui, &hint, at, hint_w, dim);
     }
     if projects.is_empty() {
-        let r = sidebar::row_rect(panel, layout.scale, 0, 0);
-        let at = (r.x + ui.px(10), r.y.saturating_sub(ui.px(SAVE_HINT_UP)));
+        // Where the first project would be.
+        let r = sidebar::row_rect(panel, layout.scale, 1, 1);
+        let at = (r.x + ui.px(10), r.y + r.h.saturating_sub(ui.line_h) / 2);
         draw_ui_text(pixels, width, font, ui, "no projects yet", at, r.w, dim);
     }
 
@@ -1076,10 +1071,6 @@ fn draw_sidebar(
         dim,
     );
 }
-
-/// With no projects, "no projects yet" goes this far above "Save" (its row
-/// is pushed down by the gap).
-const SAVE_HINT_UP: usize = 30;
 
 /// `text` in at most `chars` letters, cut at the start: a folder's end says the
 /// most. e.g. "…\Documents\notes" in 12: "…ments\notes".
