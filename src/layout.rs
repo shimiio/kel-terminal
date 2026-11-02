@@ -34,6 +34,8 @@ const BUTTON_WIDTH: usize = 46;
 const BUTTONS_GAP: usize = 8;
 /// The `+` (new tab) and `⌄` (palette) buttons after the tabs: this wide each.
 const BAR_BUTTON_WIDTH: usize = 28;
+/// The sidebar: this wide, from the tab bar's top-left corner down.
+const SIDEBAR_WIDTH: usize = 280;
 /// A tab's `×`: a square this big, this far from the tab's right end.
 const TAB_CLOSE_SIZE: usize = 18;
 const TAB_CLOSE_INSET: usize = 7;
@@ -63,6 +65,8 @@ pub enum TitleHit {
     NewTab,
     /// `⌄`: the command palette.
     Palette,
+    /// `≡`, before the tabs: the sidebar.
+    Sidebar,
     /// The tab at `index`; `close`: on its `×`.
     Tab {
         index: usize,
@@ -138,6 +142,9 @@ pub struct Layout {
     pub title_bar: Rect,
     /// The part of the title bar where the tabs are.
     pub tab_bar: Rect,
+    /// `≡` at the tab bar's start: opens the sidebar. The project's name and the
+    /// tabs come after it.
+    pub sidebar_button: Rect,
     /// The window buttons, top right, from the window's top edge down to the panel.
     pub minimize: Rect,
     pub maximize: Rect,
@@ -199,11 +206,16 @@ impl Spacing {
         };
         let inside = panel.shrink(border);
         let text = inside.shrink(padding);
+        let sidebar_button = Rect {
+            w: s(BAR_BUTTON_WIDTH).min(tab_bar.w),
+            ..tab_bar
+        };
         Layout {
             scale,
             window,
             title_bar,
             tab_bar,
+            sidebar_button,
             minimize,
             maximize,
             close,
@@ -267,20 +279,38 @@ impl Layout {
         .map(|(_, button)| button)
     }
 
-    /// Where each of `count` tabs is, left to right in the tab bar. They leave room
-    /// for the `+` and `⌄` buttons after them. e.g. an 846-pixel bar: 3 tabs are
-    /// 180 wide each; 10 tabs get (846 - 2 x 28) / 10 = 79 each.
-    /// Leaves `lead` pixels at the tab bar's start, before the first tab, for the
-    /// project's name. At most half the bar: the tabs need room too.
+    /// Leaves `lead` pixels after `≡`, before the first tab, for the project's
+    /// name. At most half the bar: the tabs need room too.
     pub fn set_lead(&mut self, lead: usize) {
         self.lead = lead.min(self.tab_bar.w / 2);
     }
 
+    /// The sidebar's panel: over the left of the window, from the tab bar's top
+    /// to as far from the bottom, `SIDEBAR_WIDTH` wide (less in a narrow window).
+    pub fn sidebar(&self) -> Rect {
+        let (x, y) = (self.tab_bar.x, self.tab_bar.y);
+        Rect {
+            x,
+            y,
+            w: scaled(SIDEBAR_WIDTH, self.scale).min(self.window.w.saturating_sub(2 * x)),
+            h: self.window.h.saturating_sub(2 * y),
+        }
+    }
+
+    /// Where the first tab starts: after `≡` and the project's name.
+    fn tabs_start(&self) -> usize {
+        self.sidebar_button.x + self.sidebar_button.w + self.lead
+    }
+
+    /// Where each of `count` tabs is, left to right in the tab bar. They leave room
+    /// for `≡` before them and the `+` and `⌄` buttons after them. e.g. an
+    /// 846-pixel bar: 3 tabs are 180 wide each; 10 tabs get (846 - 3 x 28) / 10
+    /// = 76 each.
     pub fn tabs(&self, count: usize) -> Vec<Rect> {
         let w = self.tab_w(count);
         (0..count)
             .map(|i| Rect {
-                x: self.tab_bar.x + self.lead + i * w,
+                x: self.tabs_start() + i * w,
                 w,
                 ..self.tab_bar
             })
@@ -289,25 +319,26 @@ impl Layout {
 
     /// The place among `count` tabs for a tab dragged to `x`: the one under it,
     /// or the first or last past the ends. All tabs are as wide, so it's a
-    /// division: x = 8 + 50 + 400 with 180-wide tabs from 8 + 50 → place 2.
+    /// division: x = 86 + 400 with 180-wide tabs from 86 → place 2.
     pub fn tab_slot(&self, x: usize, count: usize) -> usize {
-        let start = self.tab_bar.x + self.lead;
+        let start = self.tabs_start();
         let w = self.tab_w(count).max(1);
         (x.saturating_sub(start) / w).min(count.saturating_sub(1))
     }
 
     /// One tab's width, when there are `count`.
     fn tab_w(&self, count: usize) -> usize {
+        let before = self.tabs_start() - self.tab_bar.x;
         let room = self
             .tab_bar
             .w
-            .saturating_sub(self.lead + 2 * self.bar_button_w);
+            .saturating_sub(before + 2 * self.bar_button_w);
         self.tab_width.min(room / count.max(1))
     }
 
     /// The `+` and `⌄` buttons, right after the last of `count` tabs.
     pub fn bar_buttons(&self, count: usize) -> (Rect, Rect) {
-        let x = self.tab_bar.x + self.lead + count * self.tab_w(count);
+        let x = self.tabs_start() + count * self.tab_w(count);
         let button = |i: usize| Rect {
             x: x + i * self.bar_button_w,
             w: self.bar_button_w,
@@ -334,6 +365,9 @@ impl Layout {
     pub fn title_hit(&self, x: usize, y: usize, count: usize) -> Option<TitleHit> {
         if let Some(button) = self.button_at(x, y) {
             return Some(TitleHit::Window(button));
+        }
+        if self.sidebar_button.contains(x, y) {
+            return Some(TitleHit::Sidebar);
         }
         let tabs = self.tabs(count);
         if let Some(index) = tabs.iter().position(|tab| tab.contains(x, y)) {
@@ -423,21 +457,22 @@ mod tests {
     fn tabs_side_by_side() {
         let layout = Spacing::default().layout(1000, 700, 1.0);
         let tabs = layout.tabs(3);
+        // After `≡`, 28 wide.
         assert_eq!(
             tabs[0],
             Rect {
-                x: 8,
+                x: 36,
                 y: 8,
                 w: 180,
                 h: 32
             }
         );
-        assert_eq!(tabs[2].x, 8 + 2 * 180);
-        // Too many for 180 each: (846 - 2 x 28 for + and ⌄) / 10 = 79
-        assert_eq!(layout.tabs(10)[0].w, 79);
-        // A click at (200, 20) is on the second tab.
-        assert!(tabs[1].contains(200, 20));
-        assert!(!tabs[1].contains(200, 45)); // below the bar: the panel
+        assert_eq!(tabs[2].x, 36 + 2 * 180);
+        // Too many for 180 each: (846 - 3 x 28 for ≡, + and ⌄) / 10 = 76
+        assert_eq!(layout.tabs(10)[0].w, 76);
+        // A click at (250, 20) is on the second tab.
+        assert!(tabs[1].contains(250, 20));
+        assert!(!tabs[1].contains(250, 45)); // below the bar: the panel
     }
 
     #[test]
@@ -466,8 +501,10 @@ mod tests {
     #[test]
     fn title_bar_hits() {
         let layout = Spacing::default().layout(1000, 700, 1.0);
-        // 2 tabs: 8..188 and 188..368, then + at 368..396 and ⌄ at 396..424.
+        // ≡ at 8..36, 2 tabs: 36..216 and 216..396, then + at 396..424 and ⌄
+        // at 424..452.
         let hit = |x| layout.title_hit(x, 20, 2);
+        assert_eq!(hit(20), Some(TitleHit::Sidebar));
         assert_eq!(
             hit(100),
             Some(TitleHit::Tab {
@@ -475,16 +512,16 @@ mod tests {
                 close: false
             })
         );
-        // The × of the second tab: 18 wide, ending 7 before the tab's end (368).
+        // The × of the second tab: 18 wide, ending 7 before the tab's end (396).
         assert_eq!(
-            hit(350),
+            hit(380),
             Some(TitleHit::Tab {
                 index: 1,
                 close: true
             })
         );
-        assert_eq!(hit(380), Some(TitleHit::NewTab));
-        assert_eq!(hit(410), Some(TitleHit::Palette));
+        assert_eq!(hit(410), Some(TitleHit::NewTab));
+        assert_eq!(hit(440), Some(TitleHit::Palette));
         assert_eq!(hit(600), None); // the empty bar
         assert_eq!(hit(990), Some(TitleHit::Window(WindowButton::Close)));
         // Many tabs: the buttons still fit before the window buttons.
@@ -497,12 +534,12 @@ mod tests {
         let mut layout = Spacing::default().layout(1000, 700, 1.0);
         layout.set_lead(50);
         let tabs = layout.tabs(2);
-        assert_eq!(tabs[0].x, 8 + 50);
+        assert_eq!(tabs[0].x, 8 + 28 + 50);
         assert_eq!(tabs[1].x, tabs[0].x + tabs[0].w);
         let (new_tab, _) = layout.bar_buttons(2);
         assert_eq!(new_tab.x, tabs[1].x + tabs[1].w);
         // A click on the name: the empty bar, which moves the window.
-        assert_eq!(layout.title_hit(30, 20, 2), None);
+        assert_eq!(layout.title_hit(60, 20, 2), None);
         // Many tabs still fit, with the name.
         let (_, palette) = layout.bar_buttons(30);
         assert!(palette.x + palette.w <= layout.tab_bar.x + layout.tab_bar.w);
@@ -519,6 +556,16 @@ mod tests {
         // Past the ends: the first and the last place.
         assert_eq!(layout.tab_slot(0, 3), 0);
         assert_eq!(layout.tab_slot(990, 3), 2);
+    }
+
+    #[test]
+    fn the_sidebar_panel() {
+        let layout = Spacing::default().layout(1000, 700, 1.0);
+        let panel = layout.sidebar();
+        assert_eq!((panel.x, panel.y, panel.w, panel.h), (8, 8, 280, 684));
+        // A narrow window: not wider than it.
+        let narrow = Spacing::default().layout(200, 300, 1.0).sidebar();
+        assert_eq!(narrow.w, 184);
     }
 
     #[test]

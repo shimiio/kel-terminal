@@ -162,7 +162,12 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       with the name and the icon, three spots of color; decide after using the name a while)
 - [ ] Pixel-art tab icons (made in Aseprite, PNG), outlines filled with the accent color
 - [ ] Pixel font for the UI: the Kel logo, the project name (built into the exe, see Fonts)
-- [ ] Sidebar on the left (hover with a short delay, or a key): dims the rest, lists projects
+- [x] Sidebar on the left: `≡` at the tab bar's start (a visible handle: hover alone wouldn't
+      say it's there), Ctrl+Shift+B, or the palette. Dims the rest, lists the projects with
+      their colors, the last line saves the tabs as a new one. Over the terminal, so nothing
+      reflows when it opens
+- [ ] Sidebar: open on hover over `≡` (with a delay)? Tried without first; the pixel logo;
+      scrolling when there are more projects than fit
 - [ ] Workspaces in one window: a general place and projects, switched from the palette or
       the sidebar. Switching hides a set of tabs, nothing stops: a `ping -t` keeps going.
       The general place is remembered too (a hidden `home` project, saved on close).

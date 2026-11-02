@@ -14,6 +14,7 @@ use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{Chrome, Renderer, TabLabel};
 use crate::search::Search;
 use crate::setup;
+use crate::sidebar::Sidebar;
 use crate::tab::{Tab, TabId};
 use crate::term::{Found, Terminal};
 use std::path::PathBuf;
@@ -184,6 +185,8 @@ pub struct App {
     link: Option<(Found, String)>,
     /// The tab under the pressed mouse button, until it's let go.
     tab_drag: Option<TabDrag>,
+    /// The sidebar of projects, while it's open. It gets the keys and the clicks.
+    sidebar: Option<Sidebar>,
 }
 
 impl App {
@@ -320,6 +323,7 @@ impl App {
             search: None,
             link: None,
             tab_drag: None,
+            sidebar: None,
         })
     }
 
@@ -701,10 +705,25 @@ impl App {
                     None => Some(Search::new()),
                 };
                 self.palette = None;
+                self.sidebar = None;
+                self.request_redraw();
+            }
+            Action::Sidebar => {
+                self.sidebar = match self.sidebar {
+                    Some(_) => None,
+                    None => {
+                        let current = self.project.as_ref().map(|p| p.name.as_str());
+                        Some(Sidebar::new(project::sidebar_entries(current)))
+                    }
+                };
+                self.palette = None;
+                self.search = None;
+                self.link = None;
                 self.request_redraw();
             }
             Action::Palette => {
                 self.search = None;
+                self.sidebar = None;
                 self.palette = match self.palette {
                     Some(_) => None,
                     None => {
@@ -797,6 +816,31 @@ impl App {
             let shell = self.config.shell.clone();
             let tab = self.tabs.last_mut().unwrap();
             tab.type_when_ready(&setup::command(&path), &shell);
+        }
+    }
+
+    /// A key while the sidebar is open: Up/Down choose a row, Enter does it, Esc
+    /// closes. Everything else waits until it's closed.
+    fn sidebar_key(&mut self, event: &KeyEvent) {
+        let Some(sidebar) = &mut self.sidebar else {
+            return;
+        };
+        match &event.logical_key {
+            Key::Named(NamedKey::Escape) => self.sidebar = None,
+            Key::Named(NamedKey::ArrowUp) => sidebar.move_selection(-1),
+            Key::Named(NamedKey::ArrowDown) => sidebar.move_selection(1),
+            Key::Named(NamedKey::Enter) => self.sidebar_choose(),
+            _ => {}
+        }
+        self.request_redraw();
+    }
+
+    /// Does the sidebar's chosen row, and closes it: opens that project, or the
+    /// palette to save the tabs as a new one.
+    fn sidebar_choose(&mut self) {
+        if let Some(sidebar) = self.sidebar.take() {
+            self.run(sidebar.chosen());
+            self.request_redraw();
         }
     }
 
@@ -1122,6 +1166,7 @@ impl App {
             search: self.search.as_ref(),
             project: self.project.as_ref().map(|p| (p.name.as_str(), p.color)),
             link: self.link.as_ref().map(|(found, _)| *found),
+            sidebar: self.sidebar.as_ref(),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -1188,7 +1233,14 @@ impl App {
         let shortcut = keys::shortcut(event.physical_key, self.modifiers);
         // Ctrl+Shift+P and Ctrl+Shift+F still work in the palette and the search:
         // they close one, or swap one for the other.
-        let switch = matches!(shortcut, Some(Action::Palette | Action::Find));
+        let switch = matches!(
+            shortcut,
+            Some(Action::Palette | Action::Find | Action::Sidebar)
+        );
+        if self.sidebar.is_some() && !switch {
+            self.sidebar_key(&event);
+            return;
+        }
         if self.palette.is_some() && !switch {
             self.palette_key(&event);
             return;
@@ -1284,6 +1336,15 @@ impl App {
             }
         }
         self.update_hovered();
+        // The sidebar is open: the row under the mouse is chosen, nothing else.
+        if let Some(sidebar) = &mut self.sidebar {
+            let row = sidebar.row_at(self.layout.sidebar(), self.layout.scale, x, y);
+            if let Some(row) = row.filter(|&row| row != sidebar.selected()) {
+                sidebar.select(row);
+                self.request_redraw();
+            }
+            return;
+        }
         if moved {
             self.update_link();
         }
@@ -1309,6 +1370,7 @@ impl App {
     /// and the mouse becomes a hand. After the mouse moved, or Ctrl changed.
     fn update_link(&mut self) {
         let look = self.modifiers.control_key()
+            && self.sidebar.is_none()
             && self.mouse_inside
             && self.over_text()
             && !self.selecting;
@@ -1384,6 +1446,23 @@ impl App {
         if self.palette.is_some() && state == ElementState::Pressed {
             self.palette = None;
             self.request_redraw();
+            return;
+        }
+        // The sidebar: a click on a row does it, one outside the panel closes it.
+        if let Some(sidebar) = &mut self.sidebar
+            && state == ElementState::Pressed
+        {
+            let (x, y) = self.mouse_pos;
+            let panel = self.layout.sidebar();
+            if !panel.contains(x, y) {
+                self.sidebar = None;
+                self.request_redraw();
+            } else if let Some(row) = sidebar.row_at(panel, self.layout.scale, x, y)
+                && button == MouseButton::Left
+            {
+                sidebar.select(row);
+                self.sidebar_choose();
+            }
             return;
         }
         // A middle click on a tab closes it, as in a browser.
@@ -1463,6 +1542,7 @@ impl App {
                 WindowButton::Close => self.close_window(),
             },
             Some(TitleHit::NewTab) => self.new_tab(),
+            Some(TitleHit::Sidebar) => self.run(Action::Sidebar),
             Some(TitleHit::Palette) => self.run(Action::Palette),
             Some(TitleHit::Tab { index, close: true }) => self.close_tab_at(index, "×"),
             Some(TitleHit::Tab {

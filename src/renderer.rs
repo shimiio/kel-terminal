@@ -13,6 +13,7 @@ use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::palette::Palette;
 use crate::search::{self, Search};
+use crate::sidebar::{self, Sidebar};
 use crate::term::Found;
 use crate::term::{CursorShape, Grid, Underline, Width, char_width};
 use crate::theme::Theme;
@@ -43,6 +44,9 @@ const CLOSE_HOVER: u32 = 0xc42b1c;
 const PROJECT_NAME_LEFT: usize = 4;
 const PROJECT_NAME_GAP: usize = 14;
 const PROJECT_NAME_CHARS: usize = 16;
+
+/// How dark the window gets behind the open sidebar: this much black (of 255).
+const SIDEBAR_DIM: u32 = 120;
 
 /// The search box: this wide, in letters (less in a narrow window).
 const SEARCH_CHARS: usize = 36;
@@ -98,6 +102,8 @@ pub struct Chrome<'a> {
     pub project: Option<(&'a str, Option<u32>)>,
     /// The link under the mouse while Ctrl is held: underlined. Lasting rows.
     pub link: Option<Found>,
+    /// The sidebar, if it's open: over the left of the window, the rest dimmed.
+    pub sidebar: Option<&'a Sidebar>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -487,6 +493,18 @@ impl Renderer {
                 &mut self.ui,
             );
         }
+        if let Some(sidebar) = chrome.sidebar {
+            draw_sidebar(
+                &mut buffer,
+                width,
+                theme,
+                layout,
+                chrome,
+                sidebar,
+                font,
+                &mut self.ui,
+            );
+        }
         // Last: the palette is on top of everything.
         if let Some(palette) = chrome.palette {
             draw_palette(
@@ -529,7 +547,7 @@ fn draw_tab_bar(
         let bar = layout.tab_bar;
         let shown = project_name_shown(name);
         let at = (
-            bar.x + ui.px(PROJECT_NAME_LEFT),
+            layout.sidebar_button.x + layout.sidebar_button.w + ui.px(PROJECT_NAME_LEFT),
             bar.y + bar.h.saturating_sub(ui.line_h) / 2,
         );
         let max_w = shown.chars().count() * ui.advance;
@@ -704,11 +722,18 @@ fn draw_bar_buttons(
     let lit = blend(theme.frame, theme.foreground, 40);
     let (new_tab, palette) = layout.bar_buttons(chrome.tabs.len());
     let s = |n: usize| scaled(n, layout.scale);
-    for (r, hit) in [(new_tab, TitleHit::NewTab), (palette, TitleHit::Palette)] {
+    let buttons = [
+        (layout.sidebar_button, TitleHit::Sidebar),
+        (new_tab, TitleHit::NewTab),
+        (palette, TitleHit::Palette),
+    ];
+    for (r, hit) in buttons {
         // A square in the middle of the button's place, 24 x 24 at 100%.
         let side = s(24).min(r.w).min(r.h);
         let (bx, by) = (r.x + (r.w - side) / 2, r.y + (r.h - side) / 2);
-        let fg = if chrome.hovered == Some(hit) {
+        // `≡` stays lit while its sidebar is open.
+        let open = hit == TitleHit::Sidebar && chrome.sidebar.is_some();
+        let fg = if chrome.hovered == Some(hit) || open {
             fill_rect(pixels, width, bx, by, side, side, lit);
             theme.foreground
         } else {
@@ -718,6 +743,12 @@ fn draw_bar_buttons(
         let (n, t) = (s(10), s(1));
         let (x, y) = (bx + (side - n) / 2, by + (side - n) / 2);
         match hit {
+            // Three lines across: the top, the middle, the bottom.
+            TitleHit::Sidebar => {
+                for line_y in [y + s(1), y + (n - t) / 2, y + n - t - s(1)] {
+                    fill_rect(pixels, width, x, line_y, n, t, fg);
+                }
+            }
             // Two lines through the middle.
             TitleHit::NewTab => {
                 fill_rect(pixels, width, x, y + (n - t) / 2, n, t, fg);
@@ -930,6 +961,138 @@ fn draw_palette(
             theme.foreground,
         );
     }
+}
+
+/// The sidebar (see `sidebar`): the window dimmed, the panel over its left, and
+/// in it the logo, the projects (a dot of each one's color), "Save", the keys.
+#[allow(clippy::too_many_arguments)]
+fn draw_sidebar(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    chrome: &Chrome,
+    sidebar: &Sidebar,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    for pixel in pixels.iter_mut() {
+        *pixel = blend(*pixel, 0x000000, SIDEBAR_DIM);
+    }
+    let panel = layout.sidebar();
+    let b = layout.border.max(1);
+    let back = blend(theme.frame, theme.foreground, 8);
+    outline(pixels, width, panel, b, theme.border);
+    let inside = panel.shrink(b);
+    fill_rect(pixels, width, inside.x, inside.y, inside.w, inside.h, back);
+    let dim = blend(back, theme.foreground, 128);
+    let accent = chrome.project.and_then(|(_, color)| color);
+    let accent = accent.unwrap_or(theme.accent);
+    let pad = ui.px(18);
+    let text_w = panel.w.saturating_sub(2 * pad);
+
+    // The logo (a pixel one later), and the list's title.
+    let at = (panel.x + pad, panel.y + ui.px(20));
+    let logo_w = draw_ui_text(pixels, width, font, ui, "kel", at, text_w, accent);
+    let at = (at.0 + logo_w + ui.advance, at.1);
+    draw_ui_text(pixels, width, font, ui, "terminal", at, text_w, dim);
+    let at = (panel.x + pad, panel.y + ui.px(58));
+    draw_ui_text(pixels, width, font, ui, "PROJECTS", at, text_w, dim);
+
+    let projects = sidebar.projects();
+    for row in 0..sidebar.rows() {
+        let r = sidebar::row_rect(panel, layout.scale, row, projects.len());
+        if !sidebar::fits(panel, layout.scale, r) {
+            break;
+        }
+        let chosen = row == sidebar.selected();
+        if chosen {
+            let lit = blend(back, theme.foreground, 22);
+            fill_rect(pixels, width, r.x, r.y, r.w, r.h, lit);
+        }
+        let text_y = r.y + r.h.saturating_sub(ui.line_h) / 2;
+        let Some(project) = projects.get(row) else {
+            // "Save", after a line across.
+            let line_y = r.y - ui.px(8);
+            fill_rect(
+                pixels,
+                width,
+                panel.x + pad,
+                line_y,
+                text_w,
+                1,
+                theme.border,
+            );
+            let color = if chosen { theme.foreground } else { dim };
+            let label = "+ Save the tabs as a project";
+            let at = (r.x + ui.px(10), text_y);
+            draw_ui_text(pixels, width, font, ui, label, at, r.w, color);
+            continue;
+        };
+        // A dot in the project's color, its name, and where it is at the right.
+        let radius = 4.0 * ui.scale;
+        let cx = (r.x + ui.px(14)) as f32;
+        let cy = r.y as f32 + r.h as f32 / 2.0;
+        let dot = project.color.unwrap_or(dim);
+        fill_circle(pixels, width, cx, cy, radius, 0.0, dot);
+        let name_x = r.x + ui.px(28);
+        let hint_room = r.w / 2;
+        let hint = keep_end(&project.hint, hint_room / ui.advance.max(1));
+        let hint_w = hint.chars().count() * ui.advance;
+        let name_w = (r.x + r.w).saturating_sub(name_x + hint_w + ui.px(18));
+        let at = (name_x, text_y);
+        draw_ui_text(
+            pixels,
+            width,
+            font,
+            ui,
+            &project.name,
+            at,
+            name_w,
+            theme.foreground,
+        );
+        let at = (r.x + r.w - ui.px(10) - hint_w, text_y);
+        draw_ui_text(pixels, width, font, ui, &hint, at, hint_w, dim);
+    }
+    if projects.is_empty() {
+        let r = sidebar::row_rect(panel, layout.scale, 0, 0);
+        let at = (r.x + ui.px(10), r.y.saturating_sub(ui.px(SAVE_HINT_UP)));
+        draw_ui_text(pixels, width, font, ui, "no projects yet", at, r.w, dim);
+    }
+
+    // The keys, at the bottom.
+    let at = (
+        panel.x + pad,
+        sidebar::footer_y(panel, layout.scale) + ui.px(14),
+    );
+    draw_ui_text(
+        pixels,
+        width,
+        font,
+        ui,
+        "Ctrl+Shift+B   Esc",
+        at,
+        text_w,
+        dim,
+    );
+}
+
+/// With no projects, "no projects yet" goes this far above "Save" (its row
+/// is pushed down by the gap).
+const SAVE_HINT_UP: usize = 30;
+
+/// `text` in at most `chars` letters, cut at the start: a folder's end says the
+/// most. e.g. "…\Documents\notes" in 12: "…ments\notes".
+fn keep_end(text: &str, chars: usize) -> String {
+    let count = text.chars().count();
+    if count <= chars {
+        return text.to_string();
+    }
+    if chars == 0 {
+        return String::new();
+    }
+    let tail: String = text.chars().skip(count - (chars - 1)).collect();
+    format!("…{tail}")
 }
 
 /// The project's name as the tab bar shows it: at most `PROJECT_NAME_CHARS`
@@ -1312,5 +1475,17 @@ fn draw_glyph(
                 pixels[i] = blend(pixels[i], color, value as u32);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_hint_keeps_its_end() {
+        assert_eq!(keep_end(r"C:\code\web", 20), r"C:\code\web");
+        assert_eq!(keep_end(r"…\Documents\notes", 12), r"…ments\notes");
+        assert_eq!(keep_end("abc", 0), "");
     }
 }

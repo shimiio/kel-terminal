@@ -22,6 +22,7 @@
 use crate::config;
 use crate::keys::Action;
 use crate::palette::Item;
+use crate::sidebar::Entry;
 use crate::theme;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -166,6 +167,31 @@ pub fn palette_items(current: Option<&str>) -> Vec<Item> {
                 label: format!("Open project: {name}"),
                 hint,
                 action: Action::OpenProject(name),
+            }
+        })
+        .collect()
+}
+
+/// The projects as the sidebar lists them: each with its color and folder.
+/// `current` is the project open in this window: "this window".
+pub fn sidebar_entries(current: Option<&str>) -> Vec<Entry> {
+    let Ok(dir) = dir() else {
+        return Vec::new();
+    };
+    names_in(&dir)
+        .into_iter()
+        .map(|name| {
+            let here = current == Some(name.as_str());
+            let (color, hint) = match load(&name) {
+                Ok(project) if here => (project.color, "this window".to_string()),
+                Ok(project) => (project.color, short_folder(&project.folder)),
+                Err(_) => (None, "can't read its file".to_string()),
+            };
+            Entry {
+                name,
+                color,
+                hint,
+                current: here,
             }
         })
         .collect()

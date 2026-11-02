@@ -31,6 +31,8 @@ pub enum Action {
     /// Moves the tab on screen one place left / right.
     MoveTabLeft,
     MoveTabRight,
+    /// Opens the sidebar of projects, or closes it.
+    Sidebar,
     /// Opens the command palette, or closes it.
     Palette,
     /// Opens the search in the output, or closes it.
@@ -83,6 +85,7 @@ pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
         (KeyCode::Comma, _) => Action::OpenConfig,
         (KeyCode::KeyP, true) => Action::Palette,
         (KeyCode::KeyF, true) => Action::Find,
+        (KeyCode::KeyB, true) => Action::Sidebar, // like VS Code's Ctrl+B
         _ => return None,
     };
     Some(action)
@@ -111,6 +114,7 @@ pub fn palette_items() -> Vec<Item> {
         item("Paste", "Ctrl+Shift+V", Action::Paste),
         item("Copy the selection", "Ctrl+Shift+C", Action::Copy),
         item("Find in the output", "Ctrl+Shift+F", Action::Find),
+        item("Projects: the sidebar", "Ctrl+Shift+B", Action::Sidebar),
         item("Stop the running command", "Ctrl+C", Action::Interrupt),
         item("Zoom in: bigger font", "Ctrl+=", Action::ZoomIn),
         item("Zoom out: smaller font", "Ctrl+-", Action::ZoomOut),
@@ -407,6 +411,7 @@ mod tests {
             "," => KeyCode::Comma,
             "0" => KeyCode::Digit0,
             "9" => KeyCode::Digit9,
+            "B" => KeyCode::KeyB,
             "C" => KeyCode::KeyC,
             "F" => KeyCode::KeyF,
             "T" => KeyCode::KeyT,
