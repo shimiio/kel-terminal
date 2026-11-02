@@ -162,13 +162,20 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [ ] Maybe: a thin line in the project color on top of the tab on screen (tried on a mockup:
       with the name and the icon, three spots of color; decide after using the name a while)
 - [ ] Pixel-art tab icons (made in Aseprite, PNG), outlines filled with the accent color
-- [ ] Pixel font for the UI: the Kel logo, the project name (built into the exe, see Fonts)
+- [x] The Kel logo: "kel" and a cursor, in pixels (`logo.rs`). Big on the start screen,
+      the cursor blinking with the terminal's; small, still, at the sidebar's top. The cursor
+      is the project's color; home has none (the text's): Kel takes the color of what you
+      work on
+- [ ] The window's icon from the logo's pixels (`k▌`), its cursor the project's color; the
+      exe's icon (`.ico`, home's gray) made from the same pixels
+- [ ] Home neutral in the whole UI: the project's color as the accent, none in home
+- [ ] Maybe: a pixel font for the project name (built into the exe, see Fonts)
 - [x] Sidebar on the left: `≡` at the tab bar's start (a visible handle: hover alone wouldn't
       say it's there), Ctrl+Shift+B, or the palette. Dims the rest, lists the projects with
       their colors, the last line saves the tabs as a new one. Over the terminal, so nothing
       reflows when it opens. First row `home`: Kel without a project, where you go to the
       projects from
-- [ ] Sidebar: open on hover over `≡` (with a delay)? Tried without first; the pixel logo;
+- [ ] Sidebar: open on hover over `≡` (with a delay)? Tried without first;
       scrolling when there are more projects than fit
 - [x] Workspaces in one window: home and projects, switched from the sidebar or the palette.
       Switching hides a set of tabs, nothing stops: a `ping -t` keeps going. Leaving saves

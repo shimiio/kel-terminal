@@ -42,6 +42,7 @@ pub mod icons;
 pub mod keys;
 pub mod layout;
 pub mod links;
+pub mod logo;
 pub mod mouse;
 pub mod palette;
 pub mod project;

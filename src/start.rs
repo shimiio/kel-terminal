@@ -3,7 +3,7 @@
 //! Studio's start window.
 //!
 //! ```text
-//!        kel terminal
+//!        kel▌            (the logo, its cursor blinking)
 //!
 //!        RECENT PROJECTS
 //!        ● kel        …\kel-terminal
@@ -28,8 +28,8 @@ pub const RECENT: usize = 6;
 /// top: the projects' title, the first row; a row's height; the room before the
 /// keys' hint, and the hint's line. Pixels at 100%.
 const COLUMN_WIDTH: usize = 460;
-const TITLE_TOP: usize = 56;
-const LIST_TOP: usize = 84;
+const TITLE_TOP: usize = 68;
+const LIST_TOP: usize = 96;
 const ROW_HEIGHT: usize = 32;
 const HINT_GAP: usize = 24;
 const HINT_HEIGHT: usize = 20;
@@ -111,7 +111,7 @@ impl Start {
 /// The column in the terminal's `area`, for `rows` projects: in the middle from
 /// left to right, a third of the room above it and two thirds below, which looks
 /// more in the middle than the middle. e.g. 2 projects in 1000 x 600 at 100%:
-/// 460 wide at x = 270, 128 + 64 = 192 high, at y = (600 - 192) / 3 = 136.
+/// 460 wide at x = 270, 140 + 64 = 204 high, at y = (600 - 204) / 3 = 132.
 pub fn column(area: Rect, scale: f32, rows: usize) -> Rect {
     let s = |n: usize| scaled(n, scale);
     let w = s(COLUMN_WIDTH).min(area.w);
@@ -205,14 +205,14 @@ mod tests {
             h: 600,
         };
         let col = column(area, 1.0, 2);
-        assert_eq!((col.x, col.y, col.w, col.h), (270, 136, 460, 192));
-        // Rows at 136 + 84 = 220..252 and 252..284.
+        assert_eq!((col.x, col.y, col.w, col.h), (270, 132, 460, 204));
+        // Rows at 132 + 96 = 228..260 and 260..292.
         assert_eq!(start.row_at(area, 1.0, 500, 230), Some(0));
         assert_eq!(start.row_at(area, 1.0, 500, 260), Some(1));
-        assert_eq!(start.row_at(area, 1.0, 500, 290), None); // the hint
+        assert_eq!(start.row_at(area, 1.0, 500, 300), None); // the hint
         assert_eq!(start.row_at(area, 1.0, 100, 230), None); // left of it
         // A short window, 140 high: the column starts at its top; the first row
-        // (84..116) fits, the second (116..148) doesn't.
+        // (96..128) fits, the second (128..160) doesn't.
         let short = Rect { h: 140, ..area };
         let col = column(short, 1.0, 2);
         assert!(fits(short, row_rect(col, 1.0, 0)));

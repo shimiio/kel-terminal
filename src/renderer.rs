@@ -12,6 +12,7 @@ use crate::fallback::Fallbacks;
 use crate::font::{Font, Fonts, Metrics};
 use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
+use crate::logo;
 use crate::palette::Palette;
 use crate::search::{self, Search};
 use crate::sidebar::{self, Entry, Live, Row, Sidebar};
@@ -489,7 +490,17 @@ impl Renderer {
 
         // On top of the terminal, whatever the terminal shows.
         if let Some(start) = chrome.start {
-            draw_start(&mut buffer, width, theme, layout, start, font, &mut self.ui);
+            let on = cursor_on;
+            draw_start(
+                &mut buffer,
+                width,
+                theme,
+                layout,
+                start,
+                on,
+                font,
+                &mut self.ui,
+            );
         }
         if let Some(search) = chrome.search {
             draw_search(
@@ -1007,16 +1018,14 @@ fn draw_sidebar(
     let inside = panel.shrink(b);
     fill_rect(pixels, width, inside.x, inside.y, inside.w, inside.h, back);
     let dim = blend(back, theme.foreground, 128);
-    let accent = chrome.project.and_then(|(_, color)| color);
-    let accent = accent.unwrap_or(theme.accent);
     let pad = ui.px(18);
     let text_w = panel.w.saturating_sub(2 * pad);
 
-    // The logo (a pixel one later), and the projects' title.
-    let at = (panel.x + pad, panel.y + ui.px(20));
-    let logo_w = draw_ui_text(pixels, width, font, ui, "kel", at, text_w, accent);
-    let at = (at.0 + logo_w + ui.advance, at.1);
-    draw_ui_text(pixels, width, font, ui, "terminal", at, text_w, dim);
+    // The logo, small: its cursor the project's color (home: none, the text's).
+    let at = (panel.x + pad, panel.y + ui.px(22));
+    let cursor = chrome.project.and_then(|(_, color)| color);
+    let cursor = cursor.unwrap_or(theme.foreground);
+    draw_logo(pixels, width, at, ui.px(3), theme.foreground, Some(cursor));
     let at = (panel.x + pad, sidebar::title_y(panel, layout.scale));
     draw_ui_text(pixels, width, font, ui, "PROJECTS", at, text_w, dim);
 
@@ -1321,6 +1330,7 @@ fn draw_start(
     theme: &Theme,
     layout: &Layout,
     start: &Start,
+    cursor_on: bool,
     font: &Font,
     ui: &mut Ui,
 ) {
@@ -1332,19 +1342,17 @@ fn draw_start(
     let col = start::column(layout.text, layout.scale, projects.len());
     let left = col.x + ui.px(10);
 
-    // The logo (a pixel one later), and the list's title.
-    let logo_w = draw_ui_text(
+    // The logo, big, its cursor blinking with the terminal's: type, it says.
+    // Home: no color, the text's.
+    let cursor = cursor_on.then_some(theme.foreground);
+    draw_logo(
         pixels,
         width,
-        font,
-        ui,
-        "kel",
         (left, col.y),
-        col.w,
-        theme.accent,
+        ui.px(6),
+        theme.foreground,
+        cursor,
     );
-    let at = (left + logo_w + ui.advance, col.y);
-    draw_ui_text(pixels, width, font, ui, "terminal", at, col.w, dim);
     let at = (left, start::title_y(col, layout.scale));
     draw_ui_text(pixels, width, font, ui, "RECENT PROJECTS", at, col.w, dim);
 
@@ -1378,6 +1386,26 @@ fn draw_start(
     if hint_y + ui.line_h <= layout.text.y + layout.text.h {
         let text = "Type to start   ↑↓ Enter opens a project   Esc";
         draw_ui_text(pixels, width, font, ui, text, (left, hint_y), col.w, dim);
+    }
+}
+
+/// Kel's logo (see `logo`), its top left at `at`, a pixel of it `px` pixels
+/// square: the letters in `letters`, the cursor in `cursor` (`None`: blinked off).
+fn draw_logo(
+    pixels: &mut [u32],
+    width: usize,
+    at: (usize, usize),
+    px: usize,
+    letters: u32,
+    cursor: Option<u32>,
+) {
+    let px = px.max(1);
+    for p in logo::pixels() {
+        let color = if p.cursor { cursor } else { Some(letters) };
+        if let Some(color) = color {
+            let (x, y) = (at.0 + p.x * px, at.1 + p.y * px);
+            fill_rect(pixels, width, x, y, px, px, color);
+        }
     }
 }
 

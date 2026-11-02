@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! ┌────────────────────────┐
-//! │ kel terminal           │
+//! │ kel▌                   │  ← the logo, its cursor the project's color
 //! │ ○ home                 │
 //! │ PROJECTS               │
 //! │ ● kel             here │  ← chosen: lit
