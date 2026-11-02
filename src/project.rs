@@ -171,6 +171,48 @@ pub fn palette_items(current: Option<&str>) -> Vec<Item> {
         .collect()
 }
 
+/// The palette's line for saving the tabs as the project `typed`: "Save the tabs
+/// as project: myapp", with `folder` (where it will be) at the right. None for a
+/// name that can't be a file's, or a project that's already there: its "Open
+/// project" line is listed instead.
+pub fn save_item(typed: &str, folder: &Path, existing: &[String]) -> Option<Item> {
+    let name = typed.trim();
+    let taken = existing.iter().any(|e| e.eq_ignore_ascii_case(name));
+    if !valid_name(name) || taken {
+        return None;
+    }
+    Some(Item {
+        label: format!("Save the tabs as project: {name}"),
+        hint: short_folder(folder),
+        action: Action::SaveProject(name.to_string()),
+    })
+}
+
+/// Whether `name` can be a project's file name on Windows: not empty, none of
+/// `\ / : * ? " < > |`, no `.` or space at the end (Windows drops them), not a
+/// device name like `CON` or `COM1`, and not too long to read in the tab bar.
+pub fn valid_name(name: &str) -> bool {
+    const DEVICES: [&str; 4] = ["con", "prn", "aux", "nul"];
+    let lower = name.to_ascii_lowercase();
+    let device = DEVICES.contains(&lower.as_str())
+        || ["com", "lpt"].iter().any(|d| {
+            lower
+                .strip_prefix(d)
+                .is_some_and(|n| n.len() == 1 && n.as_bytes()[0].is_ascii_digit())
+        });
+    let bad_char = |c: char| c.is_control() || "\\/:*?\"<>|".contains(c);
+    !name.is_empty()
+        && name.chars().count() <= 64
+        && !name.contains(bad_char)
+        && !name.ends_with(['.', ' '])
+        && !device
+}
+
+/// Whether the project `name` has a file already.
+pub fn exists(name: &str) -> bool {
+    dir().is_ok_and(|dir| dir.join(format!("{name}.toml")).exists())
+}
+
 /// A folder's last two parts, enough to tell projects apart:
 /// `C:\code\major-projects\kel-terminal` → `…\major-projects\kel-terminal`.
 fn short_folder(folder: &Path) -> String {
@@ -190,6 +232,8 @@ pub fn save(name: &str, project: &Project) -> anyhow::Result<()> {
         // First to a file next to it, then in its place: if Kel stops halfway
         // (the PC turns off), the old file is still whole.
         let new = path.with_extension("toml.new");
+        // The first project ever: no folder for them yet.
+        std::fs::create_dir_all(dir()?)?;
         std::fs::write(&new, project.to_file()?)?;
         std::fs::rename(&new, &path)?;
         Ok(())
@@ -309,6 +353,32 @@ folder = 'D:\other'
             short(r"C:\Users\Public\major-projects\kel-terminal"),
             r"…\major-projects\kel-terminal"
         );
+    }
+
+    #[test]
+    fn project_names() {
+        for good in ["myapp", "kel-terminal", "web 2", "notes.v2", "Конспекты"] {
+            assert!(valid_name(good), "{good}");
+        }
+        for bad in [
+            "", "a/b", "a\\b", "c:", "what?", "\"q\"", "dot.", "space ", "CON", "com1",
+        ] {
+            assert!(!valid_name(bad), "{bad}");
+        }
+        assert!(valid_name("console") && valid_name("com10")); // not devices
+    }
+
+    #[test]
+    fn the_save_line() {
+        let existing = ["kel".to_string()];
+        let folder = Path::new(r"C:\code\myapp");
+        let item = save_item("  myapp ", folder, &existing).unwrap();
+        assert_eq!(item.label, "Save the tabs as project: myapp");
+        assert_eq!(item.hint, r"C:\code\myapp");
+        assert_eq!(item.action, Action::SaveProject("myapp".into()));
+        // Taken (in any case), or not a file name: no line.
+        assert_eq!(save_item("KEL", folder, &existing), None);
+        assert_eq!(save_item("a/b", folder, &existing), None);
     }
 
     #[test]

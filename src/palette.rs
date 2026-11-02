@@ -17,6 +17,10 @@ pub struct Item {
     pub action: Action,
 }
 
+/// Makes a line from what's typed, e.g. "Save the tabs as project: myapp" from
+/// "myapp". `None`: no such line for this text.
+type MakeItem = Box<dyn Fn(&str) -> Option<Item>>;
+
 pub struct Palette {
     /// What's typed in the search box.
     query: String,
@@ -24,8 +28,12 @@ pub struct Palette {
     items: Vec<Item>,
     /// The lines that match the query: their places in `items`.
     shown: Vec<usize>,
-    /// The chosen line: its place in `shown`.
+    /// The chosen line: its place in `shown`, or right after them: `typed`.
     selected: usize,
+    /// Makes the line from what's typed (see `with_typed_item`).
+    make_typed: Option<MakeItem>,
+    /// That line for the query now, shown last.
+    typed: Option<Item>,
 }
 
 impl Palette {
@@ -37,16 +45,31 @@ impl Palette {
             items,
             shown,
             selected: 0,
+            make_typed: None,
+            typed: None,
         }
+    }
+
+    /// One more line, made by `make` from what's typed, after the ones that
+    /// match: the list can't know a new project's name before it's typed.
+    pub fn with_typed_item(mut self, make: impl Fn(&str) -> Option<Item> + 'static) -> Palette {
+        self.make_typed = Some(Box::new(make));
+        self
     }
 
     pub fn query(&self) -> &str {
         &self.query
     }
 
-    /// The lines that match, in order.
+    /// The lines that match, in order, and last the one made from what's typed.
     pub fn shown(&self) -> impl Iterator<Item = &Item> {
-        self.shown.iter().map(|&i| &self.items[i])
+        let matching = self.shown.iter().map(|&i| &self.items[i]);
+        matching.chain(&self.typed)
+    }
+
+    /// How many lines are shown.
+    fn len(&self) -> usize {
+        self.shown.len() + self.typed.is_some() as usize
     }
 
     /// The chosen line's place among the shown ones.
@@ -68,7 +91,7 @@ impl Palette {
 
     /// Up (`step` = -1) or down (1). Past the last line it goes round to the first.
     pub fn move_selection(&mut self, step: isize) {
-        let n = self.shown.len() as isize;
+        let n = self.len() as isize;
         if n > 0 {
             self.selected = (self.selected as isize + step).rem_euclid(n) as usize;
         }
@@ -76,8 +99,8 @@ impl Palette {
 
     /// What Enter would do now. `None` when nothing matches.
     pub fn chosen(&self) -> Option<Action> {
-        let &i = self.shown.get(self.selected)?;
-        Some(self.items[i].action.clone())
+        let item = self.shown().nth(self.selected)?;
+        Some(item.action.clone())
     }
 
     /// The query changed: only the lines that match, and the first of them chosen.
@@ -85,6 +108,10 @@ impl Palette {
         self.shown = (0..self.items.len())
             .filter(|&i| matches(&self.query, &self.items[i].label))
             .collect();
+        self.typed = match &self.make_typed {
+            Some(make) if !self.query.trim().is_empty() => make(&self.query),
+            _ => None,
+        };
         self.selected = 0;
     }
 }
@@ -161,6 +188,30 @@ mod tests {
         palette.move_selection(2);
         palette.type_text("tab");
         assert_eq!(palette.chosen(), Some(Action::NewTab));
+    }
+
+    #[test]
+    fn a_line_from_what_is_typed() {
+        let make = |query: &str| {
+            Some(Item {
+                label: format!("Save as {query}"),
+                hint: String::new(),
+                action: Action::SaveProject(query.to_string()),
+            })
+        };
+        let mut palette = Palette::new(items()).with_typed_item(make);
+        // Nothing typed: no such line.
+        assert_eq!(palette.shown().count(), 4);
+        palette.type_text("zo");
+        assert_eq!(labels(&palette), ["Zoom in", "Zoom out", "Save as zo"]);
+        // The matching lines come first: Enter doesn't make a project by itself.
+        assert_eq!(palette.chosen(), Some(Action::ZoomIn));
+        palette.move_selection(-1);
+        assert_eq!(palette.chosen(), Some(Action::SaveProject("zo".into())));
+        // Nothing else matches: it's the only line, chosen.
+        palette.type_text("xyz");
+        assert_eq!(labels(&palette), ["Save as zoxyz"]);
+        assert_eq!(palette.chosen(), Some(Action::SaveProject("zoxyz".into())));
     }
 
     #[test]

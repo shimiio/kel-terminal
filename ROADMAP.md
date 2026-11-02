@@ -145,7 +145,9 @@ what bothers in use can come first.
       Only http(s): a `file://` could start a program
 - [ ] Later: links a program marks itself (`ESC]8;;url`, OSC 8: needs a link per cell);
       `src/main.rs:42:5` from compiler errors opened in nvim
-- [ ] Save the tabs as a new project from the palette (the typed text is the name)
+- [x] Save the tabs as a new project from the palette (the typed text is the name): in the
+      folder of the tab on screen, and the window becomes that project. A taken name or one
+      Windows can't have (`a/b`, `CON`) gets no line
 
 ## 9. Style
 

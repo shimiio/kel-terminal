@@ -660,14 +660,56 @@ impl App {
                         let mut items = keys::palette_items();
                         items.extend(project::palette_items(current));
                         items.extend(setup::palette_items());
-                        Some(Palette::new(items))
+                        // And from what's typed: "Save the tabs as project: <it>",
+                        // in the folder of the tab on screen.
+                        let existing = project::dir()
+                            .map(|dir| project::names_in(&dir))
+                            .unwrap_or_default();
+                        let palette = match self.tab().cwd() {
+                            Some(folder) => Palette::new(items).with_typed_item(move |typed| {
+                                project::save_item(typed, &folder, &existing)
+                            }),
+                            None => Palette::new(items),
+                        };
+                        Some(palette)
                     }
                 };
                 self.request_redraw();
             }
             Action::Install(name) => self.install(name),
             Action::OpenProject(name) => self.open_project(&name),
+            Action::SaveProject(name) => self.save_as_project(name),
         }
+    }
+
+    /// Saves the tabs as the new project `name`, in the folder of the tab on
+    /// screen (the other tabs' folders are kept inside it, see `save_project`).
+    /// The window becomes that project: its name shows, it's saved when it
+    /// closes. Its color, if this window had one, stays.
+    fn save_as_project(&mut self, name: String) {
+        if project::exists(&name) {
+            // Made since the palette opened: never written over.
+            self.set_status(Some(format!("project \"{name}\" already exists")));
+            return;
+        }
+        let Some(folder) = self.tab().cwd() else {
+            self.set_status(Some("can't save: no folder for this tab".to_string()));
+            return;
+        };
+        let color = self.project.as_ref().and_then(|p| p.color);
+        let before = self.project.replace(OpenProject {
+            name,
+            folder,
+            color,
+        });
+        if let Err(e) = self.save_project() {
+            self.project = before;
+            self.set_status(Some(format!("{e:#}")));
+            return;
+        }
+        self.update_window_title();
+        self.on_resize(); // room for the name before the tabs
+        self.request_redraw();
     }
 
     /// Opens the project `name` in a new Kel window: Kel starts itself again, as

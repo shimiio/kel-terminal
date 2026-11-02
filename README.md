@@ -185,6 +185,12 @@ file's name is the project's: `projects\kel.toml` opens with `kel kel`
 From an open Kel: the command palette (Ctrl+Shift+P) lists the projects, `Open project:
 kel`. It opens the project in a new window too; this one stays as it is.
 
+To make one, open the tabs you want, go to the project's folder in one of them, and
+type a new name in the palette: `Save the tabs as project: myapp`. The project's
+folder is that tab's; the other tabs keep theirs, inside it as `folder = "src"`.
+The window then is that project: its name shows before the tabs, and it's saved
+when the window closes. A name that's taken has its `Open project` line instead.
+
 `kel` works in any shell after `.\install.ps1`: it builds Kel and copies `kel.exe` to
 `~\.cargo\bin`, the folder where cargo puts programs. Installing Rust put that folder
 on the PATH, so there's nothing to add by hand. Run it again after changes: it works
@@ -257,7 +263,7 @@ the file keeps the tabs it had, not none.
 | `src/config.rs` | Reads `config.toml` |
 | `src/icons.rs` | The tab icons (`assets/icons/*.png`, built into the .exe) and which tab gets which |
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
-| `src/project.rs` | Reads a project file: the tabs, their folders and commands |
+| `src/project.rs` | Reads and writes a project file: the tabs, their folders and commands |
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |
 | `src/shell_integration.rs` | Makes the shell tell Kel its folder, and when a command starts and ends |
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |

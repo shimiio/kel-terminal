@@ -36,6 +36,8 @@ pub enum Action {
     Install(&'static str),
     /// Opens the project of this name in a new window (see `project`).
     OpenProject(String),
+    /// Saves the tabs as a new project of this name; the window becomes it.
+    SaveProject(String),
 }
 
 /// Which of Kel's shortcuts this key is, if any. All of Kel's shortcuts, in one table.
