@@ -140,7 +140,11 @@ what bothers in use can come first.
       any case; the matches keep their place while output comes (rows have lasting numbers).
       ~5 ms per letter in a full scrollback (measured). Scrolled up, the view now stays on its
       text while output comes
-- [ ] Clickable links
+- [x] Clickable links: Ctrl+hover underlines, Ctrl+click opens in the browser; found in the
+      line's text (joined across the window's edge), the sentence's `.` `,` `)` cut off.
+      Only http(s): a `file://` could start a program
+- [ ] Later: links a program marks itself (`ESC]8;;url`, OSC 8: needs a link per cell);
+      `src/main.rs:42:5` from compiler errors opened in nvim
 - [ ] Save the tabs as a new project from the palette (the typed text is the name)
 
 ## 9. Style

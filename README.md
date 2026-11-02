@@ -54,6 +54,7 @@ the new program.
 | Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C). A line too long for the window comes out as one line, not cut where it wrapped |
 | Ctrl+Shift+V | Paste |
 | Ctrl+Shift+F | Find in the output (not the typed commands: that's PowerShell's Ctrl+R). Type: every match is marked, the newest one chosen. Enter or Up: the one before, Shift+Enter or Down: the next one. Any case: `error` finds `ERROR`, also cut at the window's edge. Esc closes |
+| Ctrl+click | Opens the `https://` link under the mouse in the browser (also in nvim). Hold Ctrl and the link is underlined. A link cut at the window's edge is one link; a `.` or `,` after it isn't part of it |
 | Ctrl+C | Stop the running command |
 | Mouse drag | Select text |
 | Mouse wheel | Scroll back through earlier output |
@@ -248,6 +249,7 @@ the file keeps the tabs it had, not none.
 | `src/keys.rs` | Kel's shortcuts (one table), and the bytes every other key sends to the shell |
 | `src/mouse.rs` | The bytes that tell a program what the mouse does, if it asked for the mouse |
 | `src/search.rs` | The search in the output: what's typed, the matches, which one is chosen |
+| `src/links.rs` | `https://...` in the output: where a link starts and ends |
 | `src/palette.rs` | The command palette's state: what's typed, which lines match, which one is chosen |
 | `src/setup.rs` | The install scripts from `setup/`, built into the exe, and how a tab runs one |
 | `src/layout.rs` | Where the terminal panel goes in the window |

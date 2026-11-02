@@ -15,7 +15,7 @@ use crate::renderer::{Chrome, Renderer, TabLabel};
 use crate::search::Search;
 use crate::setup;
 use crate::tab::{Tab, TabId};
-use crate::term::Terminal;
+use crate::term::{Found, Terminal};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime};
@@ -167,6 +167,9 @@ pub struct App {
     palette: Option<Palette>,
     /// The search in the output, while it's open. It gets the keys then too.
     search: Option<Search>,
+    /// The link under the mouse while Ctrl is held (see `update_link`): where it
+    /// is and its text. Underlined, and Ctrl+click opens it.
+    link: Option<(Found, String)>,
 }
 
 impl App {
@@ -301,6 +304,7 @@ impl App {
                 }),
             palette: None,
             search: None,
+            link: None,
         })
     }
 
@@ -389,6 +393,7 @@ impl App {
         // other tab.
         self.selection = None;
         self.search = None;
+        self.link = None;
         self.scroll_rest = 0.0;
         self.update_focus();
         self.request_redraw();
@@ -933,7 +938,10 @@ impl ApplicationHandler<UserEvent> for App {
                 }
                 self.cell_size_changed();
             }
-            WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
+            WindowEvent::ModifiersChanged(m) => {
+                self.modifiers = m.state();
+                self.update_link(); // Ctrl pressed or let go over a link
+            }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 self.on_key(event)
             }
@@ -942,6 +950,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CursorLeft { .. } => {
                 self.mouse_inside = false;
                 self.set_hovered(None);
+                self.update_link();
             }
             WindowEvent::MouseInput { state, button, .. } => self.on_mouse_button(state, button),
             WindowEvent::Focused(focused) => {
@@ -1017,6 +1026,7 @@ impl App {
             palette: self.palette.as_ref(),
             search: self.search.as_ref(),
             project: self.project.as_ref().map(|p| (p.name.as_str(), p.color)),
+            link: self.link.as_ref().map(|(found, _)| *found),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -1179,6 +1189,9 @@ impl App {
             }
         }
         self.update_hovered();
+        if moved {
+            self.update_link();
+        }
 
         if self.selecting {
             if let Some(selection) = &mut self.selection {
@@ -1190,6 +1203,51 @@ impl App {
         {
             // Dragging in the program, or just moving if it asked for every move.
             self.report_mouse(mouse::Event::Move(self.mouse_button));
+        }
+    }
+
+    /// Finds the link under the mouse again, while Ctrl is held: it's underlined
+    /// and the mouse becomes a hand. After the mouse moved, or Ctrl changed.
+    fn update_link(&mut self) {
+        let look = self.modifiers.control_key()
+            && self.mouse_inside
+            && self.over_text()
+            && !self.selecting;
+        let link = if look {
+            let (row, col) = self.mouse_cell;
+            self.tab().terminal.lock().unwrap().grid.link_at(row, col)
+        } else {
+            None
+        };
+        if link == self.link {
+            return;
+        }
+        if link.is_some() != self.link.is_some()
+            && let Some(window) = &self.window
+        {
+            // Off a link: back to what the mouse was (resize arrows at an edge).
+            let off = self
+                .resize_edge
+                .map_or(CursorIcon::Default, CursorIcon::from);
+            window.set_cursor(if link.is_some() {
+                CursorIcon::Pointer
+            } else {
+                off
+            });
+        }
+        self.link = link;
+        self.request_redraw();
+    }
+
+    /// Opens `url` in the default browser, as clicking it in another program
+    /// would. Only `http(s)` gets here (see `links`). `rundll32` and not
+    /// `explorer`: explorer cuts its argument at commas, and links have them.
+    fn open_link(&mut self, url: &str) {
+        let opened = std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
+            .spawn();
+        if let Err(e) = opened {
+            self.set_status(Some(format!("can't open {url}: {e}")));
         }
     }
 
@@ -1237,6 +1295,17 @@ impl App {
                 self.close_tab_at(index, "middle click");
                 return;
             }
+        }
+        // Ctrl+click on a link opens it, even in a program that has the mouse.
+        // Elsewhere Ctrl+click is what it was.
+        if button == MouseButton::Left
+            && state == ElementState::Pressed
+            && self.modifiers.control_key()
+            && let Some((_, url)) = &self.link
+        {
+            let url = url.clone();
+            self.open_link(&url);
+            return;
         }
         let button = match button {
             MouseButton::Left => mouse::Button::Left,

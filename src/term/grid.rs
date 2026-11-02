@@ -623,16 +623,10 @@ impl Grid {
         let mut text = Vec::new();
         let mut cells = Vec::new();
         for (i, line) in self.scrollback.iter().chain(&self.lines).enumerate() {
-            let row = self.dropped + i;
-            for (col, cell) in line.cells.iter().enumerate() {
-                match cell.width {
-                    Width::Spacer => {}
-                    Width::Wide => cells.push((row, col, col + 1)),
-                    Width::Narrow => cells.push((row, col, col)),
-                }
-                if cell.width != Width::Spacer {
-                    text.push(fold_case(cell.ch));
-                }
+            let from = text.len();
+            push_letters(line, self.dropped + i, &mut text, &mut cells);
+            for c in &mut text[from..] {
+                *c = fold_case(*c);
             }
             if !line.wrapped {
                 find_in(&text, &cells, &query, &mut found);
@@ -642,6 +636,50 @@ impl Grid {
         }
         find_in(&text, &cells, &query, &mut found);
         found
+    }
+
+    /// The link (`https://...`) at the cell (row, col) of the view, if one is
+    /// there: where it is, by lasting rows (see `dropped`), and its text. The whole
+    /// line around the cell is looked at, so a link cut at the window's edge is
+    /// found whole, from either of its rows.
+    pub fn link_at(&self, row: usize, col: usize) -> Option<(Found, String)> {
+        if row >= self.rows {
+            return None;
+        }
+        let sb = self.scrollback.len();
+        let row_at = |i: usize| {
+            if i < sb {
+                &self.scrollback[i]
+            } else {
+                &self.lines[i - sb]
+            }
+        };
+        let index = sb - self.scroll_offset + row;
+        // The line's rows: up and down while they go on. On the other screen
+        // (nvim's), only its own rows: the scrollback isn't shown there.
+        let top = if self.saved_screen.is_some() { sb } else { 0 };
+        let mut first = index;
+        while first > top && row_at(first - 1).wrapped {
+            first -= 1;
+        }
+        let mut last = index;
+        while last + 1 < sb + self.lines.len() && row_at(last).wrapped {
+            last += 1;
+        }
+        let (mut text, mut cells) = (Vec::new(), Vec::new());
+        for i in first..=last {
+            push_letters(row_at(i), self.dropped + i, &mut text, &mut cells);
+        }
+        let here = (self.dropped + index, col);
+        crate::links::find_urls(&text).into_iter().find_map(|url| {
+            let (first, last) = (cells[url.start], cells[url.end - 1]);
+            let found = Found {
+                start: (first.0, first.1),
+                end: (last.0, last.2),
+            };
+            let under = found.start <= here && here <= found.end;
+            under.then(|| (found, text[url].iter().collect()))
+        })
     }
 
     pub fn carriage_return(&mut self) {
@@ -814,6 +852,26 @@ impl Grid {
             bg: self.bg,
             ..Cell::default()
         }
+    }
+}
+
+/// Adds a row's letters to `text`, and where each one is to `cells`: (lasting
+/// row, first col, last col). A wide letter takes 2 cells; its second one has no
+/// letter of its own.
+fn push_letters(
+    line: &Line,
+    row: usize,
+    text: &mut Vec<char>,
+    cells: &mut Vec<(usize, usize, usize)>,
+) {
+    for (col, cell) in line.cells.iter().enumerate() {
+        let last = match cell.width {
+            Width::Spacer => continue,
+            Width::Wide => col + 1,
+            Width::Narrow => col,
+        };
+        text.push(cell.ch);
+        cells.push((row, col, last));
     }
 }
 
@@ -1179,6 +1237,27 @@ mod tests {
         // A later one keeps its number: the 'y' lines.
         let ys = g.find("y");
         assert_eq!(ys[0].start.0, SCROLLBACK_LIMIT);
+    }
+
+    #[test]
+    fn a_link_cut_at_the_edge_is_found_whole() {
+        let g = grid(4, 10, "go https://a.io/xyz now");
+        assert_eq!(g.render(), "go https:/\n/a.io/xyz\nnow");
+        let link = Some((
+            Found {
+                start: (0, 3),
+                end: (1, 8),
+            },
+            "https://a.io/xyz".to_string(),
+        ));
+        // From either row.
+        assert_eq!(g.link_at(0, 5), link);
+        assert_eq!(g.link_at(1, 2), link);
+        // Not on "go", the space after it, or "now".
+        assert_eq!(g.link_at(0, 1), None);
+        assert_eq!(g.link_at(1, 9), None);
+        assert_eq!(g.link_at(2, 0), None);
+        assert_eq!(g.link_at(9, 0), None); // below the screen
     }
 
     #[test]

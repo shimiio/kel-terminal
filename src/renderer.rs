@@ -13,6 +13,7 @@ use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::palette::Palette;
 use crate::search::{self, Search};
+use crate::term::Found;
 use crate::term::{CursorShape, Grid, Underline, Width, char_width};
 use crate::theme::Theme;
 use std::collections::HashMap;
@@ -95,6 +96,8 @@ pub struct Chrome<'a> {
     /// The open project: its name, before the tabs, and its own color, if it has
     /// one. That color is the window's accent then, instead of the theme's.
     pub project: Option<(&'a str, Option<u32>)>,
+    /// The link under the mouse while Ctrl is held: underlined. Lasting rows.
+    pub link: Option<Found>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -432,12 +435,26 @@ impl Renderer {
                         draw_glyph(&mut buffer, width, glyph, self.ascent, fg, x, y);
                     }
 
-                    if cell.underline != Underline::None {
-                        let color = theme.rgb(cell.underline_color, fg);
+                    // The link under the mouse: a plain line under it, in the
+                    // text's color, over whatever underline the cell had.
+                    let here = (top + row, col);
+                    let on_link = chrome
+                        .link
+                        .is_some_and(|l| l.start <= here && here <= l.end);
+                    let underline = if on_link {
+                        Underline::Single
+                    } else {
+                        cell.underline
+                    };
+                    if underline != Underline::None {
+                        let color = match on_link {
+                            true => fg,
+                            false => theme.rgb(cell.underline_color, fg),
+                        };
                         draw_underline(
                             &mut buffer,
                             width,
-                            cell.underline,
+                            underline,
                             (x, y, cell_w, cell_h),
                             self.ascent as usize,
                             text_scale,

@@ -23,6 +23,7 @@
 //! - `term`: understands what the shell sends and keeps the screen as a grid of cells.
 //! - `renderer`: turns that grid into pixels.
 //! - `search`: the search in the output (Ctrl+Shift+F): what's typed, the matches.
+//! - `links`: `https://...` in the output, opened with Ctrl+click.
 //! - `setup`: the install scripts from `setup/`, built into the exe.
 //! - `shell_integration`: makes the shell tell Kel its folder, and when a command
 //!   starts and ends.
@@ -36,6 +37,7 @@ pub mod font;
 pub mod icons;
 pub mod keys;
 pub mod layout;
+pub mod links;
 pub mod mouse;
 pub mod palette;
 pub mod project;
