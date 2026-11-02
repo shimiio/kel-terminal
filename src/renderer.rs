@@ -1013,7 +1013,7 @@ fn draw_sidebar(
         let text_y = r.y + r.h.saturating_sub(ui.line_h) / 2;
         let radius = 4.0 * ui.scale;
         let (cx, cy) = ((r.x + ui.px(14)) as f32, r.y as f32 + r.h as f32 / 2.0);
-        let (name, hint) = match sidebar.row(row) {
+        let row_look = match sidebar.row(row) {
             Row::Save => {
                 // After a line across.
                 let line_y = r.y - ui.px(8);
@@ -1026,27 +1026,73 @@ fn draw_sidebar(
                 continue;
             }
             // A ring, not a dot: no project, no color of its own.
-            Row::Home { here } => {
-                let hole = radius - 1.5 * ui.scale;
-                fill_circle(pixels, width, cx, cy, radius, hole, dim);
-                ("home", if here { "here" } else { "" })
-            }
+            Row::Home { here, live } => ("home", "", theme.foreground, true, here, live),
             // A dot in the project's color.
-            Row::Project(project) => {
-                let dot = project.color.unwrap_or(dim);
-                fill_circle(pixels, width, cx, cy, radius, 0.0, dot);
-                (project.name.as_str(), project.hint.as_str())
+            Row::Project(p) => {
+                let color = p.color.unwrap_or(theme.foreground);
+                (
+                    p.name.as_str(),
+                    p.hint.as_str(),
+                    color,
+                    false,
+                    p.current,
+                    p.live,
+                )
             }
         };
-        // The name, and at the right where it is.
+        let (name, folder, color, ring, here, live) = row_look;
+        // Open in the window: bright. Not open: faded, its name too.
+        let awake = here || live.open;
+        let color = if awake {
+            color
+        } else {
+            blend(back, color, 100)
+        };
+        let hole = if ring { radius - 1.5 * ui.scale } else { 0.0 };
+        fill_circle(pixels, width, cx, cy, radius, hole, color);
+        // A command runs there: a ring around it, as around a tab's mark.
+        if live.busy {
+            let outer = radius + 3.0 * ui.scale;
+            let hole = outer - RING_WIDTH * ui.scale;
+            fill_circle(pixels, width, cx, cy, outer, hole, color);
+        }
+        // At the right: on screen, what it's doing, or where it is.
+        let hint = match () {
+            _ if here => "here",
+            _ if live.busy => "running",
+            _ if live.open => "open",
+            _ => folder,
+        };
         let name_x = r.x + ui.px(28);
         let hint = keep_end(hint, (r.w / 2) / ui.advance.max(1));
         let hint_w = hint.chars().count() * ui.advance;
-        let name_w = (r.x + r.w).saturating_sub(name_x + hint_w + ui.px(18));
-        let fg = theme.foreground;
+        let hint_x = r.x + r.w - ui.px(10) - hint_w;
+        // New output not seen yet: a dot before the hint, as on a tab.
+        let mark_w = if live.activity && !here {
+            let dot = DOT_RADIUS * ui.scale;
+            let mx = hint_x as f32 - ui.px(8) as f32 - dot;
+            fill_circle(pixels, width, mx, cy, dot, 0.0, theme.foreground);
+            ui.px(16)
+        } else {
+            0
+        };
+        let name_w = hint_x.saturating_sub(name_x + mark_w + ui.px(8));
+        let fg = if awake {
+            theme.foreground
+        } else {
+            blend(back, theme.foreground, 170)
+        };
         draw_ui_text(pixels, width, font, ui, name, (name_x, text_y), name_w, fg);
-        let at = (r.x + r.w - ui.px(10) - hint_w, text_y);
-        draw_ui_text(pixels, width, font, ui, &hint, at, hint_w, dim);
+        draw_ui_text(
+            pixels,
+            width,
+            font,
+            ui,
+            &hint,
+            (hint_x, text_y),
+            hint_w,
+            dim,
+        );
     }
     if projects.is_empty() {
         // Where the first project would be.
@@ -1055,21 +1101,23 @@ fn draw_sidebar(
         draw_ui_text(pixels, width, font, ui, "no projects yet", at, r.w, dim);
     }
 
-    // The keys, at the bottom.
-    let at = (
-        panel.x + pad,
-        sidebar::footer_y(panel, layout.scale) + ui.px(14),
-    );
-    draw_ui_text(
-        pixels,
-        width,
-        font,
-        ui,
-        "Ctrl+Shift+B   Esc",
-        at,
-        text_w,
-        dim,
-    );
+    // At the bottom: the keys, or a question waiting for a second press (Del
+    // on a project where a command runs), in two lines if it's long.
+    let footer = sidebar::footer_y(panel, layout.scale);
+    let (text, color) = match chrome.question {
+        Some(question) => (question, theme.foreground),
+        None => ("Enter   Del closes   Esc", dim),
+    };
+    let fits = text_w / ui.advance.max(1);
+    let lines: Vec<&str> = match text.split_once(": ") {
+        Some((first, rest)) if text.chars().count() > fits => vec![first, rest],
+        _ => vec![text],
+    };
+    let top = footer + ui.px(24) - lines.len() * ui.line_h / 2;
+    for (i, line) in lines.into_iter().enumerate() {
+        let at = (panel.x + pad, top + i * ui.line_h);
+        draw_ui_text(pixels, width, font, ui, line, at, text_w, color);
+    }
 }
 
 /// `text` in at most `chars` letters, cut at the start: a folder's end says the

@@ -174,9 +174,10 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       Switching hides a set of tabs, nothing stops: a `ping -t` keeps going. Leaving saves
       the project's file; a project's last tab closed goes home. Home has no file: it lives
       while Kel runs, a fresh one after a restart (to decide after using it)
-- [ ] Sidebar shows what's open and alive: a mark on the projects open in the window, the
-      busy ring where a command runs, the dot where there's new output. "Close project" ends
-      its shells: each idle PowerShell is ~58 MB (measured)
+- [x] Sidebar shows what's open and alive: bright dots for the projects open in the window,
+      the busy ring where a command runs, the dot where there's new output. Del there (or
+      `Close project` in the palette) ends a project's shells: each idle PowerShell is
+      ~58 MB (measured). Home's last tab closed closes Kel
 - [ ] Home as a start screen (like Visual Studio's): the recent projects at start; typing
       makes it a plain terminal (what's typed is kept until the shell is ready)
 - [ ] Window vibrancy

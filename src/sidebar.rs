@@ -32,6 +32,18 @@ const ROW_HEIGHT: usize = 32;
 const SAVE_GAP: usize = 16;
 const FOOTER: usize = 48;
 
+/// What's going on in a project (or home) open in the window: `App` knows, and
+/// tells the sidebar each time it's drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Live {
+    /// Its tabs are in this window, on screen or out of sight.
+    pub open: bool,
+    /// A command runs in one of its tabs (nvim, `npm run dev`).
+    pub busy: bool,
+    /// One of its tabs has new output, not seen yet.
+    pub activity: bool,
+}
+
 /// One project in the list.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
@@ -42,6 +54,7 @@ pub struct Entry {
     pub hint: String,
     /// It's the project on screen.
     pub current: bool,
+    pub live: Live,
 }
 
 /// What a row of the sidebar is.
@@ -50,6 +63,7 @@ pub enum Row<'a> {
     /// Kel without a project. `here`: it is on screen.
     Home {
         here: bool,
+        live: Live,
     },
     Project(&'a Entry),
     /// "Save the tabs as a project".
@@ -58,6 +72,8 @@ pub enum Row<'a> {
 
 pub struct Sidebar {
     projects: Vec<Entry>,
+    /// What's going on at home.
+    home: Live,
     /// The chosen row: 0 is `home`, then the projects, then "Save".
     selected: usize,
 }
@@ -67,7 +83,20 @@ impl Sidebar {
     /// project's, or `home` without one.
     pub fn new(projects: Vec<Entry>) -> Sidebar {
         let selected = projects.iter().position(|p| p.current).map_or(0, |i| i + 1);
-        Sidebar { projects, selected }
+        Sidebar {
+            projects,
+            home: Live::default(),
+            selected,
+        }
+    }
+
+    /// What's going on in each project and at home now: `live(Some(name))` for a
+    /// project, `live(None)` for home.
+    pub fn update_live(&mut self, live: impl Fn(Option<&str>) -> Live) {
+        self.home = live(None);
+        for project in &mut self.projects {
+            project.live = live(Some(&project.name));
+        }
     }
 
     pub fn projects(&self) -> &[Entry] {
@@ -84,6 +113,7 @@ impl Sidebar {
         match row {
             0 => Row::Home {
                 here: !self.projects.iter().any(|p| p.current),
+                live: self.home,
             },
             _ => match self.projects.get(row - 1) {
                 Some(project) => Row::Project(project),
@@ -173,6 +203,7 @@ mod tests {
             color: None,
             hint: String::new(),
             current,
+            live: Live::default(),
         }
     }
 
@@ -181,10 +212,14 @@ mod tests {
         let sidebar = Sidebar::new(vec![entry("api", false), entry("kel", true)]);
         assert_eq!(sidebar.selected(), 2);
         assert_eq!(sidebar.chosen(), Action::OpenProject("kel".into()));
-        assert_eq!(sidebar.row(0), Row::Home { here: false });
+        let home = |here| Row::Home {
+            here,
+            live: Live::default(),
+        };
+        assert_eq!(sidebar.row(0), home(false));
         // No project here: home.
         let sidebar = Sidebar::new(vec![entry("api", false)]);
-        assert_eq!(sidebar.row(0), Row::Home { here: true });
+        assert_eq!(sidebar.row(0), home(true));
         assert_eq!(sidebar.chosen(), Action::OpenHome);
     }
 
@@ -202,6 +237,31 @@ mod tests {
         // No projects at all: home and "Save".
         let sidebar = Sidebar::new(Vec::new());
         assert_eq!((sidebar.rows(), sidebar.row(1)), (2, Row::Save));
+    }
+
+    #[test]
+    fn what_s_going_on() {
+        let mut sidebar = Sidebar::new(vec![entry("api", false), entry("kel", true)]);
+        let busy = Live {
+            open: true,
+            busy: true,
+            activity: false,
+        };
+        // kel runs something; api isn't open; home is, quiet.
+        sidebar.update_live(|name| match name {
+            Some("kel") => busy,
+            Some(_) => Live::default(),
+            None => Live {
+                open: true,
+                ..Live::default()
+            },
+        });
+        assert_eq!(sidebar.projects()[1].live, busy);
+        assert_eq!(sidebar.projects()[0].live, Live::default());
+        let Row::Home { live, .. } = sidebar.row(0) else {
+            panic!("home is first");
+        };
+        assert!(live.open && !live.busy);
     }
 
     #[test]

@@ -193,6 +193,7 @@ pub fn sidebar_entries(current: Option<&str>) -> Vec<Entry> {
                 color,
                 hint,
                 current: here,
+                live: Default::default(), // App knows: `Sidebar::update_live`
             }
         })
         .collect()

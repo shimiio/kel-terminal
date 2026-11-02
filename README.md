@@ -54,7 +54,7 @@ the new program.
 | Ctrl+Shift+P | Command palette: type a few letters (`ntb` finds "New tab"), Up/Down, Enter; Esc or a click closes it |
 | Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C). A line too long for the window comes out as one line, not cut where it wrapped |
 | Ctrl+Shift+V | Paste |
-| Ctrl+Shift+B | The sidebar of projects (or `≡` at the tab bar's start). First `home`: Kel without a project. Then the projects, each with its color; Enter or a click opens one, the last line saves the tabs as a new one. Esc or a click outside closes |
+| Ctrl+Shift+B | The sidebar of projects (or `≡` at the tab bar's start). First `home`: Kel without a project. Then the projects, each with its color; Enter or a click goes to one, Del closes an open one, the last line saves the tabs as a new one. Esc or a click outside closes the sidebar |
 | Ctrl+Shift+F | Find in the output (not the typed commands: that's PowerShell's Ctrl+R). Type: every match is marked, the newest one chosen. Enter or Up: the one before, Shift+Enter or Down: the next one. Any case: `error` finds `ERROR`, also cut at the window's edge. Esc closes |
 | Ctrl+click | Opens the `https://` link under the mouse in the browser (also in nvim). Hold Ctrl and the link is underlined. A link cut at the window's edge is one link; a `.` or `,` after it isn't part of it |
 | Ctrl+C | Stop the running command |
@@ -190,9 +190,15 @@ you were in goes out of sight: nothing in it stops, a `ping -t` keeps going, an
 unsaved nvim stays unsaved. Choose it again and it's as you left it. `home`, at
 the top of the sidebar, is Kel without a project.
 
-Leaving a project saves its file. Its last tab closed (`exit`): back home. Closing
-the window saves every open project, and asks first if a command runs in any of
-them.
+The sidebar shows what's open: a bright dot for the projects open in the window, a
+faded one for the rest; a ring around it where a command runs ("running"), a small
+dot where there's output you haven't seen. Del on an open project closes it: saved,
+its shells ended. The palette has `Close project: kel` for the one on screen.
+
+Leaving a project saves its file. Its last tab closed (`exit`): back home. Home's
+last tab closed: Kel closes, saving the projects, unless a command runs in one of
+them, which comes on screen instead. Closing the window saves every open project,
+and asks first if a command runs in any of them.
 
 To make one, open the tabs you want, go to the project's folder in one of them, and
 type a new name in the palette: `Save the tabs as project: myapp`. The project's

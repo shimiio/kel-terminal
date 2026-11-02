@@ -44,6 +44,8 @@ pub enum Action {
     OpenProject(String),
     /// Goes home in this window: Kel without a project, `home` in the sidebar.
     OpenHome,
+    /// Closes the project on screen: saves it, ends its shells, goes home.
+    CloseProject,
     /// Saves the tabs as a new project of this name; the window becomes it.
     SaveProject(String),
 }

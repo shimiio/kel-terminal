@@ -9,12 +9,12 @@ use crate::font::{self, Fonts};
 use crate::keys::{self, Action};
 use crate::layout::{Layout, TitleHit, WindowButton};
 use crate::mouse::{self, Tracking};
-use crate::palette::Palette;
+use crate::palette::{Item, Palette};
 use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{Chrome, Renderer, TabLabel};
 use crate::search::Search;
 use crate::setup;
-use crate::sidebar::Sidebar;
+use crate::sidebar::{Live, Row, Sidebar};
 use crate::tab::{Tab, TabId};
 use crate::term::{Found, Terminal};
 use std::path::PathBuf;
@@ -81,6 +81,8 @@ const CONFIRM_TIME: Duration = Duration::from_secs(3);
 #[derive(Clone, Copy, PartialEq)]
 enum Closing {
     Tab(TabId),
+    /// A project: the one whose first tab this is.
+    Project(TabId),
     Window,
 }
 
@@ -113,6 +115,13 @@ struct Workspace {
     tabs: Vec<Tab>,
     /// The tab that was on screen, shown again on the way back.
     active: usize,
+}
+
+impl Workspace {
+    /// Its project's name; `None`: home.
+    fn name(&self) -> Option<&str> {
+        self.project.as_ref().map(|p| p.name.as_str())
+    }
 }
 
 /// The project on screen (`kel <name>`, or chosen in the sidebar): what's kept
@@ -445,24 +454,44 @@ impl App {
     }
 
     /// The last tab on screen ended. A project's: back home, the home that was
-    /// left or a new one. Home's: the project you were in last. Returns `false`
-    /// when there's nothing left to go to: Kel closes.
-    /// The project's file isn't written: it stays as it was, not a project of no
-    /// tabs (see `save_project`).
+    /// left or a new one; its file isn't written, it stays as it was, not a
+    /// project of no tabs (see `save_project`).
+    /// Home's: Kel closes, as with the window's ×, saving the projects out of
+    /// sight. But not over a command running in one of them (an unsaved nvim):
+    /// that project comes on screen instead and says so.
+    /// Returns `false` when Kel should close.
     fn leave_empty(&mut self) -> bool {
-        let next = if self.project.is_some() {
-            match self.parked.iter().position(|w| w.project.is_none()) {
-                Some(home) => Some(self.parked.remove(home)),
-                None => self.start_workspace(None).ok(),
-            }
-        } else {
-            self.parked.pop()
+        if self.project.is_some() {
+            let Ok(home) = self.home_workspace() else {
+                return false;
+            };
+            self.enter(home);
+            return true;
+        }
+        let running = |w: &Workspace| w.tabs.iter().any(|tab| tab.command.running());
+        let (next, status) = match self.parked.iter().position(running) {
+            Some(index) => (
+                index,
+                "a command runs here: close the window to quit".to_string(),
+            ),
+            None => match self.save_parked() {
+                Ok(()) => return false,
+                // Can't be saved: stay, in the last project, and say why.
+                Err(e) => (self.parked.len() - 1, format!("{e:#}")),
+            },
         };
-        let Some(next) = next else {
-            return false;
-        };
-        self.enter(next);
+        let workspace = self.parked.remove(next);
+        self.enter(workspace);
+        self.set_status(Some(status));
         true
+    }
+
+    /// Home's tabs: the ones left out of sight, or a new plain one.
+    fn home_workspace(&mut self) -> anyhow::Result<Workspace> {
+        match self.parked.iter().position(|w| w.project.is_none()) {
+            Some(index) => Ok(self.parked.remove(index)),
+            None => self.start_workspace(None),
+        }
     }
 
     /// Shows the tab at `index` (its place in the list).
@@ -568,12 +597,8 @@ impl App {
     fn close_window(&mut self) {
         // Saved at every try: a try that only asks writes the same file again later.
         // Every project open in the window, the ones out of sight too.
-        let mut saved = self.save_project();
-        for workspace in &self.parked {
-            if let Some(open) = &workspace.project {
-                saved = saved.and(save_tabs(open, &workspace.tabs));
-            }
-        }
+        let saved = self.save_project();
+        let saved = saved.and(self.save_parked());
         let running = |tabs: &[Tab]| tabs.iter().filter(|tab| tab.command.running()).count();
         let here = running(&self.tabs);
         let away: usize = self.parked.iter().map(|w| running(&w.tabs)).sum();
@@ -600,12 +625,90 @@ impl App {
     }
 
     /// Writes the file of the project on screen: its tabs as they are now (see
-    /// `save_tabs`). When you leave the project and when the window closes: after `exit` in
-    /// each tab, the file stays as it was, not a project of no tabs.
+    /// `save_tabs`). When you leave it and when the window closes: after `exit`
+    /// in each tab, the file stays as it was, not a project of no tabs.
     fn save_project(&self) -> anyhow::Result<()> {
         match &self.project {
             Some(open) => save_tabs(open, &self.tabs),
             None => Ok(()), // no project, or one that couldn't be read: not written over
+        }
+    }
+
+    /// Writes the files of the projects out of sight: all of them, even after one
+    /// fails. The first problem is the one returned.
+    fn save_parked(&self) -> anyhow::Result<()> {
+        let mut saved = Ok(());
+        for workspace in &self.parked {
+            if let Some(open) = &workspace.project {
+                let result = save_tabs(open, &workspace.tabs);
+                if saved.is_ok() {
+                    saved = result;
+                }
+            }
+        }
+        saved
+    }
+
+    /// Closes the open project `name`, on screen or out of sight: saves its file
+    /// and ends its shells. The one on screen: home comes. If a command runs in
+    /// it, or the file can't be written, only the second time (`again` says how).
+    fn close_project(&mut self, name: &str, again: &str) {
+        let here = self.project.as_ref().is_some_and(|p| p.name == name);
+        let (open, tabs) = if here {
+            (self.project.as_ref(), &self.tabs)
+        } else {
+            match self.parked.iter().find(|w| w.name() == Some(name)) {
+                Some(w) => (w.project.as_ref(), &w.tabs),
+                None => return, // not open
+            }
+        };
+        let (Some(open), Some(first)) = (open, tabs.first()) else {
+            return;
+        };
+        let id = first.id;
+        let running = tabs.iter().filter(|tab| tab.command.running()).count();
+        let saved = save_tabs(open, tabs);
+        let message = match (&saved, running) {
+            (Err(e), _) => format!("{e:#}: {again}"),
+            (Ok(()), 0) => String::new(),
+            (Ok(()), 1) => format!("a command runs there: {again}"),
+            (Ok(()), n) => format!("commands run in {n} tabs: {again}"),
+        };
+        let ask = saved.is_err() || running > 0;
+        if !self.confirm_close(Closing::Project(id), ask, message) {
+            return;
+        }
+        if !here {
+            // Dropped, its tabs end their shells (`Tab`'s `drop`).
+            self.parked.retain(|w| w.name() != Some(name));
+            self.request_redraw();
+            return;
+        }
+        // Home first: if it can't start, the project stays.
+        match self.home_workspace() {
+            Ok(home) => {
+                self.tabs.clear();
+                self.enter(home);
+            }
+            Err(e) => self.set_status(Some(format!("{e:#}"))),
+        }
+    }
+
+    /// What's going on in the project `name` (`None`: home), for the sidebar.
+    fn live_of(&self, name: Option<&str>) -> Live {
+        let here = self.project.as_ref().map(|p| p.name.as_str()) == name;
+        let tabs = if here {
+            &self.tabs
+        } else {
+            match self.parked.iter().find(|w| w.name() == name) {
+                Some(w) => &w.tabs,
+                None => return Live::default(), // not open
+            }
+        };
+        Live {
+            open: true,
+            busy: tabs.iter().any(|tab| tab.command.running()),
+            activity: tabs.iter().any(|tab| tab.activity),
         }
     }
 
@@ -621,10 +724,7 @@ impl App {
         if self.project.as_ref().map(|p| p.name.as_str()) == name {
             return; // it's on screen
         }
-        let open = self
-            .parked
-            .iter()
-            .position(|w| w.project.as_ref().map(|p| p.name.as_str()) == name);
+        let open = self.parked.iter().position(|w| w.name() == name);
         let next = match open {
             Some(index) => self.parked.remove(index),
             None => match self.start_workspace(name) {
@@ -912,6 +1012,14 @@ impl App {
                         // Kel's actions first, then the projects, then the install scripts.
                         let current = self.project.as_ref().map(|p| p.name.as_str());
                         let mut items = keys::palette_items();
+                        // The project on screen can be closed.
+                        if let Some(name) = current {
+                            items.push(Item {
+                                label: format!("Close project: {name}"),
+                                hint: "then home".to_string(),
+                                action: Action::CloseProject,
+                            });
+                        }
                         items.extend(project::palette_items(current));
                         items.extend(setup::palette_items());
                         // And from what's typed: "Save the tabs as project: <it>",
@@ -933,6 +1041,11 @@ impl App {
             Action::Install(name) => self.install(name),
             Action::OpenProject(name) => self.switch_to(Some(&name)),
             Action::OpenHome => self.switch_to(None),
+            Action::CloseProject => {
+                if let Some(name) = self.project.as_ref().map(|p| p.name.clone()) {
+                    self.close_project(&name, "choose Close project again");
+                }
+            }
             Action::SaveProject(name) => self.save_as_project(name),
         }
     }
@@ -1000,9 +1113,29 @@ impl App {
             Key::Named(NamedKey::ArrowUp) => sidebar.move_selection(-1),
             Key::Named(NamedKey::ArrowDown) => sidebar.move_selection(1),
             Key::Named(NamedKey::Enter) => self.sidebar_choose(),
+            Key::Named(NamedKey::Delete) => self.sidebar_close(),
             _ => {}
         }
         self.request_redraw();
+    }
+
+    /// Del in the sidebar: closes the chosen project, if it's open (see
+    /// `close_project`). The sidebar stays, and shows it closed.
+    fn sidebar_close(&mut self) {
+        let Some(sidebar) = &self.sidebar else {
+            return;
+        };
+        let selected = sidebar.selected();
+        let name = match sidebar.row(selected) {
+            Row::Project(p) if p.current || p.live.open => p.name.clone(),
+            _ => return,
+        };
+        self.close_project(&name, "Del again to close");
+        // The project on screen may be another one now: home.
+        let current = self.project.as_ref().map(|p| p.name.as_str());
+        let mut sidebar = Sidebar::new(project::sidebar_entries(current));
+        sidebar.select(selected);
+        self.sidebar = Some(sidebar);
     }
 
     /// Does the sidebar's chosen row, and closes it: opens that project, or the
@@ -1334,6 +1467,11 @@ impl App {
     fn on_redraw(&mut self) {
         if self.minimized() {
             return; // nothing to see
+        }
+        // What's going on in each project, now: a few tabs looked at.
+        if let Some(mut sidebar) = self.sidebar.take() {
+            sidebar.update_live(|name| self.live_of(name));
+            self.sidebar = Some(sidebar);
         }
         let labels: Vec<TabLabel> = self
             .tabs
