@@ -28,6 +28,9 @@ pub enum Action {
     ZoomOut,
     ZoomReset,
     OpenConfig,
+    /// Moves the tab on screen one place left / right.
+    MoveTabLeft,
+    MoveTabRight,
     /// Opens the command palette, or closes it.
     Palette,
     /// Opens the search in the output, or closes it.
@@ -68,6 +71,8 @@ pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
         (KeyCode::Digit7, false) => Action::GoToTab(7),
         (KeyCode::Digit8, false) => Action::GoToTab(8),
         (KeyCode::Digit9, false) => Action::LastTab, // like browsers
+        (KeyCode::PageUp, true) => Action::MoveTabLeft, // like browsers too
+        (KeyCode::PageDown, true) => Action::MoveTabRight,
         (KeyCode::KeyV, true) => Action::Paste,
         (KeyCode::KeyC, true) => Action::Copy,
         (KeyCode::KeyC, false) => Action::Interrupt,
@@ -97,6 +102,12 @@ pub fn palette_items() -> Vec<Item> {
         item("Next tab", "Ctrl+Tab", Action::NextTab),
         item("Previous tab", "Ctrl+Shift+Tab", Action::PreviousTab),
         item("Last tab", "Ctrl+9", Action::LastTab),
+        item("Move tab left", "Ctrl+Shift+PageUp", Action::MoveTabLeft),
+        item(
+            "Move tab right",
+            "Ctrl+Shift+PageDown",
+            Action::MoveTabRight,
+        ),
         item("Paste", "Ctrl+Shift+V", Action::Paste),
         item("Copy the selection", "Ctrl+Shift+C", Action::Copy),
         item("Find in the output", "Ctrl+Shift+F", Action::Find),
@@ -389,6 +400,8 @@ mod tests {
         }
         let code = match last {
             "Tab" => KeyCode::Tab,
+            "PageUp" => KeyCode::PageUp,
+            "PageDown" => KeyCode::PageDown,
             "=" => KeyCode::Equal,
             "-" => KeyCode::Minus,
             "," => KeyCode::Comma,

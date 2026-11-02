@@ -47,6 +47,7 @@ the new program.
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
 | Ctrl+1 … Ctrl+8 | Tab 1 … 8 |
 | Ctrl+9 | The last tab |
+| Ctrl+Shift+PageUp / PageDown | Move the tab one place left / right. Or drag it with the mouse |
 | Ctrl+= / Ctrl+- | Bigger / smaller font |
 | Ctrl+0 | Font size back to the one in the config |
 | Ctrl+, | Open the config file |

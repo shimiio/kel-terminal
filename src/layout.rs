@@ -287,6 +287,15 @@ impl Layout {
             .collect()
     }
 
+    /// The place among `count` tabs for a tab dragged to `x`: the one under it,
+    /// or the first or last past the ends. All tabs are as wide, so it's a
+    /// division: x = 8 + 50 + 400 with 180-wide tabs from 8 + 50 → place 2.
+    pub fn tab_slot(&self, x: usize, count: usize) -> usize {
+        let start = self.tab_bar.x + self.lead;
+        let w = self.tab_w(count).max(1);
+        (x.saturating_sub(start) / w).min(count.saturating_sub(1))
+    }
+
     /// One tab's width, when there are `count`.
     fn tab_w(&self, count: usize) -> usize {
         let room = self
@@ -497,6 +506,19 @@ mod tests {
         // Many tabs still fit, with the name.
         let (_, palette) = layout.bar_buttons(30);
         assert!(palette.x + palette.w <= layout.tab_bar.x + layout.tab_bar.w);
+    }
+
+    #[test]
+    fn a_dragged_tab_s_place() {
+        let mut layout = Spacing::default().layout(1000, 700, 1.0);
+        layout.set_lead(50);
+        let tabs = layout.tabs(3);
+        assert_eq!(layout.tab_slot(tabs[0].x + 10, 3), 0);
+        assert_eq!(layout.tab_slot(tabs[2].x, 3), 2);
+        assert_eq!(layout.tab_slot(tabs[1].x + tabs[1].w - 1, 3), 1);
+        // Past the ends: the first and the last place.
+        assert_eq!(layout.tab_slot(0, 3), 0);
+        assert_eq!(layout.tab_slot(990, 3), 2);
     }
 
     #[test]

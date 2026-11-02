@@ -91,6 +91,18 @@ struct PendingClose {
     until: Instant,
 }
 
+/// How far (pixels at 100%) a pressed tab must move before it's dragged, not
+/// clicked: a hand isn't still.
+const TAB_DRAG_START: usize = 6;
+
+/// A tab held by the mouse (see `drag_tab`).
+struct TabDrag {
+    /// Where the press was, in pixels from the window's left edge.
+    from_x: usize,
+    /// It went past `TAB_DRAG_START`: it follows the mouse now.
+    moving: bool,
+}
+
 /// The project open in this window (`kel <name>`): what's kept of its file.
 struct OpenProject {
     name: String,
@@ -170,6 +182,8 @@ pub struct App {
     /// The link under the mouse while Ctrl is held (see `update_link`): where it
     /// is and its text. Underlined, and Ctrl+click opens it.
     link: Option<(Found, String)>,
+    /// The tab under the pressed mouse button, until it's let go.
+    tab_drag: Option<TabDrag>,
 }
 
 impl App {
@@ -305,6 +319,7 @@ impl App {
             palette: None,
             search: None,
             link: None,
+            tab_drag: None,
         })
     }
 
@@ -397,6 +412,42 @@ impl App {
         self.scroll_rest = 0.0;
         self.update_focus();
         self.request_redraw();
+    }
+
+    /// Moves the tab at `from` to the place `to`; the ones between shift over by
+    /// one. The tab on screen stays on screen, wherever it goes. Nothing at the
+    /// ends: the first tab doesn't go round to the last place.
+    fn move_tab(&mut self, from: usize, to: usize) {
+        if from == to || to >= self.tabs.len() {
+            return;
+        }
+        let on_screen = self.tab().id;
+        let tab = self.tabs.remove(from);
+        self.tabs.insert(to, tab);
+        self.active = self
+            .tabs
+            .iter()
+            .position(|tab| tab.id == on_screen)
+            .unwrap_or(0);
+        self.update_hovered();
+        self.request_redraw();
+    }
+
+    /// The mouse moved with a tab held: once it's gone `TAB_DRAG_START` away, the
+    /// tab takes the place under the mouse, one place at a time, the others
+    /// stepping aside. The project saves the new order when the window closes.
+    fn drag_tab(&mut self) {
+        let x = self.mouse_pos.0;
+        let start = crate::layout::scaled(TAB_DRAG_START, self.layout.scale);
+        let Some(drag) = &mut self.tab_drag else {
+            return;
+        };
+        if !drag.moving && x.abs_diff(drag.from_x) < start {
+            return;
+        }
+        drag.moving = true;
+        let to = self.layout.tab_slot(x, self.tabs.len());
+        self.move_tab(self.active, to);
     }
 
     /// Tells the programs that asked (`ESC[?1004h`) when they get the focus
@@ -630,6 +681,8 @@ impl App {
             Action::PreviousTab => self.next_tab(-1),
             Action::GoToTab(n) => self.show_tab(n - 1), // tab 1 is at index 0
             Action::LastTab => self.show_tab(self.tabs.len() - 1),
+            Action::MoveTabLeft => self.move_tab(self.active, self.active.saturating_sub(1)),
+            Action::MoveTabRight => self.move_tab(self.active, self.active + 1),
             Action::Paste => self.paste(),
             Action::Copy => self.copy(),
             Action::Interrupt => self.send_to_shell(&[0x03]), // the byte Ctrl+C stands for
@@ -1234,6 +1287,10 @@ impl App {
         if moved {
             self.update_link();
         }
+        if self.tab_drag.is_some() {
+            self.drag_tab();
+            return;
+        }
 
         if self.selecting {
             if let Some(selection) = &mut self.selection {
@@ -1411,7 +1468,14 @@ impl App {
             Some(TitleHit::Tab {
                 index,
                 close: false,
-            }) => self.show_tab(index),
+            }) => {
+                // On screen right away; held, it can be dragged to another place.
+                self.show_tab(index);
+                self.tab_drag = Some(TabDrag {
+                    from_x: x,
+                    moving: false,
+                });
+            }
             None => self.on_empty_bar_click(&window),
         }
     }
@@ -1461,6 +1525,7 @@ impl App {
                 self.request_redraw();
             }
             ElementState::Released => {
+                self.tab_drag = None;
                 self.selecting = false;
                 // Just a click, no drag: no selection.
                 if self.selection.is_some_and(|s| s.start == s.end) {

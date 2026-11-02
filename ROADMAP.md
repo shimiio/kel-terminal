@@ -59,6 +59,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 - [x] Ctrl+Shift+T new, Ctrl+Shift+W close, Ctrl+Tab / Ctrl+Shift+Tab next / previous,
       Ctrl+1…9 go to tab N
 - [ ] Later: a config option for Ctrl+Tab order, by position or most recently used (like browsers)
+- [x] Move tabs: drag one with the mouse, or Ctrl+Shift+PageUp / PageDown (like browsers);
+      a project saves the new order
 - [x] Tab bar: the active tab merges into the panel, the others stay muted; clickable
 - [x] Own title bar: no Windows title bar, the tab bar takes its place. Kel then does
       what it did: drag to move, double-click to maximize, minimize/maximize/close buttons,
