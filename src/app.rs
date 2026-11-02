@@ -9,6 +9,7 @@ use crate::config::{self, Config};
 use crate::font::{self, Fonts};
 use crate::keys::{self, Action};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton};
+use crate::logo;
 use crate::mouse::{self, Tracking};
 use crate::palette::{Item, Palette};
 use crate::project::{self, Project, TabRecipe};
@@ -29,7 +30,7 @@ use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, Window
 use winit::event_loop::ControlFlow;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
-use winit::window::{CursorIcon, ResizeDirection, Window, WindowId};
+use winit::window::{CursorIcon, Icon, ResizeDirection, Window, WindowId};
 
 // Starting size, in cells. After that, the size comes from the window (`on_resize`).
 const ROWS: usize = 24;
@@ -233,6 +234,18 @@ pub struct App {
     last_tab_click: Option<(TabId, Instant)>,
     /// A project held by the mouse in the sidebar.
     sidebar_drag: Option<SidebarDrag>,
+    /// The window's icon as set last: its colors and size (see `update_icon`).
+    icon: Option<IconKey>,
+}
+
+/// What the window's icon is made from: the text's, the cursor's and the
+/// background's colors, and its size. Another one: the icon is made again.
+#[derive(Clone, Copy, PartialEq)]
+struct IconKey {
+    letters: u32,
+    cursor: u32,
+    back: u32,
+    size: usize,
 }
 
 impl App {
@@ -378,6 +391,7 @@ impl App {
             card: None,
             last_tab_click: None,
             sidebar_drag: None,
+            icon: None,
         })
     }
 
@@ -1787,6 +1801,7 @@ impl App {
     /// The blink timer redraws twice a second, so a ring for a busy tab shows up
     /// at most half a second after `BUSY_DELAY`, without a timer of its own.
     fn on_redraw(&mut self) {
+        self.update_icon();
         if self.minimized() {
             return; // nothing to see
         }
@@ -1833,6 +1848,39 @@ impl App {
                 self.selection,
                 self.cursor_on,
             );
+        }
+    }
+
+    /// The window's icon (`k▌`, see `logo::icon`), its cursor the color of the
+    /// project on screen: none in home, the text's. Made again only when one of
+    /// its colors changed (another project, its color edited, another theme), so
+    /// every redraw can ask.
+    fn update_icon(&mut self) {
+        let Some(window) = &self.window else {
+            return;
+        };
+        let theme = &self.config.colors;
+        let cursor = self.project.as_ref().and_then(|p| p.color);
+        let key = IconKey {
+            letters: theme.foreground,
+            cursor: cursor.unwrap_or(theme.foreground),
+            back: theme.background,
+            // 16 at 100%: the small one, by the title; the taskbar's twice that.
+            size: (16.0 * window.scale_factor()).round() as usize,
+        };
+        if self.icon == Some(key) {
+            return;
+        }
+        self.icon = Some(key);
+        let make = |size: usize| {
+            let rgba = logo::icon(size, key.letters, key.cursor, key.back);
+            Icon::from_rgba(rgba, size as u32, size as u32).ok()
+        };
+        window.set_window_icon(make(key.size));
+        #[cfg(target_os = "windows")]
+        {
+            use winit::platform::windows::WindowExtWindows;
+            window.set_taskbar_icon(make(key.size * 2));
         }
     }
 

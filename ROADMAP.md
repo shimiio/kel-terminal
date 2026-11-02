@@ -166,8 +166,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       the cursor blinking with the terminal's; small, still, at the sidebar's top. The cursor
       is the project's color; home has none (the text's): Kel takes the color of what you
       work on
-- [ ] The window's icon from the logo's pixels (`k▌`), its cursor the project's color; the
-      exe's icon (`.ico`, home's gray) made from the same pixels
+- [x] The window's icon from the logo's pixels (`k▌`, a square of the background's color with
+      round corners), its cursor the project's color: in the taskbar too
+- [ ] The exe's icon (`.ico`, home's gray) made from the same pixels
 - [ ] Home neutral in the whole UI: the project's color as the accent, none in home
 - [ ] Maybe: a pixel font for the project name (built into the exe, see Fonts)
 - [x] Sidebar on the left: `≡` at the tab bar's start (a visible handle: hover alone wouldn't
