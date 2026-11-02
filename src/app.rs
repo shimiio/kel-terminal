@@ -993,6 +993,9 @@ impl App {
     /// The blink timer redraws twice a second, so a ring for a busy tab shows up
     /// at most half a second after `BUSY_DELAY`, without a timer of its own.
     fn on_redraw(&mut self) {
+        if self.minimized() {
+            return; // nothing to see
+        }
         let labels: Vec<TabLabel> = self
             .tabs
             .iter()
@@ -1026,9 +1029,21 @@ impl App {
         }
     }
 
+    /// Whether the window is minimized (only in the taskbar).
+    fn minimized(&self) -> bool {
+        self.window
+            .as_ref()
+            .is_some_and(|w| w.is_minimized() == Some(true))
+    }
+
     /// The window changed size: resize the grid and tell the shell.
     /// Uses the window's *current* size, because the event's size can be outdated.
     fn on_resize(&mut self) {
+        // Minimized, Kel's window is 160 x 28 pixels: no room for anything. The
+        // layout and the grids stay as they were; they're right again on restore.
+        if self.minimized() {
+            return;
+        }
         let scale = self.ui_scale();
         // Room for the project's name before the tabs: its letters at this scale.
         let name = self.project.as_ref().map(|p| p.name.as_str());

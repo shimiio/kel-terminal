@@ -589,7 +589,9 @@ fn draw_tab_bar(
         };
         if let Some((mark_color, ring)) = mark {
             let radius = DOT_RADIUS * ui.scale;
-            let cx = (tab.x + tab.w - padding) as f32 - radius;
+            // `saturating_sub`: a tab can be narrower than its padding (in a
+            // tiny window, or with a hundred tabs).
+            let cx = (tab.x + tab.w).saturating_sub(padding) as f32 - radius;
             let cy = tab.y as f32 + tab.h as f32 / 2.0;
             // A ring is the dot with a hole: the line is `ring` wide.
             let hole = if ring > 0.0 {
