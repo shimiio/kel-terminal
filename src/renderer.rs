@@ -382,8 +382,10 @@ impl Renderer {
         );
         draw_window_buttons(&mut buffer, width, theme, layout, chrome);
         draw_bar_buttons(&mut buffer, width, theme, layout, chrome);
-        // A question waits for an answer now, so it comes before a problem.
-        let message = match (chrome.question, chrome.status) {
+        // A question waits for an answer now, so it comes before a problem. With
+        // the sidebar open, it's at the sidebar's bottom instead: once is enough.
+        let question = chrome.question.filter(|_| chrome.sidebar.is_none());
+        let message = match (question, chrome.status) {
             (Some(question), _) => Some((question, theme.palette[11])),
             (None, Some(status)) => Some((status, theme.failed)),
             (None, None) => None,
@@ -1126,14 +1128,16 @@ fn draw_sidebar(
     // At the bottom: the keys, or a question waiting for a second press (Del
     // on a project where a command runs), in two lines if it's long.
     let footer = sidebar::footer_y(panel, layout.scale);
-    let (text, color) = match chrome.question {
-        Some(question) => (question, theme.foreground),
-        None => ("F2 edit   Del close   Esc", dim),
-    };
+    // The keys: in two lines, all of them don't fit in one.
     let fits = text_w / ui.advance.max(1);
-    let lines: Vec<&str> = match text.split_once(": ") {
-        Some((first, rest)) if text.chars().count() > fits => vec![first, rest],
-        _ => vec![text],
+    let (lines, color): (Vec<&str>, u32) = match chrome.question {
+        Some(text) => match text.split_once(": ") {
+            Some((first, rest)) if text.chars().count() > fits => {
+                (vec![first, rest], theme.foreground)
+            }
+            _ => (vec![text], theme.foreground),
+        },
+        None => (vec!["F2 edit   Del close", "Shift+Del delete   Esc"], dim),
     };
     let top = footer + ui.px(24) - lines.len() * ui.line_h / 2;
     for (i, line) in lines.into_iter().enumerate() {

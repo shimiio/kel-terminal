@@ -83,11 +83,13 @@ pub enum UserEvent {
 const CONFIRM_TIME: Duration = Duration::from_secs(3);
 
 /// What a second press would close.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Closing {
     Tab(TabId),
     /// A project: the one whose first tab this is.
     Project(TabId),
+    /// Deleting the project of this name (open or not).
+    Delete(String),
     Window,
 }
 
@@ -710,23 +712,75 @@ impl App {
             (Ok(()), n) => format!("commands run in {n} tabs: {again}"),
         };
         let ask = saved.is_err() || running > 0;
-        if !self.confirm_close(Closing::Project(id), ask, message) {
-            return;
+        if self.confirm_close(Closing::Project(id), ask, message) {
+            self.end_project(name);
         }
+    }
+
+    /// Ends the shells of the open project `name`, without writing its file. Out
+    /// of sight: dropped. On screen: home comes, and if home can't start, the
+    /// project stays (`false`).
+    fn end_project(&mut self, name: &str) -> bool {
+        let here = self.project.as_ref().is_some_and(|p| p.name == name);
         if !here {
             // Dropped, its tabs end their shells (`Tab`'s `drop`).
             self.parked.retain(|w| w.name() != Some(name));
             self.request_redraw();
-            return;
+            return true;
         }
-        // Home first: if it can't start, the project stays.
         match self.home_workspace() {
             Ok(home) => {
                 self.tabs.clear();
                 self.enter(home);
+                true
             }
-            Err(e) => self.set_status(Some(format!("{e:#}"))),
+            Err(e) => {
+                self.set_status(Some(format!("{e:#}")));
+                false
+            }
         }
+    }
+
+    /// Deletes the project `name`: its file, not its folder (`project::delete`).
+    /// Always on the second press only (`again` says how): a file deleted can't
+    /// come back. An open one is closed first, its commands ended, its file not
+    /// written.
+    fn delete_project(&mut self, name: &str, again: &str) {
+        let here = self.project.as_ref().is_some_and(|p| p.name == name);
+        let tabs = if here {
+            Some(&self.tabs)
+        } else {
+            self.parked
+                .iter()
+                .find(|w| w.name() == Some(name))
+                .map(|w| &w.tabs)
+        };
+        let open = tabs.is_some();
+        let running = tabs.map_or(0, |tabs| {
+            tabs.iter().filter(|tab| tab.command.running()).count()
+        });
+        let what = match running {
+            // Short: the sidebar's bottom has room for ~30 letters a line.
+            0 => "its file goes, folder stays",
+            1 => "a command ends, folder stays",
+            _ => "commands end, folder stays",
+        };
+        let message = format!("{again} to delete {name}: {what}");
+        if !self.confirm_close(Closing::Delete(name.to_string()), true, message) {
+            return;
+        }
+        if open && !self.end_project(name) {
+            return;
+        }
+        if let Err(e) = project::delete(name) {
+            self.set_status(Some(format!("{e:#}")));
+        }
+        // Home's start screen was made before the file went: again, without it.
+        if self.start.is_some() {
+            self.start = self.start_screen();
+        }
+        self.refresh_sidebar();
+        self.request_redraw();
     }
 
     /// What's going on in the project `name` (`None`: home), for the sidebar.
@@ -1101,6 +1155,11 @@ impl App {
                                 hint: "then home".to_string(),
                                 action: Action::CloseProject,
                             });
+                            items.push(Item {
+                                label: format!("Delete project: {name}"),
+                                hint: "its file, not the folder".to_string(),
+                                action: Action::DeleteProject,
+                            });
                         }
                         items.extend(project::palette_items(current));
                         items.extend(setup::palette_items());
@@ -1132,6 +1191,11 @@ impl App {
             Action::CloseProject => {
                 if let Some(name) = self.project.as_ref().map(|p| p.name.clone()) {
                     self.close_project(&name, "choose Close project again");
+                }
+            }
+            Action::DeleteProject => {
+                if let Some(name) = self.project.as_ref().map(|p| p.name.clone()) {
+                    self.delete_project(&name, "choose Delete project again");
                 }
             }
             Action::SaveProject(name) => self.save_as_project(name),
@@ -1194,6 +1258,7 @@ impl App {
     /// closes. Everything else waits until it's closed.
     fn sidebar_key(&mut self, event: &KeyEvent) {
         let alt = self.modifiers.alt_key();
+        let shift = self.modifiers.shift_key();
         let Some(sidebar) = &mut self.sidebar else {
             return;
         };
@@ -1204,6 +1269,7 @@ impl App {
             Key::Named(NamedKey::ArrowUp) => sidebar.move_selection(-1),
             Key::Named(NamedKey::ArrowDown) => sidebar.move_selection(1),
             Key::Named(NamedKey::Enter) => self.sidebar_choose(),
+            Key::Named(NamedKey::Delete) if shift => self.sidebar_delete(),
             Key::Named(NamedKey::Delete) => self.sidebar_close(),
             Key::Named(NamedKey::F2) => self.sidebar_edit(),
             _ => {}
@@ -1396,6 +1462,18 @@ impl App {
         let mut sidebar = Sidebar::new(project::sidebar_entries(current));
         sidebar.select(selected);
         self.sidebar = Some(sidebar);
+    }
+
+    /// Shift+Del in the sidebar: deletes the chosen project, open or not (see
+    /// `delete_project`).
+    fn sidebar_delete(&mut self) {
+        let Some(sidebar) = &self.sidebar else {
+            return;
+        };
+        if let Row::Project(p) = sidebar.row(sidebar.selected()) {
+            let name = p.name.clone();
+            self.delete_project(&name, "Shift+Del again");
+        }
     }
 
     /// F2 (or a right click) in the sidebar: the chosen project's card.

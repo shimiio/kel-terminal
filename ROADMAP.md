@@ -208,6 +208,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] Home as a start screen (like Visual Studio's): the recent projects (by when their file
       was written), ↑↓ Enter or a click opens one; typing puts it away and goes to the shell,
       which starts behind it
+- [x] Delete a project: Shift+Del in the sidebar or `Delete project` in the palette, on the
+      second press; its file and its line in `order.txt` go, its folder stays
 - [x] Cards: change in Kel what was only in the project's file. A tab's card (double-click
       it): its name and its command, saved at once
 - [x] A project's card (F2 or a right click in the sidebar): its name (the file renamed) and

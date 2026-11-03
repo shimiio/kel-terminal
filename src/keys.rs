@@ -47,6 +47,9 @@ pub enum Action {
     OpenHome,
     /// Closes the project on screen: saves it, ends its shells, goes home.
     CloseProject,
+    /// Deletes the project on screen: its file, not its folder (see
+    /// `project::delete`); then home.
+    DeleteProject,
     /// Opens the card of the tab on screen: its name and command.
     EditTab,
     /// Opens the card of the project on screen, in the sidebar: its name and color.

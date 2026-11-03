@@ -58,7 +58,7 @@ the new program.
 | F2 in the sidebar | The project's card (or a right click on it, or `Edit project` in the palette): its name, which renames its file, and its color: ←→ through the theme's, or a `#hex` typed, a dot showing it as it's typed |
 | Double-click a tab | Its card (or a right click): the tab's name (empty: the program's title) and, in a project, its command, which runs when the project opens. Enter or a click outside keeps it, in the project's file at once; Esc doesn't. Also `Edit tab` in the palette |
 | Ctrl+Shift+H | Home, its start screen: position 0, a calm place to start from. In home too: the start screen comes back (unless a command runs there) |
-| Ctrl+Shift+B | The sidebar of projects (or `≡` at the tab bar's start). First `home`: Kel without a project. Then the projects, each with its color; Enter or a click goes to one, Del closes an open one, the last line saves the tabs as a new one. Esc or a click outside closes the sidebar |
+| Ctrl+Shift+B | The sidebar of projects (or `≡` at the tab bar's start). First `home`: Kel without a project. Then the projects, each with its color; Enter or a click goes to one, Del closes an open one, Shift+Del deletes one, the last line saves the tabs as a new one. Esc or a click outside closes the sidebar |
 | Ctrl+Shift+F | Find in the output (not the typed commands: that's PowerShell's Ctrl+R). Type: every match is marked, the newest one chosen. Enter or Up: the one before, Shift+Enter or Down: the next one. Any case: `error` finds `ERROR`, also cut at the window's edge. Esc closes |
 | Ctrl+click | Opens the `https://` link under the mouse in the browser (also in nvim). Hold Ctrl and the link is underlined. A link cut at the window's edge is one link; a `.` or `,` after it isn't part of it |
 | Ctrl+C | Stop the running command |
@@ -206,6 +206,10 @@ The sidebar shows what's open: a bright dot for the projects open in the window,
 faded one for the rest; a ring around it where a command runs ("running"), a small
 dot where there's output you haven't seen. Del on an open project closes it: saved,
 its shells ended. The palette has `Close project: kel` for the one on screen.
+
+Shift+Del on a project (or `Delete project: kel` in the palette) deletes it, on the
+second press: its file in `projects`, open or not. Its folder, your code, stays: Kel
+never deletes your files. An open one is closed first, its commands ended.
 
 A new home (Kel started without a project, or home again after `Close project`)
 shows the start screen over its terminal: the projects used last. ↑↓ and Enter, or a

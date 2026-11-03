@@ -222,10 +222,33 @@ fn read_order(folder: &Path) -> Vec<String> {
 
 /// Keeps `names` as the projects' order (dragged in the sidebar, or Alt+↑↓).
 pub fn save_order(names: &[String]) -> anyhow::Result<()> {
-    let folder = dir()?;
-    std::fs::create_dir_all(&folder)?;
+    write_order(&dir()?, names)
+}
+
+/// Writes `names` as the order of the projects in `folder`.
+fn write_order(folder: &Path, names: &[String]) -> anyhow::Result<()> {
+    std::fs::create_dir_all(folder)?;
     let text: String = names.iter().map(|name| format!("{name}\n")).collect();
     std::fs::write(folder.join(ORDER_FILE), text).context("can't save the projects' order")
+}
+
+/// Deletes the project `name`: its file, and its line in the order. Its folder,
+/// the code in it, isn't touched: Kel never deletes your files. Gone from the
+/// recent ones too, which are its file's time.
+pub fn delete(name: &str) -> anyhow::Result<()> {
+    delete_in(&dir()?, name)
+}
+
+/// `delete`, of a project in `folder`.
+fn delete_in(folder: &Path, name: &str) -> anyhow::Result<()> {
+    std::fs::remove_file(folder.join(format!("{name}.toml")))
+        .with_context(|| format!("can't delete project \"{name}\""))?;
+    let order = read_order(folder);
+    if order.iter().any(|n| n == name) {
+        let order: Vec<String> = order.into_iter().filter(|n| n != name).collect();
+        write_order(folder, &order)?;
+    }
+    Ok(())
 }
 
 /// The projects' order, next to their files. Not `.toml`: not a project.
@@ -393,6 +416,27 @@ mod tests {
         // "old" is gone, a second "kel" doesn't count.
         let order = names(&["web", "old", "kel", "kel"]);
         assert_eq!(ordered(there, &order), ["web", "kel", "api", "notes"]);
+    }
+
+    #[test]
+    fn deleting_a_project() {
+        let folder = std::env::temp_dir().join(format!("kel-test-delete-{}", std::process::id()));
+        let code = folder.join("code");
+        std::fs::create_dir_all(&code).unwrap();
+        for name in ["api", "web"] {
+            std::fs::write(folder.join(format!("{name}.toml")), "folder = 'x'\n").unwrap();
+        }
+        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        write_order(&folder, &names(&["web", "api"])).unwrap();
+        delete_in(&folder, "web").unwrap();
+        // Its file and its line go; the others and any other folder stay.
+        assert_eq!(names_in(&folder), ["api"]);
+        assert_eq!(read_order(&folder), ["api"]);
+        assert!(code.is_dir());
+        // Not there: an error, nothing else changes.
+        assert!(delete_in(&folder, "web").is_err());
+        assert_eq!(names_in(&folder), ["api"]);
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]
