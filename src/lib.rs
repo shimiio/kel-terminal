@@ -39,6 +39,7 @@ pub mod card;
 pub mod config;
 pub mod fallback;
 pub mod font;
+pub mod glass;
 pub mod icons;
 pub mod keys;
 pub mod layout;

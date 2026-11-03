@@ -208,7 +208,10 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       click on a tab opens its card too
 - [x] The projects' order in the sidebar: drag one, or Alt+↑↓; kept in `projects\order.txt`
       (new ones last, by name). The start screen stays by when they were used
-- [ ] Window vibrancy
+- [x] Glass, a setting (`[glass]`, off by default): Windows' Acrylic (blur) or Mica behind
+      the background and the frame, the theme's color over it (`opacity`) and a still grain
+      (`grain`). A color's top byte says how clear it is, so letters' edges blend right;
+      on battery Windows may drop the blur, then the glass is a plain color
 
 ## Later
 

@@ -108,7 +108,7 @@ fn noise(seed: u64, x: f64, y: f64) -> f64 {
 
 /// A number that looks random, the same for the same seed and place
 /// (SplitMix64's mixing).
-fn hash(seed: u64, x: i64, y: i64) -> u64 {
+pub(crate) fn hash(seed: u64, x: i64, y: i64) -> u64 {
     let mut z = seed
         ^ (x as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
         ^ (y as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f);
@@ -118,7 +118,7 @@ fn hash(seed: u64, x: i64, y: i64) -> u64 {
 }
 
 /// `hash` as a number from 0 to 1.
-fn unit(h: u64) -> f64 {
+pub(crate) fn unit(h: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 

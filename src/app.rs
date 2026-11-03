@@ -7,6 +7,7 @@
 use crate::card::{self, Card, Target};
 use crate::config::{self, Config};
 use crate::font::{self, Fonts};
+use crate::glass;
 use crate::icons;
 use crate::keys::{self, Action};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton};
@@ -977,7 +978,7 @@ impl App {
 
         // `Some`: something went wrong, and the tab bar says what.
         let error = match config::load() {
-            Ok(new) => {
+            Ok(mut new) => {
                 let mut error = None;
                 // Only what changed, so saving another setting doesn't undo your zoom.
                 if new.font != self.config.font {
@@ -998,6 +999,15 @@ impl App {
                     && let Some(renderer) = &mut self.renderer
                 {
                     renderer.set_theme(new.colors.clone());
+                    self.request_redraw();
+                }
+                // The effect only after a restart: Windows' glass needs the window
+                // see-through from its start. Its opacity and grain right away.
+                new.glass.effect = self.config.glass.effect;
+                if new.glass != self.config.glass {
+                    if let Some(renderer) = &mut self.renderer {
+                        renderer.set_glass(new.glass.clone());
+                    }
                     self.request_redraw();
                 }
                 self.config = new;
@@ -1654,7 +1664,9 @@ impl ApplicationHandler<UserEvent> for App {
         // No Windows title bar: Kel draws its own (the tabs, the buttons).
         let attrs = Window::default_attributes()
             .with_title("Kel") // still shown in the taskbar
-            .with_decorations(false);
+            .with_decorations(false)
+            // See-through only from the start: Windows' glass needs it.
+            .with_transparent(self.config.glass.on());
         #[cfg(target_os = "windows")]
         let attrs = {
             use winit::platform::windows::{CornerPreference, WindowAttributesExtWindows};
@@ -1665,13 +1677,22 @@ impl ApplicationHandler<UserEvent> for App {
                 .with_corner_preference(CornerPreference::Round)
         };
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
+        if self.config.glass.on() {
+            glass::apply(
+                &window,
+                self.config.glass.effect,
+                self.config.colors.background,
+            );
+        }
         // The cell size comes from the font, which the renderer holds, and the renderer
         // needs the window. So: window first, then renderer, then the size for
         // 80x24 cells plus the spaces around them.
         let theme = self.config.colors.clone();
         let text_scale = window.scale_factor() as f32;
         let font_size = self.config.font_size;
-        let renderer = Renderer::new(window.clone(), fonts, font_size, text_scale, theme).unwrap();
+        let glass = self.config.glass.clone();
+        let renderer =
+            Renderer::new(window.clone(), fonts, font_size, text_scale, theme, glass).unwrap();
         let (cell_w, cell_h) = renderer.cell_size();
         self.window = Some(window.clone());
         let ui_scale = self.ui_scale();

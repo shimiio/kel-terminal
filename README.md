@@ -90,6 +90,7 @@ Kel creates it on the first start, with a comment for every setting.
 | `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
 | `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
 | `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |
+| `[glass]` | `effect = "none"`, `opacity = 0.85`, `grain = 0.5` | Kel see-through: `"acrylic"` blurs what's behind the window, `"mica"` takes a faint tint of the wallpaper (`effect` applies after a restart). `opacity`: how much of the theme's colors cover the glass; `grain`: a fine grain on it, like frosted glass |
 | `[colors]` | dark gray theme | Text, background, cursor, selection, frame, border, `accent` (home's color, none by default: gray) and the 16 basic colors |
 
 A setting missing from the file keeps its default, so deleting a line resets it.
@@ -290,6 +291,8 @@ the file keeps the tabs it had, not none.
 | `src/layout.rs` | Where the terminal panel goes in the window |
 | `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
 | `src/config.rs` | Reads `config.toml` |
+| `src/glass.rs` | Glass: which colors are see-through, the grain, asking Windows for the blur |
+| `src/backdrop.rs` | The start screen's ASCII background: terrain by day, stars at night |
 | `src/icons.rs` | The tab icons (8 x 8 pixel grids, a pixel 2 x 2 on screen, like the logo) and which tab gets which |
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
 | `src/project.rs` | Reads and writes a project file: the tabs, their folders and commands |

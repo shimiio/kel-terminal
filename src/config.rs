@@ -3,6 +3,7 @@
 //! On the first start Kel writes the default file, with a comment for every setting.
 //! A setting missing from the file keeps its default value.
 
+use crate::glass::Glass;
 use crate::layout::Spacing;
 use crate::theme::Theme;
 use anyhow::Context;
@@ -45,6 +46,16 @@ padding = 6
 tab_height = 32   # the tab bar above the panel
 tab_width = 180   # narrower when there are many tabs
 
+# Glass: Kel see-through, Windows blurring what's behind it.
+# effect: "acrylic" (what's behind, blurred), "mica" (a faint tint of the
+# wallpaper, Windows 11), "none" (solid). Applies after a restart.
+# Windows turns the blur off by itself at times (e.g. on battery): then the
+# glass is a plain color.
+[glass]
+effect = "none"
+opacity = 0.85   # how much of the theme's colors cover the glass: 1 solid, 0 all glass
+grain = 0.5      # a fine grain on the glass, like frosted glass: 0 none, 1 strong
+
 # Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
 # Programs that pick exact colors themselves (like nvim color schemes) don't use them.
 [colors]
@@ -73,6 +84,7 @@ pub struct Config {
     pub shell: String,
     pub ui_scale: f32,
     pub layout: Spacing,
+    pub glass: Glass,
     pub colors: Theme,
 }
 
@@ -84,6 +96,7 @@ impl Default for Config {
             shell: "powershell.exe".to_string(),
             ui_scale: 1.0,
             layout: Spacing::default(),
+            glass: Glass::default(),
             colors: Theme::default(),
         }
     }
@@ -171,6 +184,15 @@ mod tests {
         let text = "a = 1\nb = 2\nc = 3\n";
         assert_eq!(line_at(text, 0), 1); // "a"
         assert_eq!(line_at(text, 12), 3); // "c", the very start of line 3
+    }
+
+    #[test]
+    fn glass() {
+        use crate::glass::Effect;
+        let config: Config = toml::from_str("[glass]\neffect = \"acrylic\"").unwrap();
+        assert_eq!(config.glass.effect, Effect::Acrylic);
+        assert_eq!(config.glass.opacity, Glass::default().opacity);
+        assert!(toml::from_str::<Config>("[glass]\neffect = \"frosted\"").is_err());
     }
 
     #[test]

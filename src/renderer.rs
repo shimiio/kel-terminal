@@ -11,6 +11,7 @@ use crate::backdrop::Backdrop;
 use crate::card::{self, Card};
 use crate::fallback::Fallbacks;
 use crate::font::{Font, Fonts, Metrics};
+use crate::glass::Glass;
 use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::logo;
@@ -194,7 +195,12 @@ pub struct Renderer {
     glyphs: HashMap<(char, usize), Glyph>,
     /// For letters the font doesn't have: emoji, Chinese...
     fallbacks: Fallbacks,
-    /// Turns the colors in the cells into pixels.
+    /// The config's theme, as it is: `theme` is made from it.
+    plain_theme: Theme,
+    /// See-through or not (see `glass`).
+    glass: Glass,
+    /// Turns the colors in the cells into pixels. With glass, its background
+    /// and frame are see-through (`Glass::theme`).
     theme: Theme,
     ui: Ui,
 }
@@ -206,6 +212,7 @@ impl Renderer {
         font_size: f32,
         text_scale: f32,
         theme: Theme,
+        glass: Glass,
     ) -> anyhow::Result<Self> {
         let context =
             softbuffer::Context::new(window.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -228,7 +235,9 @@ impl Renderer {
             ascent,
             glyphs: HashMap::new(),
             fallbacks: Fallbacks::default(),
-            theme,
+            theme: glass.theme(&theme),
+            plain_theme: theme,
+            glass,
             ui,
         })
     }
@@ -279,7 +288,13 @@ impl Renderer {
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
-        self.theme = theme;
+        self.theme = self.glass.theme(&theme);
+        self.plain_theme = theme;
+    }
+
+    pub fn set_glass(&mut self, glass: Glass) {
+        self.theme = glass.theme(&self.plain_theme);
+        self.glass = glass;
     }
 
     /// Switches to another font family. Like a size change, the cell is measured
@@ -558,6 +573,9 @@ impl Renderer {
             );
         }
 
+        if self.glass.on() {
+            self.glass.finish(&mut buffer, width);
+        }
         buffer.present().unwrap();
     }
 }
@@ -1826,11 +1844,14 @@ fn mix(bg: u32, fg: u32, a: u32) -> u32 {
 }
 
 /// Blends color `fg` over color `bg`, channel by channel. `a` is 0-255.
+/// The top byte too: how clear a color is, with glass (see `glass`). So a
+/// letter's edge over glass is part clear, like the glass.
 fn blend(bg: u32, fg: u32, a: u32) -> u32 {
+    let clear = mix(bg >> 24, fg >> 24, a);
     let r = mix((bg >> 16) & 0xff, (fg >> 16) & 0xff, a);
     let g = mix((bg >> 8) & 0xff, (fg >> 8) & 0xff, a);
     let b = mix(bg & 0xff, fg & 0xff, a);
-    (r << 16) | (g << 8) | b
+    (clear << 24) | (r << 16) | (g << 8) | b
 }
 
 /// Draws a rasterized letter in the cell whose top-left corner is at (x, y).
@@ -1875,6 +1896,17 @@ fn draw_glyph(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blending_over_glass() {
+        // A letter (solid) half over glass (51 of 255 clear): half as clear.
+        let glass = crate::glass::see_through(0x1e1e1e, 204);
+        assert_eq!(blend(glass, 0xd4d4d4, 255), 0x00d4_d4d4);
+        assert_eq!(blend(glass, 0xd4d4d4, 0), glass);
+        assert_eq!(blend(glass, 0xd4d4d4, 128) >> 24, 25);
+        // Without glass, as before: the top byte stays 0.
+        assert_eq!(blend(0x1e1e1e, 0xd4d4d4, 128) >> 24, 0);
+    }
 
     #[test]
     fn a_long_hint_keeps_its_end() {
