@@ -62,9 +62,9 @@ tab_width = 180   # narrower when there are many tabs
 # Windows turns the blur off by itself at times (e.g. on battery): then the
 # glass is a plain color.
 [glass]
-effect = "none"
+effect = "acrylic"
 opacity = 0.85   # how much of the theme's colors cover the glass: 1 solid, 0 all glass
-grain = 0.5      # a fine grain on the glass, like frosted glass: 0 none, 1 strong
+grain = 0.1      # a fine grain on the glass, like frosted glass: 0 none, 1 strong
 
 # Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
 # Programs that pick exact colors themselves (like nvim color schemes) don't use them.
@@ -72,7 +72,7 @@ grain = 0.5      # a fine grain on the glass, like frosted glass: 0 none, 1 stro
 foreground = "#d4d4d4"
 background = "#1e1e1e"
 cursor = "#808080"
-selection = "#264f78"
+selection = "#474747"
 frame = "#141414"    # the window around the panel
 border = "#333333"   # the panel's border line
 # accent = "#569cd6" # home's color, and of projects without their own: the tab
@@ -87,8 +87,8 @@ failed = "#e06c75"   # one that failed; and Kel's own errors
 # black, red, green, yellow, blue, magenta, cyan, white,
 # then the bright versions of the same 8.
 palette = [
-    "#0c0c0c", "#c50f1f", "#13a10e", "#c19c00", "#0037da", "#881798", "#3a96dd", "#cccccc",
-    "#767676", "#e74856", "#16c60c", "#f9f1a5", "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2",
+    "#3a3a3a", "#e06c75", "#98c379", "#e5c07b", "#7aa2e6", "#b39ae6", "#6cc4b8", "#c8c8c8",
+    "#6e6e6e", "#f08a92", "#b4d99a", "#f2d49b", "#9dbcf2", "#cbb6f2", "#8fd9cf", "#ececec",
 ]
 "##;
 
@@ -224,8 +224,10 @@ project_colors = [\"#112233\", \"blue\"]";
     #[test]
     fn glass() {
         use crate::glass::Effect;
-        let config: Config = toml::from_str("[glass]\neffect = \"acrylic\"").unwrap();
-        assert_eq!(config.glass.effect, Effect::Acrylic);
+        // Acrylic by default; "none": solid.
+        assert_eq!(Config::default().glass.effect, Effect::Acrylic);
+        let config: Config = toml::from_str("[glass]\neffect = \"none\"").unwrap();
+        assert_eq!(config.glass.effect, Effect::None);
         assert_eq!(config.glass.opacity, Glass::default().opacity);
         assert!(toml::from_str::<Config>("[glass]\neffect = \"frosted\"").is_err());
     }

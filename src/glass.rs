@@ -41,9 +41,10 @@ pub struct Glass {
 impl Default for Glass {
     fn default() -> Self {
         Glass {
-            effect: Effect::None,
+            // Acrylic: what's behind, blurred, with a light grain.
+            effect: Effect::Acrylic,
             opacity: 0.85,
-            grain: 0.5,
+            grain: 0.1,
         }
     }
 }
@@ -171,7 +172,11 @@ mod tests {
     #[test]
     fn glass_touches_only_the_background_and_frame() {
         let theme = Theme::default();
-        assert_eq!(Glass::default().theme(&theme), theme); // effect none
+        let solid = Glass {
+            effect: Effect::None,
+            ..Glass::default()
+        };
+        assert_eq!(solid.theme(&theme), theme);
         let glass = Glass {
             effect: Effect::Acrylic,
             ..Glass::default()

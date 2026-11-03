@@ -278,7 +278,7 @@ mod tests {
             value("font"),
             Some(("\"JetBrains Mono\"".to_string(), None))
         );
-        assert_eq!(value("effect"), Some(("\"none\"".to_string(), None)));
+        assert_eq!(value("effect"), Some(("\"acrylic\"".to_string(), None)));
         assert_eq!(
             value("accent"),
             Some(("#569cd6".to_string(), Some(0x569cd6)))

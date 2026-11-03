@@ -185,6 +185,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       "home", with Kel's mark `k▌`, while the screen is up. Ctrl+Shift+H goes there
 - [x] Home neutral in the whole UI: the project's color is the only one (`accent_for`); home
       and projects without one are gray. `accent` in `[colors]` is optional now
+- [x] Soft defaults: the terminal's 16 colors of the same family as `project_colors` (not
+      Windows' Campbell), a gray selection (a project's color would look like the search's
+      matches), acrylic glass with a light grain (0.1)
 - [x] The cursor a whole cell by default (`cursor` in the config: block, underline, bar;
       programs still pick theirs). Where the keys don't go (the sidebar, the palette, the
       search, a card, the help, another window): a hollow box, not blinking

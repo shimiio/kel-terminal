@@ -66,7 +66,7 @@ impl Default for Theme {
             foreground: 0xd4d4d4, // light gray
             background: 0x1e1e1e, // dark gray
             cursor: 0x808080,
-            selection: 0x264f78, // blue
+            selection: 0x474747, // gray: never one of the search's or a project's colors
             frame: 0x141414,     // a bit darker than the background
             border: 0x333333,    // a bit lighter
             accent: None,        // none: home is gray
@@ -83,8 +83,9 @@ impl Default for Theme {
             done: 0x98c379,   // the green
             failed: 0xe06c75, // the red
             palette: [
-                0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00, 0x0037da, 0x881798, 0x3a96dd, 0xcccccc,
-                0x767676, 0xe74856, 0x16c60c, 0xf9f1a5, 0x3b78ff, 0xb4009e, 0x61d6d6, 0xf2f2f2,
+                // Soft, of the same family as `project_colors`; the bright ones lighter.
+                0x3a3a3a, 0xe06c75, 0x98c379, 0xe5c07b, 0x7aa2e6, 0xb39ae6, 0x6cc4b8, 0xc8c8c8,
+                0x6e6e6e, 0xf08a92, 0xb4d99a, 0xf2d49b, 0x9dbcf2, 0xcbb6f2, 0x8fd9cf, 0xececec,
             ],
         }
     }

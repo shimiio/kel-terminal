@@ -93,8 +93,8 @@ Kel creates it on the first start, with a comment for every setting.
 | `pixel_name` | `true` | The project's name before the tabs in pixels, like the logo; `false`: in the font |
 | `cursor` | `"block"` | The cursor: `"block"` (the whole cell), `"underline"` or `"bar"`. Programs can pick their own (nvim does). While the keys go elsewhere (the sidebar, the palette, another window) it's a hollow box, not blinking |
 | `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |
-| `[glass]` | `effect = "none"`, `opacity = 0.85`, `grain = 0.5` | Kel see-through: `"acrylic"` blurs what's behind the window, `"mica"` takes a faint tint of the wallpaper (`effect` applies after a restart). `opacity`: how much of the theme's colors cover the glass; `grain`: a fine grain on it, like frosted glass |
-| `[colors]` | dark gray theme | Text, background, cursor, selection, frame, border, `accent` (home's color, none by default: gray), Kel's own soft colors (`project_colors` to pick a project's from, `done` and `failed` for a command's dot and errors) and the terminal's 16 basic colors |
+| `[glass]` | `effect = "acrylic"`, `opacity = 0.85`, `grain = 0.1` | Kel see-through: `"acrylic"` blurs what's behind the window, `"mica"` takes a faint tint of the wallpaper, `"none"` is solid (`effect` applies after a restart). `opacity`: how much of the theme's colors cover the glass; `grain`: a fine grain on it, like frosted glass |
+| `[colors]` | dark gray, soft colors | Text, background, cursor, selection, frame, border, `accent` (home's color, none by default: gray), Kel's own soft colors (`project_colors` to pick a project's from, `done` and `failed` for a command's dot and errors) and the terminal's 16 basic colors |
 
 A setting missing from the file keeps its default, so deleting a line resets it.
 To get the original file back with all its comments, delete it and restart Kel.
