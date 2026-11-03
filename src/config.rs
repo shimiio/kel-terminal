@@ -49,6 +49,7 @@ pixel_name = true
 # The cursor: "block" (the whole cell), "underline" or "bar".
 # Programs can pick their own (nvim does); this is for the rest.
 cursor = "block"
+cursor_blink = true   # false: it stands still (the logo's and the sidebar's too)
 
 # The bell, a program's "done" or "come here" (Claude Code can ring it):
 # "taskbar": Kel's button in the taskbar blinks while you're in another window,
@@ -143,6 +144,7 @@ pub struct Config {
     pub ui_scale: f32,
     pub pixel_name: bool,
     pub cursor: CursorShape,
+    pub cursor_blink: bool,
     pub bell: Bell,
     pub backdrop: backdrop::Choice,
     pub layout: Spacing,
@@ -159,6 +161,7 @@ impl Default for Config {
             ui_scale: 1.0,
             pixel_name: true,
             cursor: CursorShape::Block,
+            cursor_blink: true,
             bell: Bell::Taskbar,
             backdrop: backdrop::Choice::Auto,
             layout: Spacing::default(),
@@ -291,6 +294,13 @@ project_colors = [\"#112233\", \"blue\"]";
             toml::from_str("[glass]\nsolid_under_apps = false\nsolid_color = \"#000000\"").unwrap();
         assert!(!config.glass.solid_under_apps);
         assert_eq!(config.glass.solid_color, Some(0));
+    }
+
+    #[test]
+    fn cursor_blink() {
+        assert!(Config::default().cursor_blink);
+        let config: Config = toml::from_str("cursor_blink = false").unwrap();
+        assert!(!config.cursor_blink);
     }
 
     #[test]

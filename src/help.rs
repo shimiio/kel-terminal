@@ -199,6 +199,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             "the name in pixels",
         ),
         row("cursor", &text(cursor), "programs can pick theirs"),
+        row(
+            "cursor_blink",
+            &config.cursor_blink.to_string(),
+            "false: it stands still",
+        ),
         row("bell", &text(config.bell.name()), "a program's \"done\""),
         row(
             "backdrop",

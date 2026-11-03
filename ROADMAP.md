@@ -283,7 +283,7 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
         new tabs get the project's
   - [x] `bell`: the taskbar button blinks while Kel is behind (`"taskbar"`), and the
         terminal flashes while it's in front (`"flash"`), or nothing. It was ignored
-  - [ ] `cursor_blink`
+  - [x] `cursor_blink`
   - [ ] `copy_on_select`
   - [ ] `scrollback` (10 000 lines now)
   - [ ] `line_height`

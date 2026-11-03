@@ -93,6 +93,7 @@ Kel creates it on the first start, with a comment for every setting.
 | `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
 | `pixel_name` | `true` | The project's name before the tabs in pixels, like the logo; `false`: in the font |
 | `cursor` | `"block"` | The cursor: `"block"` (the whole cell), `"underline"` or `"bar"`. Programs can pick their own (nvim does). While the keys go elsewhere (the sidebar, the palette, another window) it's a hollow box, not blinking |
+| `cursor_blink` | `true` | `false`: the cursor stands still (the logo's and the sidebar's too) |
 | `bell` | `"taskbar"` | The bell, a program's "done" or "come here" (Claude Code can ring it): `"taskbar"` blinks Kel's taskbar button while you're in another window, until you come back; `"flash"` does that and flashes the terminal while you're in Kel; `"none"` |
 | `backdrop` | `"auto"` | The start screen's ASCII picture, new each time it shows: `"auto"` (a terrain by day, stars at night), `"terrain"`, `"contours"`, `"mountains"`, `"sea"`, `"wind"`, `"stars"` or `"none"`. Mountains and the sea have stars in their sky at night |
 | `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |

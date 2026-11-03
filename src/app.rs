@@ -196,7 +196,8 @@ pub struct App {
     /// The tab last told it has the focus (see `update_focus`).
     focused_tab: Option<TabId>,
 
-    /// Is the blinking cursor in its "on" half right now?
+    /// Is the blinking cursor in its "on" half right now? Always, without blinking
+    /// (`cursor_blink = false`).
     cursor_on: bool,
     /// When the cursor switches on/off next.
     next_blink: Instant,
@@ -2044,9 +2045,13 @@ impl ApplicationHandler<UserEvent> for App {
             return;
         }
         if Instant::now() >= self.next_blink {
-            self.cursor_on = !self.cursor_on;
+            // `cursor_blink = false`: always on, so nothing to draw again.
+            let on = !self.cursor_on || !self.config.cursor_blink;
+            if on != self.cursor_on {
+                self.cursor_on = on;
+                self.request_redraw();
+            }
             self.next_blink = Instant::now() + BLINK_INTERVAL;
-            self.request_redraw();
             // The same timer looks for a saved config file, twice a second,
             // and lets an unanswered "close?" go.
             self.reload_config_if_changed();
