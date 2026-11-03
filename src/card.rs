@@ -178,6 +178,30 @@ impl Field {
         let color = self.color()?;
         self.swatches.iter().position(|&s| s == color)
     }
+
+    /// Types `text` at the cursor. A color's field takes only what a color can
+    /// be: a `#` at its start and at most 6 hex digits after it. The rest isn't
+    /// typed: e.g. "#e0af68ff" pasted is "#e0af68".
+    fn type_text(&mut self, text: &str) {
+        if self.swatches.is_empty() {
+            return self.text.insert(text);
+        }
+        for c in text.trim().chars() {
+            let now = self.text.text();
+            let hash = now.starts_with('#');
+            let digits = now.chars().filter(char::is_ascii_hexdigit).count();
+            let at_start = self.text.cursor() == 0;
+            let fits = match c {
+                '#' => at_start && !hash,
+                // Not before the `#`.
+                c if c.is_ascii_hexdigit() => digits < 6 && !(at_start && hash),
+                _ => false,
+            };
+            if fits {
+                self.text.insert(c.encode_utf8(&mut [0; 4]));
+            }
+        }
+    }
 }
 
 pub struct Card {
@@ -244,6 +268,11 @@ impl Card {
     /// The field with the cursor, for typing.
     pub fn focused(&mut self) -> &mut TextField {
         &mut self.fields[self.focus].text
+    }
+
+    /// Typed or pasted `text`, into the field with the cursor (see `Field::type_text`).
+    pub fn type_text(&mut self, text: &str) {
+        self.fields[self.focus].type_text(text);
     }
 
     /// Tab (1) or Shift+Tab (-1): the next field, round from the last to the first.
@@ -431,15 +460,45 @@ mod tests {
         for _ in 0..7 {
             card.focused().backspace();
         }
-        card.focused().insert("e0af68");
+        card.type_text("e0af68");
         assert_eq!(card.color(), Ok(Some(0xe0af68)));
         assert!(card.step_swatch(-1)); // not a swatch: from the end
         assert_eq!(card.color(), Ok(None));
-        card.focused().insert("#12");
+        card.type_text("#12");
         assert!(card.color().is_err());
         // In the name ←→ are the cursor's.
         card.next_field(1);
         assert!(!card.step_swatch(1));
+    }
+
+    #[test]
+    fn a_hex_is_at_most_6_digits() {
+        let mut card = Card::project("kel", None, &[0x112233]);
+        card.next_field(1); // the color, empty
+        let typed = |card: &Card| card.value("Color").unwrap_or_default();
+        card.type_text("#e0af68ff"); // a 7th and 8th: not typed
+        assert_eq!(typed(&card), "#e0af68");
+        card.type_text("1");
+        assert_eq!(typed(&card), "#e0af68");
+        // Only hex digits; one `#`, at the start.
+        card.focused().backspace();
+        card.type_text("xz#g");
+        assert_eq!(typed(&card), "#e0af6");
+        card.focused().jump(false); // to the start
+        card.type_text("9#");
+        assert_eq!(typed(&card), "#e0af6");
+        // Without a `#` it's a color too; one can be added at the start.
+        let mut card = Card::project("kel", None, &[]);
+        card.next_field(1);
+        card.type_text(" E0AF68 ");
+        assert_eq!(typed(&card), "E0AF68");
+        card.focused().jump(false);
+        card.type_text("#");
+        assert_eq!(card.color(), Ok(Some(0xe0af68)));
+        // A name takes anything.
+        card.next_field(1);
+        card.type_text("my #1 project!");
+        assert_eq!(card.value("Name").as_deref(), Some("kelmy #1 project!"));
     }
 
     #[test]

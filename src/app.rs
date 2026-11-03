@@ -1274,13 +1274,13 @@ impl App {
             // Ctrl+V (or Kel's Ctrl+Shift+V): the clipboard, as one line.
             _ if ctrl && event.physical_key == PhysicalKey::Code(KeyCode::KeyV) => {
                 if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-                    card.focused().insert(&text);
+                    card.type_text(&text);
                 }
             }
             // Typed letters, not Ctrl+letter (see `palette_key`).
             _ if !ctrl => {
                 if let Some(text) = event.text.as_deref() {
-                    card.focused().insert(text);
+                    card.type_text(text);
                 }
             }
             _ => {}
