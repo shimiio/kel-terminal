@@ -188,6 +188,11 @@ pub fn sidebar_entries(current: Option<&str>) -> Vec<Entry> {
     entries.collect()
 }
 
+/// The projects, in the order you put them in the sidebar.
+pub fn names() -> Vec<String> {
+    dir().map(|dir| names_ordered(&dir)).unwrap_or_default()
+}
+
 /// The projects in `folder`, in the order you put them in the sidebar (see
 /// `ordered`).
 fn names_ordered(folder: &Path) -> Vec<String> {

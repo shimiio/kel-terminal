@@ -828,6 +828,25 @@ impl App {
     // Projects in one window
     // -----------------------------------------------------------------------
 
+    /// Ctrl+Alt+→ / ←: the next / previous open project (`step` 1 / -1). In the
+    /// sidebar's order, which you set, not the order they were opened in: one
+    /// that goes out of sight keeps its place. Home first, always there (a new
+    /// one if it was closed); round: after the last one, home.
+    fn step_project(&mut self, step: isize) {
+        let here = self.project.as_ref().map(|p| p.name.clone());
+        let open = |name: &String| {
+            here.as_ref() == Some(name) || self.parked.iter().any(|w| w.name() == Some(name))
+        };
+        let mut ring = vec![None];
+        ring.extend(project::names().into_iter().filter(open).map(Some));
+        let at = ring.iter().position(|name| *name == here).unwrap_or(0);
+        let next = (at as isize + step).rem_euclid(ring.len() as isize) as usize;
+        if next != at {
+            let name = ring[next].clone();
+            self.switch_to(name.as_deref());
+        }
+    }
+
     /// Goes to the project `name` in this window, or home (`None`). The one on
     /// screen is saved and goes out of sight, everything in it still running.
     /// The other one comes back as it was left, or starts from its file if it
@@ -1241,6 +1260,8 @@ impl App {
             Action::Install(name) => self.install(name),
             Action::OpenProject(name) => self.switch_to(Some(&name)),
             Action::OpenHome => self.switch_to(None),
+            Action::NextProject => self.step_project(1),
+            Action::PreviousProject => self.step_project(-1),
             Action::EditTab => self.open_tab_card(self.active),
             Action::EditProject => {
                 if let Some(name) = self.project.as_ref().map(|p| p.name.clone()) {

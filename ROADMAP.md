@@ -265,7 +265,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       colored; under wide letters, bold, italic, reverse, a background): all hold. An
       underline color written with `;` (`58;2;r;g;b`) never arrives: ConPTY drops it;
       nvim's `58:2::r:g:b` passes
-- [ ] Ctrl+Alt+← / → : the previous / next open project (and home), as Zen's workspaces
+- [x] Ctrl+Alt+← / → : the previous / next open project (and home), as Zen's workspaces:
+      in the sidebar's order, which you set; home first, always there. Ctrl+Alt is AltGr,
+      but the arrows type nothing with it
 - [ ] "Open in Kel" on a folder in Explorer (`kel <folder>`)
 - [ ] Home's ASCII landscape: try other pictures
 - [ ] Settings review before Linux/macOS: what else people will want to change (keys,

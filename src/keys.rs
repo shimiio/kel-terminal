@@ -47,6 +47,12 @@ pub enum Action {
     /// Goes home in this window: Kel without a project, `home` in the sidebar;
     /// its start screen, position 0 (in home too). Ctrl+Shift+H.
     OpenHome,
+    /// The next open project in this window, in the sidebar's order, home first
+    /// and always there; after the last one, home again. Ctrl+Alt+→, like Zen's
+    /// workspaces.
+    NextProject,
+    /// The previous one, the other way round. Ctrl+Alt+←.
+    PreviousProject,
     /// Closes the project on screen: saves it, ends its shells, goes home.
     CloseProject,
     /// Deletes the project on screen: its file, not its folder (see
@@ -65,14 +71,22 @@ pub enum Action {
 /// Uses the physical key (its place on the keyboard), so shortcuts work with
 /// any layout, Cyrillic too.
 pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
-    // Every shortcut uses Ctrl. Not with Alt: Ctrl+Alt is AltGr on many layouts,
-    // and AltGr types letters (Polish AltGr+C is `ć`, not a Ctrl+C).
-    if !mods.control_key() || mods.alt_key() {
-        return None;
-    }
     let PhysicalKey::Code(code) = key else {
         return None;
     };
+    // Every shortcut uses Ctrl. Not with Alt: Ctrl+Alt is AltGr on many layouts,
+    // and AltGr types letters (Polish AltGr+C is `ć`, not a Ctrl+C). Except the
+    // arrows: they type nothing, with AltGr neither.
+    if mods.control_key() && mods.alt_key() && !mods.shift_key() {
+        return match code {
+            KeyCode::ArrowRight => Some(Action::NextProject),
+            KeyCode::ArrowLeft => Some(Action::PreviousProject),
+            _ => None,
+        };
+    }
+    if !mods.control_key() || mods.alt_key() {
+        return None;
+    }
     let action = match (code, mods.shift_key()) {
         // (key, with Shift?)
         (KeyCode::KeyT, true) => Action::NewTab,
@@ -135,6 +149,12 @@ pub fn palette_items() -> Vec<Item> {
         item("Find in the output", "Ctrl+Shift+F", Action::Find),
         item("Projects: the sidebar", "Ctrl+Shift+B", Action::Sidebar),
         item("Home: its start screen", "Ctrl+Shift+H", Action::OpenHome),
+        item("Next open project", "Ctrl+Alt+→", Action::NextProject),
+        item(
+            "Previous open project",
+            "Ctrl+Alt+←",
+            Action::PreviousProject,
+        ),
         item("Stop the running command", "Ctrl+C", Action::Interrupt),
         item("Zoom in: bigger font", "Ctrl+=", Action::ZoomIn),
         item("Zoom out: smaller font", "Ctrl+-", Action::ZoomOut),
@@ -429,6 +449,19 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_alt_arrows_go_through_projects() {
+        let ctrl_alt = ModifiersState::CONTROL | ModifiersState::ALT;
+        let right = shortcut(key(KeyCode::ArrowRight), ctrl_alt);
+        assert_eq!(right, Some(Action::NextProject));
+        let left = shortcut(key(KeyCode::ArrowLeft), ctrl_alt);
+        assert_eq!(left, Some(Action::PreviousProject));
+        // Ctrl+Alt with a letter is AltGr typing it: not Kel's.
+        assert_eq!(shortcut(key(KeyCode::KeyC), ctrl_alt), None);
+        // Ctrl+→ alone is the shell's (a word to the right).
+        assert_eq!(shortcut(key(KeyCode::ArrowRight), CTRL), None);
+    }
+
+    #[test]
     fn ctrl_c_and_ctrl_shift_c() {
         assert_eq!(shortcut(key(KeyCode::KeyC), CTRL), Some(Action::Interrupt));
         assert_eq!(shortcut(key(KeyCode::KeyC), CTRL_SHIFT), Some(Action::Copy));
@@ -444,11 +477,14 @@ mod tests {
             match part {
                 "Ctrl" => mods |= ModifiersState::CONTROL,
                 "Shift" => mods |= ModifiersState::SHIFT,
+                "Alt" => mods |= ModifiersState::ALT,
                 _ => panic!("unknown modifier in {hint}"),
             }
         }
         let code = match last {
             "Tab" => KeyCode::Tab,
+            "→" => KeyCode::ArrowRight,
+            "←" => KeyCode::ArrowLeft,
             "PageUp" => KeyCode::PageUp,
             "PageDown" => KeyCode::PageDown,
             "=" => KeyCode::Equal,
