@@ -13,10 +13,81 @@
 //! | `https://a.io/wiki/Rust_(language)` | all of it: the `(` `)` pair up |
 //! | `https://a.io/@50.45,30.52,12z` | all of it: the commas are inside |
 //!
-//! Only `http(s)`: a `file://` link opened by Windows could start a program, and
-//! anything can write text into the terminal (a log, a page `curl` fetched).
+//! Only `http(s)` in the text: a `file://` link opened by Windows could start a
+//! program, and anything can write text into the terminal (a log, a page `curl`
+//! fetched).
+//!
+//! A program can also mark text as a link (OSC 8): `ls --hyperlink`'s names,
+//! delta's files. Its address isn't on the screen, so it can say anything: it
+//! goes through `target`, which opens a web page or shows a file in Explorer,
+//! and runs nothing.
 
 use std::ops::Range;
+use std::path::PathBuf;
+
+/// What a link opens (see `target`).
+#[derive(Debug, PartialEq)]
+pub enum Target {
+    /// A web page, in the browser.
+    Web,
+    /// A file or a folder on this computer: shown in Explorer, never run.
+    File(PathBuf),
+}
+
+/// What `url` opens, if Kel opens it: `http(s)` in the browser; `file://` on
+/// this computer in Explorer. A file on another computer (`file://server/...`)
+/// isn't: Windows would log in to it to look, with your name. Anything else
+/// (`mailto:`, an app's own) neither.
+pub fn target(url: &str) -> Option<Target> {
+    let lower = url.to_ascii_lowercase();
+    if SCHEMES.iter().any(|scheme| lower.starts_with(scheme)) {
+        return Some(Target::Web);
+    }
+    let rest = url.get(7..).filter(|_| lower.starts_with("file://"))?;
+    // The computer's name, then the path: `file://pc/C:/x`, `file:///C:/x`.
+    let slash = rest.find('/')?;
+    let host = &rest[..slash];
+    let this = std::env::var("COMPUTERNAME").unwrap_or_default();
+    let here = host.is_empty()
+        || host.eq_ignore_ascii_case("localhost")
+        || host.eq_ignore_ascii_case(&this);
+    if !here {
+        return None;
+    }
+    let path = percent_decode(&rest[slash..]);
+    // `/C:/Users` → `C:\Users`.
+    let path = path
+        .strip_prefix('/')
+        .filter(|p| p.get(1..2) == Some(":"))
+        .unwrap_or(&path);
+    Some(Target::File(PathBuf::from(path.replace('/', "\\"))))
+}
+
+/// `%20` → a space: a URL writes some characters as `%` and their hex number.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = bytes
+            .get(i + 1..i + 3)
+            .and_then(|h| std::str::from_utf8(h).ok());
+        match hex
+            .filter(|_| bytes[i] == b'%')
+            .and_then(|h| u8::from_str_radix(h, 16).ok())
+        {
+            Some(byte) => {
+                out.push(byte);
+                i += 3;
+            }
+            None => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
 
 /// The beginnings of a link, in small letters (`HTTPS://` is one too).
 const SCHEMES: [&str; 2] = ["https://", "http://"];
@@ -94,6 +165,23 @@ fn trim_end(text: &[char], start: usize, mut end: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_a_link_opens() {
+        assert_eq!(target("https://a.io/x"), Some(Target::Web));
+        assert_eq!(target("HTTP://a.io"), Some(Target::Web));
+        let file = |p: &str| Some(Target::File(PathBuf::from(p)));
+        assert_eq!(
+            target("file:///C:/Users/me/a%20b.txt"),
+            file(r"C:\Users\me\a b.txt")
+        );
+        assert_eq!(target("file://localhost/C:/x"), file(r"C:\x"));
+        // Another computer's file, or something else: not opened.
+        assert_eq!(target("file://evil.example/share/x"), None);
+        assert_eq!(target("mailto:me@a.io"), None);
+        assert_eq!(target("javascript:alert(1)"), None);
+        assert_eq!(target("file:"), None);
+    }
 
     /// The links in `line`, as text.
     fn urls(line: &str) -> Vec<String> {

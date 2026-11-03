@@ -35,6 +35,9 @@ pub struct Cell {
     pub inverse: bool,
     /// One cell of a wide character, or a normal one.
     pub width: Width,
+    /// The link a program put on it (OSC 8, see `Grid::set_link`): its number in
+    /// `Grid::links`, from 1. 0: none.
+    pub link: u32,
 }
 
 /// One row of cells.
@@ -136,8 +139,20 @@ impl Default for Cell {
             underline_color: Color::Default,
             inverse: false,
             width: Width::Narrow,
+            link: 0,
         }
     }
+}
+
+/// A link under the mouse (see `Grid::link_at`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Link {
+    /// Where it is: underlined while Ctrl is held.
+    pub found: Found,
+    pub url: String,
+    /// A program marked the text as a link (OSC 8): its address isn't on the
+    /// screen, the tab bar shows it. `false`: the text is the address.
+    pub marked: bool,
 }
 
 pub struct Grid {
@@ -170,6 +185,10 @@ pub struct Grid {
     pub underline: Underline,
     pub underline_color: Color,
     pub inverse: bool,
+    /// The link the next printed chars get (see `set_link`): 0, none.
+    pub link: u32,
+    /// The links programs put on text (OSC 8), each once: a cell has its number.
+    links: Vec<String>,
     /// Hidden by `ESC[?25l`, shown again by `ESC[?25h`.
     pub cursor_visible: bool,
     /// Set by ESC[n q. `None`: the program hasn't asked for one, Kel's own
@@ -213,6 +232,8 @@ impl Grid {
             underline: Underline::None,
             underline_color: Color::Default,
             inverse: false,
+            link: 0,
+            links: Vec::new(),
             cursor_visible: true,
             cursor_shape: None,
             saved_screen: None,
@@ -487,6 +508,7 @@ impl Grid {
             underline_color: self.underline_color,
             inverse: self.inverse,
             width: if wide { Width::Wide } else { Width::Narrow },
+            link: self.link,
         };
         let line = &mut self.lines[row];
         line.cells[col] = cell;
@@ -645,11 +667,32 @@ impl Grid {
         found
     }
 
-    /// The link (`https://...`) at the cell (row, col) of the view, if one is
-    /// there: where it is, by lasting rows (see `dropped`), and its text. The whole
-    /// line around the cell is looked at, so a link cut at the window's edge is
-    /// found whole, from either of its rows.
-    pub fn link_at(&self, row: usize, col: usize) -> Option<(Found, String)> {
+    /// `ESC]8;;url ESC\`: the text printed next is a link to `url`, until
+    /// `ESC]8;; ESC\` (an empty one). e.g. `ls --hyperlink` puts its file on each
+    /// name. A link seen lately gets its number again: a program that repeats it
+    /// (a name cut in two by colors) doesn't fill the list.
+    pub fn set_link(&mut self, url: &str) {
+        if url.is_empty() {
+            self.link = 0;
+            return;
+        }
+        let recent = self.links.len().saturating_sub(64);
+        let known = self.links[recent..].iter().rposition(|u| u == url);
+        self.link = match known {
+            Some(i) => (recent + i + 1) as u32,
+            None => {
+                self.links.push(url.to_string());
+                self.links.len() as u32
+            }
+        };
+    }
+
+    /// The link at the cell (row, col) of the view, if one is there: where it
+    /// is, by lasting rows (see `dropped`), and its address. A program's own
+    /// link (OSC 8) first: all the cells around with the same one. Else one in
+    /// the text (`https://...`). The whole line around the cell is looked at,
+    /// so a link cut at the window's edge is found whole, from either of its rows.
+    pub fn link_at(&self, row: usize, col: usize) -> Option<Link> {
         if row >= self.rows {
             return None;
         }
@@ -678,6 +721,31 @@ impl Grid {
             push_letters(row_at(i), self.dropped + i, &mut text, &mut cells);
         }
         let here = (self.dropped + index, col);
+        // A program's link: the letters next to the one here with the same one.
+        let under =
+            |&(row, from, to): &(usize, usize, usize)| (row, from) <= here && here <= (row, to);
+        let link_of = |&(row, col, _): &(usize, usize, usize)| {
+            row_at(row - self.dropped)
+                .cells
+                .get(col)
+                .map_or(0, |cell| cell.link)
+        };
+        if let Some(at) = cells.iter().position(under)
+            && let id @ 1.. = link_of(&cells[at])
+            && let Some(url) = self.links.get(id as usize - 1)
+        {
+            let same = |i: &usize| link_of(&cells[*i]) == id;
+            let start = (0..at).rev().take_while(same).last().unwrap_or(at);
+            let end = (at + 1..cells.len()).take_while(same).last().unwrap_or(at);
+            return Some(Link {
+                found: Found {
+                    start: (cells[start].0, cells[start].1),
+                    end: (cells[end].0, cells[end].2),
+                },
+                url: url.clone(),
+                marked: true,
+            });
+        }
         crate::links::find_urls(&text).into_iter().find_map(|url| {
             let (first, last) = (cells[url.start], cells[url.end - 1]);
             let found = Found {
@@ -685,7 +753,11 @@ impl Grid {
                 end: (last.0, last.2),
             };
             let under = found.start <= here && here <= found.end;
-            under.then(|| (found, text[url].iter().collect()))
+            under.then(|| Link {
+                found,
+                url: text[url].iter().collect(),
+                marked: false,
+            })
         })
     }
 
@@ -1250,13 +1322,14 @@ mod tests {
     fn a_link_cut_at_the_edge_is_found_whole() {
         let g = grid(4, 10, "go https://a.io/xyz now");
         assert_eq!(g.render(), "go https:/\n/a.io/xyz\nnow");
-        let link = Some((
-            Found {
+        let link = Some(Link {
+            found: Found {
                 start: (0, 3),
                 end: (1, 8),
             },
-            "https://a.io/xyz".to_string(),
-        ));
+            url: "https://a.io/xyz".to_string(),
+            marked: false, // the text is the address
+        });
         // From either row.
         assert_eq!(g.link_at(0, 5), link);
         assert_eq!(g.link_at(1, 2), link);

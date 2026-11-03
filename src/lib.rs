@@ -27,7 +27,8 @@
 //! - `card`: the small box for changing a tab's name and command.
 //! - `start`: the start screen of a new home: the recent projects.
 //! - `help`: all the keys and the settings now (Ctrl+Shift+/).
-//! - `links`: `https://...` in the output, opened with Ctrl+click.
+//! - `links`: `https://...` in the output and programs' own links (OSC 8), opened
+//!   with Ctrl+click.
 //! - `setup`: the install scripts from `setup/`, built into the exe.
 //! - `shell_integration`: makes the shell tell Kel its folder, and when a command
 //!   starts and ends.

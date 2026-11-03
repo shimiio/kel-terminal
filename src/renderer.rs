@@ -97,6 +97,10 @@ pub struct Chrome<'a> {
     pub maximized: bool,
     /// Something went wrong (a config error...): shown in red at the end of the tab bar.
     pub status: Option<&'a str>,
+    /// The address of the link under the mouse, if a program marked the text as
+    /// one (OSC 8): it isn't on the screen. Where the status goes, dim, when
+    /// there's no status or question.
+    pub link_url: Option<&'a str>,
     /// A question ("close again to quit"): in its place, in yellow, while it waits.
     pub question: Option<&'a str>,
     /// The command palette, if it's open: drawn over everything else.
@@ -406,10 +410,16 @@ impl Renderer {
         // A question waits for an answer now, so it comes before a problem. With
         // the sidebar open, it's at the sidebar's bottom instead: once is enough.
         let question = chrome.question.filter(|_| chrome.sidebar.is_none());
+        // A link's address: its start (where it goes) and its end (which page,
+        // which file), the middle cut if it's longer than half the bar.
+        let half = (layout.tab_bar.w / 2) / self.ui.advance.max(1);
+        let url = chrome.link_url.map(|url| cut_middle(url, half));
         let message = match (question, chrome.status) {
             (Some(question), _) => Some((question, theme.palette[11])),
             (None, Some(status)) => Some((status, theme.failed)),
-            (None, None) => None,
+            (None, None) => url
+                .as_deref()
+                .map(|url| (url, blend(theme.frame, theme.foreground, 150))),
         };
         if let Some((text, color)) = message {
             draw_status(
@@ -1947,6 +1957,20 @@ fn draw_ui_hint(
     }
 }
 
+/// `text` in at most `max` characters: the middle goes, for a `…`. e.g.
+/// `https://example.com/a/b/c/page` in 20: `https:/…m/a/b/c/page`.
+fn cut_middle(text: &str, max: usize) -> String {
+    let n = text.chars().count();
+    if n <= max || max < 3 {
+        return text.to_string();
+    }
+    let head = (max - 1) * 2 / 5;
+    let tail = max - 1 - head;
+    let start: String = text.chars().take(head).collect();
+    let end: String = text.chars().skip(n - tail).collect();
+    format!("{start}…{end}")
+}
+
 /// A rectangle's outline, `t` pixels thick.
 fn outline(pixels: &mut [u32], width: usize, r: Rect, t: usize, color: u32) {
     fill_rect(pixels, width, r.x, r.y, r.w, t, color); // top
@@ -2211,6 +2235,14 @@ fn draw_glyph(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_address_loses_its_middle() {
+        let url = "https://example.com/a/b/c/page";
+        assert_eq!(cut_middle(url, 20), "https:/…m/a/b/c/page");
+        assert_eq!(cut_middle(url, 20).chars().count(), 20);
+        assert_eq!(cut_middle("short", 20), "short");
+    }
 
     #[test]
     fn blending_over_glass() {

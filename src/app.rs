@@ -12,6 +12,7 @@ use crate::help::Help;
 use crate::icons;
 use crate::keys::{self, Action};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton};
+use crate::links;
 use crate::logo;
 use crate::mouse::{self, Tracking};
 use crate::palette::{Item, Palette};
@@ -22,7 +23,7 @@ use crate::setup;
 use crate::sidebar::{Live, Row, Sidebar};
 use crate::start::{self, Start};
 use crate::tab::{Tab, TabId};
-use crate::term::{Found, Terminal};
+use crate::term::{Link, Terminal};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime};
@@ -231,7 +232,7 @@ pub struct App {
     search: Option<Search>,
     /// The link under the mouse while Ctrl is held (see `update_link`): where it
     /// is and its text. Underlined, and Ctrl+click opens it.
-    link: Option<(Found, String)>,
+    link: Option<Link>,
     /// The tab under the pressed mouse button, until it's let go.
     tab_drag: Option<TabDrag>,
     /// The sidebar of projects, while it's open. It gets the keys and the clicks.
@@ -2025,7 +2026,12 @@ impl App {
             palette: self.palette.as_ref(),
             search: self.search.as_ref(),
             project: self.project.as_ref().map(|p| (p.name.as_str(), p.color)),
-            link: self.link.as_ref().map(|(found, _)| *found),
+            link: self.link.as_ref().map(|link| link.found),
+            link_url: self
+                .link
+                .as_ref()
+                .filter(|link| link.marked)
+                .map(|link| link.url.as_str()),
             sidebar: self.sidebar.as_ref(),
             start: self.start.as_ref(),
             card: self.card.as_ref().zip(self.card_rect()),
@@ -2408,13 +2414,36 @@ impl App {
         self.request_redraw();
     }
 
-    /// Opens `url` in the default browser, as clicking it in another program
-    /// would. Only `http(s)` gets here (see `links`). `rundll32` and not
-    /// `explorer`: explorer cuts its argument at commas, and links have them.
+    /// Opens a link (see `links::target`): a web page in the default browser,
+    /// as clicking it in another program would; a file shown in Explorer, its
+    /// folder open and the file chosen (a folder: opened). Nothing is run.
+    /// `rundll32` and not `explorer` for a page: explorer cuts its argument at
+    /// commas, and links have them.
     fn open_link(&mut self, url: &str) {
-        let opened = std::process::Command::new("rundll32")
-            .args(["url.dll,FileProtocolHandler", url])
-            .spawn();
+        use std::process::Command;
+        let opened = match links::target(url) {
+            Some(links::Target::Web) => Command::new("rundll32")
+                .args(["url.dll,FileProtocolHandler", url])
+                .spawn(),
+            Some(links::Target::File(path)) if path.is_dir() => {
+                Command::new("explorer").arg(&path).spawn()
+            }
+            Some(links::Target::File(path)) if path.exists() => {
+                // `/select,"C:\a, b.txt"`: in quotes, so a comma in the name stays.
+                #[cfg(windows)]
+                use std::os::windows::process::CommandExt;
+                let select = format!("/select,\"{}\"", path.display());
+                Command::new("explorer").raw_arg(select).spawn()
+            }
+            Some(links::Target::File(path)) => {
+                self.set_status(Some(format!("no such file: {}", path.display())));
+                return;
+            }
+            None => {
+                self.set_status(Some(format!("Kel opens web and file links only: {url}")));
+                return;
+            }
+        };
         if let Err(e) = opened {
             self.set_status(Some(format!("can't open {url}: {e}")));
         }
@@ -2565,9 +2594,9 @@ impl App {
         if button == MouseButton::Left
             && state == ElementState::Pressed
             && self.modifiers.control_key()
-            && let Some((_, url)) = &self.link
+            && let Some(link) = &self.link
         {
-            let url = url.clone();
+            let url = link.url.clone();
             self.open_link(&url);
             return;
         }

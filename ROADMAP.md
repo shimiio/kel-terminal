@@ -250,8 +250,10 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] Sidebar: scrolling when there are more projects than fit (the wheel, ↑↓ past an end,
       a drag past an end); `home` and "Save" stay put; a thin bar shows where you are
 - [ ] A click doesn't select its one cell: only a drag selects
-- [ ] OSC 8 links: text a program marks as a link (`ls --hyperlink`, delta, compilers),
-      its address not on the screen; Ctrl+click opens it, like found links
+- [x] OSC 8 links: text a program marks as a link (`ls --hyperlink`, delta, compilers),
+      its address not on the screen, so the tab bar shows it (its middle cut). Ctrl+click:
+      a web page in the browser; a file here shown in Explorer, never run; a file on
+      another computer not at all (Windows would send your login to look)
 - [ ] Readability under lazygit / Claude Code: a solid background behind full-screen
       programs (the alternate screen), as nvim paints its own
 - [ ] The palette's chosen line in the project's color, not gray?

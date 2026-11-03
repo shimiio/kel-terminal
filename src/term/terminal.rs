@@ -280,6 +280,9 @@ impl Perform for Terminal {
     ///
     /// `ESC]9;9;C:\folder ESC\`: the shell's current folder, sent before each prompt.
     ///
+    /// `ESC]8;params;url ESC\`: the text after it is a link to `url`, an empty
+    /// one ends it (see `Grid::set_link`). `params` (`id=...`) say nothing Kel needs.
+    ///
     /// `ESC]633;E;text`: the command's text, `\xNN` for `\`, `;`, ESC... (see `unescape`).
     /// After it, VS Code's shells may send a `;nonce`: ignored.
     ///
@@ -295,6 +298,10 @@ impl Perform for Terminal {
                 let folder = text(folder);
                 let folder = folder.trim_matches('"');
                 self.cwd = Some(folder.to_string());
+            }
+            [b"8", rest @ ..] => {
+                let url = text(rest.get(1..).unwrap_or_default());
+                self.grid.set_link(&url);
             }
             [b"633", b"E", command, ..] => {
                 let command = unescape(&String::from_utf8_lossy(command));
@@ -397,6 +404,31 @@ mod tests {
             marks("\x1b]633;E;ls\x07\x1b]633;E;ls;abc123\x07"),
             [Command("ls".into()), Command("ls".into())]
         );
+    }
+
+    #[test]
+    fn a_program_s_links() {
+        use crate::term::Found;
+        // "a link b", "link" a link to x.io; its address isn't on the screen.
+        let terminal = feed("a \x1b]8;id=1;https://x.io/a;b\x1b\\link\x1b]8;;\x1b\\ b");
+        assert_eq!(terminal.grid.render(), "a link b");
+        let link = terminal.grid.link_at(0, 3).unwrap();
+        assert_eq!(link.url, "https://x.io/a;b"); // the `;` in it stays
+        assert!(link.marked);
+        assert_eq!(
+            link.found,
+            Found {
+                start: (0, 2),
+                end: (0, 5)
+            }
+        );
+        assert_eq!(terminal.grid.link_at(0, 0), None);
+        assert_eq!(terminal.grid.link_at(0, 7), None);
+        // The same link twice: one number.
+        let terminal = feed("\x1b]8;;u\x07a\x1b]8;;\x07 \x1b]8;;u\x07b\x1b]8;;\x07");
+        let (a, b) = (terminal.grid.cell(0, 0).link, terminal.grid.cell(0, 2).link);
+        assert_eq!((a, b), (1, 1));
+        assert_eq!(terminal.grid.cell(0, 1).link, 0);
     }
 
     #[test]
