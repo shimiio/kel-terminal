@@ -281,7 +281,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
         system's without it (PowerShell; `$SHELL` on Linux/macOS); new tabs take a change
   - [x] A shell per project (`shell` in its file), and per tab (`shell` in a `[[tab]]`);
         new tabs get the project's
-  - [ ] `bell`: the taskbar blinks (or a flash, or nothing); now the bell is ignored
+  - [x] `bell`: the taskbar button blinks while Kel is behind (`"taskbar"`), and the
+        terminal flashes while it's in front (`"flash"`), or nothing. It was ignored
   - [ ] `cursor_blink`
   - [ ] `copy_on_select`
   - [ ] `scrollback` (10 000 lines now)

@@ -58,6 +58,8 @@ const SIDEBAR_DIM: u32 = 120;
 const SEARCH_CHARS: usize = 36;
 /// How much of the dim yellow the other matches get over their background (of 255).
 const MATCH_TINT: u32 = 100;
+/// How much of the text's color lights the panel when the bell flashes, out of 255.
+const FLASH: u32 = 40;
 
 /// The command palette: at most this wide (in letters) and this many lines.
 const PALETTE_CHARS: usize = 64;
@@ -127,6 +129,8 @@ pub struct Chrome<'a> {
     /// and their many colors and lines read worse over what's behind the window.
     /// nvim paints its own, so there it changes nothing.
     pub solid: bool,
+    /// The bell just rang (`bell = "flash"`): the terminal a bit lighter.
+    pub flash: bool,
     /// The help, if it's open: over everything.
     pub help: Option<&'a Help>,
 }
@@ -575,6 +579,16 @@ impl Renderer {
                         };
                         fill_rect(&mut buffer, width, x, y + cell_h - h, w, h, theme.cursor);
                     }
+                }
+            }
+        }
+
+        // The bell: the panel a bit lighter, for a moment.
+        if chrome.flash {
+            for y in inside.y..inside.y + inside.h {
+                let row = &mut buffer[y * width + inside.x..][..inside.w];
+                for px in row {
+                    *px = blend(*px, theme.foreground, FLASH);
                 }
             }
         }

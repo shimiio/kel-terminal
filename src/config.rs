@@ -50,6 +50,12 @@ pixel_name = true
 # Programs can pick their own (nvim does); this is for the rest.
 cursor = "block"
 
+# The bell, a program's "done" or "come here" (Claude Code can ring it):
+# "taskbar": Kel's button in the taskbar blinks while you're in another window,
+# until you come back; "flash": that, and the terminal flashes when you're here;
+# "none": nothing.
+bell = "taskbar"
+
 # The start screen's picture behind the logo, new each time it shows:
 # "auto" (a terrain by day, stars at night), "terrain", "contours", "mountains",
 # "sea", "wind", "stars", or "none". Mountains and the sea have stars at night.
@@ -103,6 +109,29 @@ palette = [
 ]
 "##;
 
+/// What the bell does: `bell` in the config.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Bell {
+    /// The taskbar button blinks while Kel isn't in front.
+    #[default]
+    Taskbar,
+    /// That, and the terminal flashes while Kel is in front.
+    Flash,
+    None,
+}
+
+impl Bell {
+    /// As the config spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Bell::Taskbar => "taskbar",
+            Bell::Flash => "flash",
+            Bell::None => "none",
+        }
+    }
+}
+
 /// `#[serde(default)]`: a setting missing from the file is taken from `Config::default()`.
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(default)]
@@ -114,6 +143,7 @@ pub struct Config {
     pub ui_scale: f32,
     pub pixel_name: bool,
     pub cursor: CursorShape,
+    pub bell: Bell,
     pub backdrop: backdrop::Choice,
     pub layout: Spacing,
     pub glass: Glass,
@@ -129,6 +159,7 @@ impl Default for Config {
             ui_scale: 1.0,
             pixel_name: true,
             cursor: CursorShape::Block,
+            bell: Bell::Taskbar,
             backdrop: backdrop::Choice::Auto,
             layout: Spacing::default(),
             glass: Glass::default(),
@@ -260,6 +291,15 @@ project_colors = [\"#112233\", \"blue\"]";
             toml::from_str("[glass]\nsolid_under_apps = false\nsolid_color = \"#000000\"").unwrap();
         assert!(!config.glass.solid_under_apps);
         assert_eq!(config.glass.solid_color, Some(0));
+    }
+
+    #[test]
+    fn bell() {
+        assert_eq!(Config::default().bell, Bell::Taskbar);
+        let config: Config = toml::from_str("bell = \"flash\"").unwrap();
+        assert_eq!(config.bell, Bell::Flash);
+        assert_eq!(config.bell.name(), "flash");
+        assert!(toml::from_str::<Config>("bell = \"loud\"").is_err());
     }
 
     #[test]

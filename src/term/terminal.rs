@@ -47,6 +47,9 @@ pub struct Terminal {
     pub cwd: Option<String>,
     /// Command marks, in the order they came. The tab takes them after each chunk.
     pub marks: Vec<Mark>,
+    /// The program rang the bell (BEL, `\x07`) since the tab last looked: it's
+    /// done, or it wants you (see `bell` in the config).
+    pub bell: bool,
 }
 
 impl Terminal {
@@ -61,6 +64,7 @@ impl Terminal {
             title: None,
             cwd: None,
             marks: Vec::new(),
+            bell: false,
         }
     }
 
@@ -188,6 +192,9 @@ impl Perform for Terminal {
             b'\n' => self.grid.newline(),
             b'\x08' => self.grid.backspace(),
             b'\t' => self.grid.tab(),
+            // The bell. Not the one ending a title (`ESC]0;...BEL`): that one
+            // never comes here.
+            b'\x07' => self.bell = true,
             _ => {}
         }
     }
@@ -356,6 +363,14 @@ mod tests {
         let mut terminal = Terminal::new(5, 10);
         Parser::new().advance(&mut terminal, input.as_bytes());
         terminal
+    }
+
+    #[test]
+    fn the_bell() {
+        assert!(feed("done\x07").bell);
+        assert_eq!(feed("done\x07").grid.render(), "done"); // nothing to see
+        // A title ends with the same byte: no bell.
+        assert!(!feed("\x1b]0;hello\x07").bell);
     }
 
     #[test]

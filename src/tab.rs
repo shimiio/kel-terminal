@@ -248,6 +248,11 @@ impl Tab {
         });
     }
 
+    /// Whether the program rang the bell since the last time this was asked.
+    pub fn take_bell(&mut self) -> bool {
+        std::mem::take(&mut self.terminal.lock().unwrap().bell)
+    }
+
     /// Takes the title the program sent, if it changed. Returns `true` if the
     /// name in the tab bar is now different.
     pub fn refresh_title(&mut self) -> bool {

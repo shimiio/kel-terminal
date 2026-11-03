@@ -34,7 +34,7 @@ use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, Window
 use winit::event_loop::ControlFlow;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
-use winit::window::{CursorIcon, Icon, ResizeDirection, Window, WindowId};
+use winit::window::{CursorIcon, Icon, ResizeDirection, UserAttentionType, Window, WindowId};
 
 // Starting size, in cells. After that, the size comes from the window (`on_resize`).
 const ROWS: usize = 24;
@@ -83,6 +83,9 @@ pub enum UserEvent {
     /// The shell ended.
     PtyExited(TabId),
 }
+
+/// How long the terminal flashes when the bell rings (`bell = "flash"`).
+const FLASH_TIME: Duration = Duration::from_millis(120);
 
 /// How long "close?" waits for the second press.
 const CONFIRM_TIME: Duration = Duration::from_secs(3);
@@ -255,6 +258,8 @@ pub struct App {
     /// When the mouse came onto the sidebar button, the sidebar closed: at `PEEK_DELAY` after
     /// it, the sidebar opens (see `peek`).
     burger_since: Option<Instant>,
+    /// The bell's flash, until then (see `ring`).
+    flash_until: Option<Instant>,
     /// The open sidebar came from resting on the sidebar button, a peek: it closes when the
     /// mouse leaves it. A click or a key in it keeps it, as if opened by hand.
     sidebar_peek: bool,
@@ -436,6 +441,7 @@ impl App {
             sidebar_drag: None,
             window_title: String::new(),
             burger_since: None,
+            flash_until: None,
             sidebar_peek: false,
             icon: None,
         })
@@ -496,6 +502,25 @@ impl App {
                 self.show_tab(self.tabs.len() - 1);
             }
             Err(e) => self.set_status(Some(format!("can't open a tab: {e:#}"))),
+        }
+    }
+
+    /// A tab's program rang the bell (`on_screen`: the tab on screen). Kel in
+    /// front: you see it already, or the tab's dot will say; with `flash`, the
+    /// terminal flashes. Kel behind other windows: its taskbar button blinks
+    /// until you come back.
+    fn ring(&mut self, on_screen: bool) {
+        let bell = self.config.bell;
+        if bell == config::Bell::None {
+            return;
+        }
+        if !self.focused {
+            if let Some(window) = &self.window {
+                window.request_user_attention(Some(UserAttentionType::Informational));
+            }
+        } else if bell == config::Bell::Flash && on_screen {
+            self.flash_until = Some(Instant::now() + FLASH_TIME);
+            self.request_redraw();
         }
     }
 
@@ -1945,6 +1970,9 @@ impl ApplicationHandler<UserEvent> for App {
                 // And command marks (`ESC]133;...`).
                 let marked = tab.refresh_command(on_screen);
                 let lit = !on_screen && tab.mark_activity();
+                if tab.take_bell() {
+                    self.ring(on_screen);
+                }
                 if on_screen && renamed {
                     self.update_window_title();
                 }
@@ -2031,12 +2059,24 @@ impl ApplicationHandler<UserEvent> for App {
             }
         }
         self.peek();
+        // The bell's flash is over.
+        if self
+            .flash_until
+            .is_some_and(|until| Instant::now() >= until)
+        {
+            self.flash_until = None;
+            self.request_redraw();
+        }
         // Sleep until the next event, or until it's time to blink (or to open the
-        // sidebar, the mouse resting on the sidebar button), whichever comes first.
-        let wake = match self.burger_since {
-            Some(since) => (since + PEEK_DELAY).min(self.next_blink),
-            None => self.next_blink,
-        };
+        // sidebar, the mouse resting on the sidebar button, or to end a flash),
+        // whichever comes first.
+        let wake = [
+            self.burger_since.map(|since| since + PEEK_DELAY),
+            self.flash_until,
+        ]
+        .into_iter()
+        .flatten()
+        .fold(self.next_blink, Instant::min);
         event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
     }
 }
@@ -2115,6 +2155,7 @@ impl App {
             help: self.help.as_ref(),
             keys_here: self.keys_here(),
             solid: self.solid_under(),
+            flash: self.flash_until.is_some(),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
