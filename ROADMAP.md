@@ -183,7 +183,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       "home", with Kel's mark `k▌`, while the screen is up. Ctrl+Shift+H goes there
 - [x] Home neutral in the whole UI: the project's color is the only one (`accent_for`); home
       and projects without one are gray. `accent` in `[colors]` is optional now
-- [ ] Maybe: a pixel font for the project name (built into the exe, see Fonts)
+- [x] The project's name in the tab bar in pixels, like the logo: a 5 x 7 font drawn in
+      `logo.rs` (lowercase, digits, `- _ .`; the logo's k e l are its letters), no font
+      file. A name with a letter it hasn't got (Cyrillic...) stays in the UI's font
 - [x] Sidebar on the left: `≡` at the tab bar's start (a visible handle: hover alone wouldn't
       say it's there), Ctrl+Shift+B, or the palette. Dims the rest, lists the projects with
       their colors, the last line saves the tabs as a new one. Over the terminal, so nothing

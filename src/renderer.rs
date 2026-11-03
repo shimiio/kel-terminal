@@ -283,7 +283,7 @@ impl Renderer {
         if scale != self.ui.scale {
             let _ = self.ui.set_scale(&self.fonts[0], scale);
         }
-        let name_w = project_name_shown(name).chars().count() * self.ui.advance;
+        let name_w = project_name_width(&project_name_shown(name), &self.ui);
         self.ui.px(PROJECT_NAME_LEFT) + name_w + self.ui.px(PROJECT_NAME_GAP)
     }
 
@@ -607,8 +607,22 @@ fn draw_tab_bar(
             layout.sidebar_button.x + layout.sidebar_button.w + ui.px(PROJECT_NAME_LEFT),
             bar.y + bar.h.saturating_sub(ui.line_h) / 2,
         );
-        let max_w = shown.chars().count() * ui.advance;
-        draw_ui_text(pixels, width, font, ui, &shown, at, max_w, accent);
+        match logo::word(&shown) {
+            // In pixels, like the logo: its 7 rows down to the line in the bar's
+            // middle, g's tail below.
+            Some((lit, _)) => {
+                let px = project_name_px(ui);
+                let top = bar.y + bar.h.saturating_sub(logo::HEIGHT * px) / 2;
+                for (x, y) in lit {
+                    fill_rect(pixels, width, at.0 + x * px, top + y * px, px, px, accent);
+                }
+            }
+            // A letter the pixel font hasn't got: all of it in the UI's font.
+            None => {
+                let max_w = shown.chars().count() * ui.advance;
+                draw_ui_text(pixels, width, font, ui, &shown, at, max_w, accent);
+            }
+        }
     }
     for (i, (tab, label)) in layout.tabs(tabs.len()).iter().zip(tabs).enumerate() {
         let on_screen = i == active;
@@ -1513,6 +1527,20 @@ fn keep_end(text: &str, chars: usize) -> String {
     }
     let tail: String = text.chars().skip(count - (chars - 1)).collect();
     format!("…{tail}")
+}
+
+/// A pixel of the project's name in the pixel font: 2 x 2 at 100%, like the icons.
+fn project_name_px(ui: &Ui) -> usize {
+    ui.px(2).max(1)
+}
+
+/// How wide the project's name is in the tab bar: in pixels if the pixel font
+/// has its letters, else in the UI's font.
+fn project_name_width(shown: &str, ui: &Ui) -> usize {
+    match logo::word(shown) {
+        Some((_, w)) => w * project_name_px(ui),
+        None => shown.chars().count() * ui.advance,
+    }
 }
 
 /// The project's name as the tab bar shows it: at most `PROJECT_NAME_CHARS`

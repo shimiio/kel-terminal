@@ -17,6 +17,9 @@
 //! screen's stands then: a cursor blinks where the keys go). And `k▌` alone, the window's
 //! icon in the taskbar (see `icon`), its cursor the project's color too. The
 //! renderer draws the pixels at the size it wants.
+//!
+//! Its letters are a whole font too (`FONT`, see `word`): lowercase, digits and
+//! `- _ .`, in which the tab bar writes the project's name.
 
 /// The letters, a row of pixels a string, `#` lit.
 const K: [&str; 7] = [
@@ -26,6 +29,221 @@ const E: [&str; 7] = [
     ".....", ".....", ".###.", "#...#", "#####", "#....", ".###.",
 ];
 const L: [&str; 7] = ["##.", ".#.", ".#.", ".#.", ".#.", ".#.", ".##"];
+
+/// The pixel font: a letter's rows, `#` lit. Lowercase only: the logo's style.
+/// 7 rows down to the line letters sit on; g j p q y and `_` hang 1 or 2 below.
+const FONT: [(char, &[&str]); 41] = [
+    (
+        'a',
+        &[
+            ".....", ".....", ".###.", "....#", ".####", "#...#", ".####",
+        ],
+    ),
+    (
+        'b',
+        &[
+            "#....", "#....", "####.", "#...#", "#...#", "#...#", "####.",
+        ],
+    ),
+    (
+        'c',
+        &[
+            ".....", ".....", ".####", "#....", "#....", "#....", ".####",
+        ],
+    ),
+    (
+        'd',
+        &[
+            "....#", "....#", ".####", "#...#", "#...#", "#...#", ".####",
+        ],
+    ),
+    ('e', &E),
+    (
+        'f',
+        &["..##", ".#..", "####", ".#..", ".#..", ".#..", ".#.."],
+    ),
+    (
+        'g',
+        &[
+            ".....", ".....", ".####", "#...#", "#...#", "#...#", ".####", "....#", "####.",
+        ],
+    ),
+    (
+        'h',
+        &[
+            "#....", "#....", "####.", "#...#", "#...#", "#...#", "#...#",
+        ],
+    ),
+    ('i', &[".#.", "...", "##.", ".#.", ".#.", ".#.", ".##"]),
+    (
+        'j',
+        &[
+            "..#", "...", ".##", "..#", "..#", "..#", "..#", "..#", "##.",
+        ],
+    ),
+    ('k', &K),
+    ('l', &L),
+    (
+        'm',
+        &[
+            ".....", ".....", "##.#.", "#.#.#", "#.#.#", "#.#.#", "#.#.#",
+        ],
+    ),
+    (
+        'n',
+        &[
+            ".....", ".....", "####.", "#...#", "#...#", "#...#", "#...#",
+        ],
+    ),
+    (
+        'o',
+        &[
+            ".....", ".....", ".###.", "#...#", "#...#", "#...#", ".###.",
+        ],
+    ),
+    (
+        'p',
+        &[
+            ".....", ".....", "####.", "#...#", "#...#", "#...#", "####.", "#....", "#....",
+        ],
+    ),
+    (
+        'q',
+        &[
+            ".....", ".....", ".####", "#...#", "#...#", "#...#", ".####", "....#", "....#",
+        ],
+    ),
+    (
+        'r',
+        &[
+            ".....", ".....", "#.###", "##...", "#....", "#....", "#....",
+        ],
+    ),
+    (
+        's',
+        &[
+            ".....", ".....", ".####", "#....", ".###.", "....#", "####.",
+        ],
+    ),
+    (
+        't',
+        &[".#..", ".#..", "####", ".#..", ".#..", ".#..", "..##"],
+    ),
+    (
+        'u',
+        &[
+            ".....", ".....", "#...#", "#...#", "#...#", "#...#", ".####",
+        ],
+    ),
+    (
+        'v',
+        &[
+            ".....", ".....", "#...#", "#...#", "#...#", ".#.#.", "..#..",
+        ],
+    ),
+    (
+        'w',
+        &[
+            ".....", ".....", "#...#", "#.#.#", "#.#.#", "#.#.#", ".#.#.",
+        ],
+    ),
+    (
+        'x',
+        &[
+            ".....", ".....", "#...#", ".#.#.", "..#..", ".#.#.", "#...#",
+        ],
+    ),
+    (
+        'y',
+        &[
+            ".....", ".....", "#...#", "#...#", "#...#", "#...#", ".####", "....#", "####.",
+        ],
+    ),
+    (
+        'z',
+        &[
+            ".....", ".....", "#####", "...#.", "..#..", ".#...", "#####",
+        ],
+    ),
+    (
+        '0',
+        &[
+            ".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###.",
+        ],
+    ),
+    (
+        '1',
+        &[
+            "..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###.",
+        ],
+    ),
+    (
+        '2',
+        &[
+            ".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####",
+        ],
+    ),
+    (
+        '3',
+        &[
+            "####.", "....#", "....#", ".###.", "....#", "....#", "####.",
+        ],
+    ),
+    (
+        '4',
+        &[
+            "...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#.",
+        ],
+    ),
+    (
+        '5',
+        &[
+            "#####", "#....", "####.", "....#", "....#", "#...#", ".###.",
+        ],
+    ),
+    (
+        '6',
+        &[
+            ".###.", "#....", "#....", "####.", "#...#", "#...#", ".###.",
+        ],
+    ),
+    (
+        '7',
+        &[
+            "#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#...",
+        ],
+    ),
+    (
+        '8',
+        &[
+            ".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###.",
+        ],
+    ),
+    (
+        '9',
+        &[
+            ".###.", "#...#", "#...#", ".####", "....#", "....#", ".###.",
+        ],
+    ),
+    ('-', &["...", "...", "...", "...", "###", "...", "..."]),
+    (
+        '_',
+        &[
+            ".....", ".....", ".....", ".....", ".....", ".....", ".....", "#####",
+        ],
+    ),
+    ('.', &[".", ".", ".", ".", ".", ".", "#"]),
+    (
+        '…',
+        &[
+            ".....", ".....", ".....", ".....", ".....", ".....", "#.#.#",
+        ],
+    ),
+    (' ', &["..", "..", "..", "..", "..", "..", ".."]),
+];
+
+/// The font's rows, the ones below the line too.
+pub const FONT_HEIGHT: usize = 9;
 
 /// The cursor's width; a pixel's gap between the letters, and before it.
 const CURSOR_WIDTH: usize = 4;
@@ -86,6 +304,28 @@ fn lay_out(letters: &[[&str; HEIGHT]]) -> Vec<Pixel> {
         }
     }
     lit
+}
+
+/// `text` in the pixel font: its lit pixels (x, y), and its width, in the font's
+/// pixels. Capitals as lowercase. `None` if a letter isn't in the font (e.g.
+/// Cyrillic): then the whole text is better in a normal font than mixed.
+pub fn word(text: &str) -> Option<(Vec<(usize, usize)>, usize)> {
+    let mut lit = Vec::new();
+    let mut left = 0;
+    for ch in text.chars() {
+        let ch = ch.to_ascii_lowercase();
+        let (_, rows) = FONT.iter().find(|(c, _)| *c == ch)?;
+        for (y, row) in rows.iter().enumerate() {
+            lit.extend(
+                row.chars()
+                    .enumerate()
+                    .filter(|(_, c)| *c == '#')
+                    .map(|(x, _)| (left + x, y)),
+            );
+        }
+        left += rows[0].len() + GAP;
+    }
+    Some((lit, left.saturating_sub(GAP)))
 }
 
 /// The window's icon, `size` pixels square, as RGBA bytes: `k▌` in the middle
@@ -149,6 +389,36 @@ mod tests {
             y: 6,
             cursor: false
         }));
+    }
+
+    #[test]
+    fn the_font() {
+        for (ch, rows) in FONT {
+            assert!((HEIGHT..=FONT_HEIGHT).contains(&rows.len()), "{ch}");
+            assert!(rows.iter().all(|row| row.len() == rows[0].len()), "{ch}");
+            assert!(
+                rows.iter().all(|row| row.chars().all(|c| "#.".contains(c))),
+                "{ch}"
+            );
+        }
+        // "kel" is the logo, without the cursor.
+        let (lit, width) = word("kel").unwrap();
+        let logo: Vec<_> = pixels()
+            .iter()
+            .filter(|p| !p.cursor)
+            .map(|p| (p.x, p.y))
+            .collect();
+        assert_eq!(lit, logo);
+        assert_eq!(width, WIDTH - GAP - CURSOR_WIDTH);
+        // Capitals as lowercase; letters it hasn't got: none of it.
+        assert_eq!(word("KEL"), word("kel"));
+        assert_eq!(word("web-2_x.y…"), word("web-2_x.y…"));
+        assert!(word("my app 2").is_some());
+        assert_eq!(word("проект"), None);
+        assert_eq!(word("kel!"), None);
+        // g hangs below the line.
+        assert!(word("g").unwrap().0.iter().any(|&(_, y)| y >= HEIGHT));
+        assert_eq!(word(""), Some((vec![], 0)));
     }
 
     #[test]
