@@ -249,7 +249,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       as a whole (`ESC[?2004h`). One line goes in without its line break: it waits
 - [x] Sidebar: scrolling when there are more projects than fit (the wheel, ↑↓ past an end,
       a drag past an end); `home` and "Save" stay put; a thin bar shows where you are
-- [ ] A click doesn't select its one cell: only a drag selects
+- [x] A click doesn't select its one cell: only a drag selects (back on the first cell
+      after a drag: that one cell, on purpose)
 - [x] OSC 8 links: text a program marks as a link (`ls --hyperlink`, delta, compilers),
       its address not on the screen, so the tab bar shows it (its middle cut). Ctrl+click:
       a web page in the browser; a file here shown in Explorer, never run; a file on

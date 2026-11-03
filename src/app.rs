@@ -180,8 +180,9 @@ pub struct App {
     mouse_cell: (usize, usize),
     /// The mouse selection, if any. Screen positions, so it doesn't follow scrolling.
     selection: Option<Selection>,
-    /// True while the left button is held down (dragging).
-    selecting: bool,
+    /// While the left button is held: the cell it was pressed on. A selection
+    /// starts only once the mouse leaves that cell: a click selects nothing.
+    selecting: Option<(usize, usize)>,
     /// The button whose press went to the program (see `on_mouse_button`): its
     /// moves and its release go there too.
     mouse_button: Option<mouse::Button>,
@@ -373,7 +374,7 @@ impl App {
             mouse_inside: false,
             mouse_cell: (0, 0),
             selection: None,
-            selecting: false,
+            selecting: None,
             mouse_button: None,
             focused: false,
             focused_tab: None,
@@ -2366,9 +2367,18 @@ impl App {
             return;
         }
 
-        if self.selecting {
-            if let Some(selection) = &mut self.selection {
-                selection.end = (row, col);
+        if let Some(from) = self.selecting {
+            // Off the pressed cell: the selection starts. Back on it later: it
+            // stays, one cell, chosen on purpose.
+            match &mut self.selection {
+                Some(selection) => selection.end = (row, col),
+                None if (row, col) != from => {
+                    self.selection = Some(Selection {
+                        start: from,
+                        end: (row, col),
+                    });
+                }
+                None => return,
             }
             self.request_redraw();
         } else if moved
@@ -2387,7 +2397,7 @@ impl App {
             && self.start.is_none()
             && self.mouse_inside
             && self.over_text()
-            && !self.selecting;
+            && self.selecting.is_none();
         let link = if look {
             let (row, col) = self.mouse_cell;
             self.tab().terminal.lock().unwrap().grid.link_at(row, col)
@@ -2738,7 +2748,8 @@ impl App {
         }
     }
 
-    /// Left mouse button: pressing starts a new selection, releasing finishes it.
+    /// Left mouse button: pressing and moving starts a new selection, releasing
+    /// finishes it. A click alone selects nothing, not even its cell.
     fn on_left_button(&mut self, state: ElementState) {
         match state {
             // At the window's edge: Windows resizes the window with the mouse
@@ -2757,22 +2768,16 @@ impl App {
             {
                 self.on_title_bar_click()
             }
+            // The old selection goes; a new one starts when the mouse moves on.
             ElementState::Pressed => {
-                self.selection = Some(Selection {
-                    start: self.mouse_cell,
-                    end: self.mouse_cell,
-                });
-                self.selecting = true;
-                self.request_redraw();
+                if self.selection.take().is_some() {
+                    self.request_redraw();
+                }
+                self.selecting = Some(self.mouse_cell);
             }
             ElementState::Released => {
                 self.tab_drag = None;
-                self.selecting = false;
-                // Just a click, no drag: no selection.
-                if self.selection.is_some_and(|s| s.start == s.end) {
-                    self.selection = None;
-                    self.request_redraw();
-                }
+                self.selecting = None;
             }
         }
     }
