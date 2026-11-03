@@ -35,6 +35,8 @@ pub enum Action {
     Sidebar,
     /// Opens the command palette, or closes it.
     Palette,
+    /// Opens the help, all the keys and the settings, or closes it.
+    Help,
     /// Opens the search in the output, or closes it.
     Find,
     /// Runs the install script of this name (see `setup`) in a new tab.
@@ -100,6 +102,9 @@ pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
         (KeyCode::KeyF, true) => Action::Find,
         (KeyCode::KeyB, true) => Action::Sidebar, // like VS Code's Ctrl+B
         (KeyCode::KeyH, true) => Action::OpenHome,
+        // Ctrl+? : the question mark's key. Not F1, which programs have (htop,
+        // mc, nvim: their own help); not Ctrl+/ alone, which nvim plugins use.
+        (KeyCode::Slash, true) => Action::Help,
         _ => return None,
     };
     Some(action)
@@ -135,6 +140,7 @@ pub fn palette_items() -> Vec<Item> {
         item("Zoom out: smaller font", "Ctrl+-", Action::ZoomOut),
         item("Reset zoom", "Ctrl+0", Action::ZoomReset),
         item("Open the config file", "Ctrl+,", Action::OpenConfig),
+        item("Help: keys and settings", "Ctrl+Shift+/", Action::Help),
     ]
 }
 
@@ -432,6 +438,7 @@ mod tests {
             "=" => KeyCode::Equal,
             "-" => KeyCode::Minus,
             "," => KeyCode::Comma,
+            "/" => KeyCode::Slash,
             "0" => KeyCode::Digit0,
             "9" => KeyCode::Digit9,
             "B" => KeyCode::KeyB,

@@ -12,6 +12,7 @@ use crate::card::{self, Card};
 use crate::fallback::Fallbacks;
 use crate::font::{self, Font, Fonts, Metrics};
 use crate::glass::Glass;
+use crate::help::{Help, Line};
 use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::logo;
@@ -113,6 +114,8 @@ pub struct Chrome<'a> {
     pub start: Option<&'a Start>,
     /// The open card, and where it is.
     pub card: Option<(&'a Card, Rect)>,
+    /// The help, if it's open: over everything.
+    pub help: Option<&'a Help>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -524,8 +527,10 @@ impl Renderer {
         let over_start = chrome.sidebar.is_some()
             || chrome.palette.is_some()
             || chrome.search.is_some()
-            || chrome.card.is_some();
-        let over_sidebar = chrome.palette.is_some() || chrome.card.is_some();
+            || chrome.card.is_some()
+            || chrome.help.is_some();
+        let over_sidebar =
+            chrome.palette.is_some() || chrome.card.is_some() || chrome.help.is_some();
         if let Some(start) = chrome.start {
             let on = cursor_on || over_start;
             draw_start(
@@ -586,6 +591,10 @@ impl Renderer {
                 font,
                 &mut self.ui,
             );
+        }
+        // Except the help, which closes the others when it opens.
+        if let Some(help) = chrome.help {
+            draw_help(&mut buffer, width, theme, layout, help, font, &mut self.ui);
         }
 
         if self.glass.on() {
@@ -1397,8 +1406,9 @@ fn draw_start(
     let col = start::column(layout.text, layout.scale, projects.len());
     let left = col.x + ui.px(10);
 
-    // Behind it all: the backdrop, clear around the logo and the list.
-    let bottom = start::hint_y(col, layout.scale, projects.len()) + ui.line_h;
+    // Behind it all: the backdrop, clear around the logo and the list (and the
+    // hint's two lines).
+    let bottom = start::hint_y(col, layout.scale, projects.len()) + 2 * ui.line_h;
     let clear = Rect {
         h: bottom.saturating_sub(col.y),
         ..col
@@ -1459,6 +1469,182 @@ fn draw_start(
         let text = "Type to start   ↑↓ Enter opens a project   Esc";
         draw_ui_text(pixels, width, font, ui, text, (left, hint_y), col.w, dim);
     }
+    // Where the rest is: all the keys, the settings.
+    let help_y = hint_y + ui.line_h;
+    if help_y + ui.line_h <= layout.text.y + layout.text.h {
+        let text = "Ctrl+Shift+/ all the keys and settings";
+        draw_ui_text(pixels, width, font, ui, text, (left, help_y), col.w, dim);
+    }
+}
+
+/// A column of the help on screen: its lines, where it starts and how wide it
+/// is (pixels), how wide its keys and its values are (letters).
+struct HelpColumn<'a> {
+    lines: &'a [Line],
+    x: usize,
+    w: usize,
+    key_w: usize,
+    value_w: usize,
+}
+
+/// The help (see `help`): a box over the panel, the keys and the settings side
+/// by side if both fit, else one after the other; scrolled to `help.scroll()`.
+/// A setting's color: a dot of it before its `#hex`.
+fn draw_help(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    help: &Help,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    let area = layout.inside;
+    let margin = ui.px(16);
+    let pad = ui.px(16);
+    let b = layout.border.max(1);
+    let rect = Rect {
+        x: area.x + margin,
+        y: area.y + margin,
+        w: area.w.saturating_sub(2 * margin),
+        h: area.h.saturating_sub(2 * margin),
+    };
+    let advance = ui.advance.max(1);
+    let row_h = ui.line_h + ui.px(4);
+    if rect.w < 2 * (b + pad) + 24 * advance || rect.h < 2 * (b + pad) + 4 * row_h {
+        return; // a window too small for it
+    }
+    outline(pixels, width, rect, b, theme.border);
+    let (inner_w, inner_h) = (rect.w - 2 * b, rect.h - 2 * b);
+    fill_rect(
+        pixels,
+        width,
+        rect.x + b,
+        rect.y + b,
+        inner_w,
+        inner_h,
+        theme.frame,
+    );
+    let text_x = rect.x + b + pad;
+    let text_w = rect.w - 2 * (b + pad);
+    let top = rect.y + b + pad;
+    // Under the lines: the keys' hint, a line of its own.
+    let hint_y = rect.y + rect.h - b - pad - ui.line_h;
+    let shown = hint_y.saturating_sub(top + ui.px(8)) / row_h;
+
+    // Each column's widths, in letters: its keys, its values, its notes.
+    let widths = |lines: &[Line]| {
+        let (mut key, mut value, mut note) = (0, 0, 0);
+        for line in lines {
+            if let Line::Row {
+                key: k,
+                value: v,
+                note: n,
+                color,
+            } = line
+            {
+                key = key.max(k.chars().count() + 2);
+                // A color's dot takes 2 letters' room before it.
+                let dot = if color.is_some() { 2 } else { 0 };
+                value = value.max(v.chars().count() + dot + 2);
+                note = note.max(n.chars().count());
+            }
+        }
+        (key, value, note)
+    };
+    let [keys, settings] = help.columns();
+    let (kw, kv, kn) = widths(keys);
+    let (sw, sv, sn) = widths(settings);
+    let gap = ui.px(40);
+    let need = |w: usize, v: usize, n: usize| (w + v + n) * advance;
+    let two = need(kw, kv, kn) + gap + need(sw, sv, sn) <= text_w;
+    let one: Vec<Line>;
+    let columns: Vec<HelpColumn> = if two {
+        let left_w = need(kw, kv, kn);
+        vec![
+            HelpColumn {
+                lines: keys,
+                x: text_x,
+                w: left_w,
+                key_w: kw,
+                value_w: kv,
+            },
+            HelpColumn {
+                lines: settings,
+                x: text_x + left_w + gap,
+                w: text_w - left_w - gap,
+                key_w: sw,
+                value_w: sv,
+            },
+        ]
+    } else {
+        one = keys
+            .iter()
+            .cloned()
+            .chain([Line::Gap])
+            .chain(settings.iter().cloned())
+            .collect();
+        vec![HelpColumn {
+            lines: &one,
+            x: text_x,
+            w: text_w,
+            key_w: kw.max(sw),
+            value_w: kv.max(sv),
+        }]
+    };
+    let lines = columns.iter().map(|c| c.lines.len()).max().unwrap_or(0);
+    help.fit(lines, shown);
+    let scroll = help.scroll().min(lines.saturating_sub(shown));
+
+    let dim = blend(theme.frame, theme.foreground, 128);
+    let soft = blend(theme.frame, theme.foreground, 200);
+    for HelpColumn {
+        lines,
+        x,
+        w,
+        key_w,
+        value_w,
+    } in columns
+    {
+        let value_x = x + key_w * advance;
+        let note_x = value_x + value_w * advance;
+        for (i, line) in lines.iter().skip(scroll).take(shown).enumerate() {
+            let y = top + i * row_h + (row_h - ui.line_h) / 2;
+            match line {
+                Line::Title(text) => {
+                    draw_ui_text(pixels, width, font, ui, text, (x, y), w, dim);
+                }
+                Line::Row {
+                    key,
+                    value,
+                    note,
+                    color,
+                } => {
+                    draw_ui_text(pixels, width, font, ui, key, (x, y), w, theme.foreground);
+                    let mut vx = value_x;
+                    if let Some(color) = color {
+                        let r = 5.0 * ui.scale;
+                        let cy = y as f32 + ui.line_h as f32 / 2.0;
+                        let cx = (vx + advance / 2) as f32 + r / 2.0;
+                        fill_circle(pixels, width, cx, cy, r, 0.0, *color);
+                        vx += 2 * advance;
+                    }
+                    let room = (x + w).saturating_sub(vx);
+                    draw_ui_text(pixels, width, font, ui, value, (vx, y), room, soft);
+                    let room = (x + w).saturating_sub(note_x);
+                    draw_ui_text(pixels, width, font, ui, note, (note_x, y), room, dim);
+                }
+                Line::Gap => {}
+            }
+        }
+    }
+    // The keys, and whether there's more below or above.
+    let more = match (scroll > 0, scroll + shown < lines) {
+        (_, true) => "↓ more   ↑↓ PgUp PgDn scroll   Esc",
+        (true, false) => "↑↓ PgUp PgDn scroll   Esc",
+        (false, false) => "Esc",
+    };
+    draw_ui_text(pixels, width, font, ui, more, (text_x, hint_y), text_w, dim);
 }
 
 /// The start screen's backdrop (see `backdrop`) over `area`, a cell a letter of

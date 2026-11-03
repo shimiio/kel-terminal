@@ -51,6 +51,7 @@ the new program.
 | Ctrl+= / Ctrl+- | Bigger / smaller font |
 | Ctrl+0 | Font size back to the one in the config |
 | Ctrl+, | Open the config file |
+| Ctrl+Shift+/ | Help: all the keys (the sidebar's, the card's, the mouse's too) and every setting with its value now; ↑↓ PgUp PgDn scroll, Esc closes |
 | Ctrl+Shift+P | Command palette: type a few letters (`ntb` finds "New tab"), Up/Down, Enter; Esc or a click closes it |
 | Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C). A line too long for the window comes out as one line, not cut where it wrapped |
 | Ctrl+Shift+V | Paste |
@@ -295,6 +296,7 @@ the file keeps the tabs it had, not none.
 | `src/keys.rs` | Kel's shortcuts (one table), and the bytes every other key sends to the shell |
 | `src/mouse.rs` | The bytes that tell a program what the mouse does, if it asked for the mouse |
 | `src/search.rs` | The search in the output: what's typed, the matches, which one is chosen |
+| `src/help.rs` | The help's lines: the keys (the shortcuts from the palette's list) and the settings as the config has them now; how far it's scrolled |
 | `src/start.rs` | Home's start screen: the recent projects, which one is chosen, where each one is |
 | `src/sidebar.rs` | The sidebar of projects: its rows, which one is chosen, where each one is |
 | `src/links.rs` | `https://...` in the output: where a link starts and ends |

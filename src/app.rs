@@ -8,6 +8,7 @@ use crate::card::{self, Card, Target};
 use crate::config::{self, Config};
 use crate::font::{self, Fonts};
 use crate::glass;
+use crate::help::Help;
 use crate::icons;
 use crate::keys::{self, Action};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton};
@@ -233,6 +234,8 @@ pub struct App {
     start: Option<Start>,
     /// The card of a tab (double-click it), while it's open. It gets the keys.
     card: Option<Card>,
+    /// The help (Ctrl+Shift+/), while it's open: over everything, it gets the keys.
+    help: Option<Help>,
     /// The last click on a tab: a second one on it soon after opens its card.
     last_tab_click: Option<(TabId, Instant)>,
     /// A project held by the mouse in the sidebar.
@@ -390,6 +393,7 @@ impl App {
             sidebar: None,
             start,
             card: None,
+            help: None,
             last_tab_click: None,
             sidebar_drag: None,
             icon: None,
@@ -1179,6 +1183,17 @@ impl App {
                 };
                 self.request_redraw();
             }
+            Action::Help => {
+                self.help = match self.help {
+                    Some(_) => None,
+                    None => Some(Help::new(&self.config)),
+                };
+                self.palette = None;
+                self.search = None;
+                self.sidebar = None;
+                self.card = None;
+                self.request_redraw();
+            }
             Action::Install(name) => self.install(name),
             Action::OpenProject(name) => self.switch_to(Some(&name)),
             Action::OpenHome => self.switch_to(None),
@@ -1490,10 +1505,13 @@ impl App {
     /// A key while the start screen shows: ↑↓ choose a project, Enter opens it,
     /// Esc puts the screen away. Any other key puts it away too, and goes on as
     /// usual: typing starts the shell's line, a shortcut does its thing. The
-    /// sidebar and the palette open over it. Returns `true` if the key was the
+    /// sidebar, the palette and the help open over it. Returns `true` if the key was the
     /// start screen's.
     fn start_key(&mut self, event: &KeyEvent, shortcut: Option<&Action>) -> bool {
-        if matches!(shortcut, Some(Action::Sidebar | Action::Palette)) {
+        if matches!(
+            shortcut,
+            Some(Action::Sidebar | Action::Palette | Action::Help)
+        ) {
             return false;
         }
         let Some(start) = &mut self.start else {
@@ -1957,6 +1975,7 @@ impl App {
             sidebar: self.sidebar.as_ref(),
             start: self.start.as_ref(),
             card: self.card.as_ref().zip(self.card_rect()),
+            help: self.help.as_ref(),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -2060,6 +2079,10 @@ impl App {
             return;
         }
         let shortcut = keys::shortcut(event.physical_key, self.modifiers);
+        if self.help.is_some() {
+            self.help_key(&event, shortcut);
+            return;
+        }
         // Ctrl+Shift+P and Ctrl+Shift+F still work in the palette and the search:
         // they close one, or swap one for the other.
         let switch = matches!(
@@ -2094,8 +2117,41 @@ impl App {
         }
     }
 
+    /// A key while the help is open: ↑↓ PgUp PgDn Home End scroll it; Esc or
+    /// Ctrl+Shift+/ closes it. The palette, the search and the sidebar take its
+    /// place; nothing else gets through to the shell.
+    fn help_key(&mut self, event: &KeyEvent, shortcut: Option<Action>) {
+        let Some(help) = &mut self.help else {
+            return;
+        };
+        const PAGE: isize = 10;
+        match (&event.logical_key, shortcut) {
+            (_, Some(Action::Help)) | (Key::Named(NamedKey::Escape), _) => self.help = None,
+            (_, Some(action @ (Action::Palette | Action::Find | Action::Sidebar))) => {
+                self.help = None;
+                self.run(action);
+            }
+            (Key::Named(NamedKey::ArrowUp), _) => help.scroll_by(-1),
+            (Key::Named(NamedKey::ArrowDown), _) => help.scroll_by(1),
+            (Key::Named(NamedKey::PageUp), _) => help.scroll_by(-PAGE),
+            (Key::Named(NamedKey::PageDown), _) => help.scroll_by(PAGE),
+            (Key::Named(NamedKey::Home), _) => help.jump(false),
+            (Key::Named(NamedKey::End), _) => help.jump(true),
+            _ => {}
+        }
+        self.request_redraw();
+    }
+
     /// Mouse wheel or touchpad: scroll the view into the scrollback.
     fn on_mouse_wheel(&mut self, delta: MouseScrollDelta) {
+        // The help scrolls instead: 3 lines a notch.
+        if let Some(help) = &mut self.help {
+            if let MouseScrollDelta::LineDelta(_, y) = delta {
+                help.scroll_by((-y * 3.0) as isize);
+                self.request_redraw();
+            }
+            return;
+        }
         if self.start.is_some() {
             return; // nothing to scroll under it
         }
@@ -2316,7 +2372,12 @@ impl App {
             self.request_redraw();
             return;
         }
-        // A click anywhere closes the palette, and does nothing else.
+        // A click anywhere closes the help, or the palette, and does nothing else.
+        if self.help.is_some() && state == ElementState::Pressed {
+            self.help = None;
+            self.request_redraw();
+            return;
+        }
         if self.palette.is_some() && state == ElementState::Pressed {
             self.palette = None;
             self.request_redraw();

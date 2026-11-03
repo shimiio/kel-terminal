@@ -26,6 +26,7 @@
 //! - `sidebar`: the panel of projects (`≡`, Ctrl+Shift+B).
 //! - `card`: the small box for changing a tab's name and command.
 //! - `start`: the start screen of a new home: the recent projects.
+//! - `help`: all the keys and the settings now (Ctrl+Shift+/).
 //! - `links`: `https://...` in the output, opened with Ctrl+click.
 //! - `setup`: the install scripts from `setup/`, built into the exe.
 //! - `shell_integration`: makes the shell tell Kel its folder, and when a command
@@ -40,6 +41,7 @@ pub mod config;
 pub mod fallback;
 pub mod font;
 pub mod glass;
+pub mod help;
 pub mod icons;
 pub mod keys;
 pub mod layout;

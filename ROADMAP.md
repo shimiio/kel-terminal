@@ -118,6 +118,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 - [x] Buttons for those who don't know the keys: `+` after the tabs (new tab), `×` on a tab
       under the mouse (and a middle click), `⌄` next to `+` (the palette, which shows each
       action's shortcut)
+- [x] Help (Ctrl+Shift+/, not F1: programs have it): every key by where it works, every
+      setting with its value now; the shortcuts from the palette's list, never out of date
 - [ ] `setup/nvim.ps1`: nvim + kickstart deps + clone the config. When the config is ready;
       test it in Windows Sandbox (a clean Windows that's thrown away on close)
 - [ ] Languages: Rust and others, with their language servers for nvim
