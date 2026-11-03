@@ -248,7 +248,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] Pasting several lines asks first (a site's command can hide a second line that runs
       on its own; Windows Terminal warns too). Not when the program takes pasted text
       as a whole (`ESC[?2004h`). One line goes in without its line break: it waits
-- [ ] Sidebar: scrolling when there are more projects than fit
+- [x] Sidebar: scrolling when there are more projects than fit (the wheel, ↑↓ past an end,
+      a drag past an end); `home` and "Save" stay put; a thin bar shows where you are
 - [ ] A click doesn't select its one cell: only a drag selects
 - [ ] OSC 8 links: text a program marks as a link (`ls --hyperlink`, delta, compilers),
       its address not on the screen; Ctrl+click opens it, like found links

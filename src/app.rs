@@ -19,7 +19,7 @@ use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{Chrome, Renderer, TabLabel};
 use crate::search::Search;
 use crate::setup;
-use crate::sidebar::{self, Live, Row, Sidebar};
+use crate::sidebar::{Live, Row, Sidebar};
 use crate::start::{self, Start};
 use crate::tab::{Tab, TabId};
 use crate::term::{Found, Terminal};
@@ -1350,8 +1350,7 @@ impl App {
                 let sidebar = self.sidebar.as_ref()?;
                 let projects = sidebar.projects();
                 let index = projects.iter().position(|p| p.name == *name)?;
-                let panel = self.layout.sidebar();
-                sidebar::row_rect(panel, scale, index + 1, projects.len())
+                sidebar.row_rect(self.layout.sidebar(), scale, index + 1)?
             }
         };
         Some(card::rect(anchor, window, scale, card.fields().len()))
@@ -1986,6 +1985,7 @@ impl App {
         // What's going on in each project, now: a few tabs looked at.
         if let Some(mut sidebar) = self.sidebar.take() {
             sidebar.update_live(|name| self.live_of(name));
+            sidebar.fit(self.layout.sidebar(), self.layout.scale);
             self.sidebar = Some(sidebar);
         }
         if let Some(mut start) = self.start.take() {
@@ -2215,6 +2215,32 @@ impl App {
         if let Some(help) = &mut self.help {
             if let MouseScrollDelta::LineDelta(_, y) = delta {
                 help.scroll_by((-y * 3.0) as isize);
+                self.request_redraw();
+            }
+            return;
+        }
+        // Over the sidebar: its list, a project a notch. The row now under the
+        // mouse is the chosen one, as if the mouse had moved onto it.
+        let (x, y) = self.mouse_pos;
+        let panel = self.layout.sidebar();
+        if let Some(sidebar) = &mut self.sidebar
+            && panel.contains(x, y)
+        {
+            let step = match delta {
+                MouseScrollDelta::LineDelta(_, notches) => -notches.round() as isize,
+                MouseScrollDelta::PixelDelta(pos) => {
+                    // A touchpad: a project's height of moving is one.
+                    let row_h = crate::layout::scaled(32, self.layout.scale) as f32;
+                    self.scroll_rest -= pos.y as f32 / row_h;
+                    let whole = self.scroll_rest.trunc();
+                    self.scroll_rest -= whole;
+                    whole as isize
+                }
+            };
+            if sidebar.scroll_by(step) {
+                if let Some(row) = sidebar.row_at(panel, self.layout.scale, x, y) {
+                    sidebar.select(row);
+                }
                 self.request_redraw();
             }
             return;

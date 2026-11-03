@@ -19,6 +19,9 @@
 //! Only its state and where its rows are live here: `App` sends the keys and the
 //! clicks, `renderer` draws it. Both place the rows with `row_rect`, so a click
 //! lands on the row that's drawn there.
+//!
+//! More projects than fit: the list scrolls (the wheel, or the chosen row
+//! going past an end), `home` above it and "Save" below it stay put.
 
 use crate::keys::Action;
 use crate::layout::{Rect, scaled};
@@ -76,6 +79,10 @@ pub struct Sidebar {
     home: Live,
     /// The chosen row: 0 is `home`, then the projects, then "Save".
     selected: usize,
+    /// The first project shown, when they don't all fit.
+    scroll: usize,
+    /// How many projects fit in the panel, as it was last drawn (see `fit`).
+    room: usize,
 }
 
 impl Sidebar {
@@ -87,6 +94,81 @@ impl Sidebar {
             projects,
             home: Live::default(),
             selected,
+            scroll: 0,
+            room: usize::MAX, // all, until it's drawn
+        }
+    }
+
+    /// Fits the list into `panel`, before each draw: how many projects fit,
+    /// and the chosen one in view, the list scrolled if it went past an end.
+    pub fn fit(&mut self, panel: Rect, scale: f32) {
+        let s = |n: usize| scaled(n, scale);
+        let top = panel.y + s(LIST_TOP);
+        // Under the projects: the gap and "Save", then the footer.
+        let bottom = footer_y(panel, scale).saturating_sub(s(SAVE_GAP) + s(ROW_HEIGHT));
+        self.room = (bottom.saturating_sub(top) / s(ROW_HEIGHT).max(1)).max(1);
+        let shown = self.shown();
+        if let Some(i) = self
+            .selected
+            .checked_sub(1)
+            .filter(|&i| i < self.projects.len())
+        {
+            if i < self.scroll {
+                self.scroll = i;
+            } else if i >= self.scroll + shown {
+                self.scroll = i + 1 - shown;
+            }
+        }
+        self.scroll = self.scroll.min(self.projects.len() - shown);
+    }
+
+    /// How many projects are shown: all, or as many as fit.
+    fn shown(&self) -> usize {
+        self.room.min(self.projects.len())
+    }
+
+    /// Scrolls the list by `step` projects (- up, + down), as far as it goes.
+    /// Returns `false` if it didn't move.
+    pub fn scroll_by(&mut self, step: isize) -> bool {
+        let max = self.projects.len() - self.shown();
+        let scroll = self.scroll.saturating_add_signed(step).min(max);
+        let moved = scroll != self.scroll;
+        self.scroll = scroll;
+        moved
+    }
+
+    /// How many projects are out of view: above the list, and below it.
+    pub fn hidden(&self) -> (usize, usize) {
+        let below = self.projects.len() - self.scroll - self.shown();
+        (self.scroll, below)
+    }
+
+    /// Where row `row` is in the sidebar `panel`, if it's shown. e.g. at 100%,
+    /// a panel from y = 8: `home` at 8 + 52; the projects at 8 + 120, 8 + 152…;
+    /// with 2 of them, "Save" at 8 + 120 + 64 + 16. Scrolled by 3, the 4th
+    /// project is the one at 8 + 120.
+    pub fn row_rect(&self, panel: Rect, scale: f32, row: usize) -> Option<Rect> {
+        let s = |n: usize| scaled(n, scale);
+        let shown = self.shown();
+        let y = match row {
+            0 => s(HOME_TOP),
+            _ if row <= self.projects.len() => {
+                let place = (row - 1).checked_sub(self.scroll).filter(|&p| p < shown)?;
+                s(LIST_TOP) + place * s(ROW_HEIGHT)
+            }
+            _ => s(LIST_TOP) + shown.max(1) * s(ROW_HEIGHT) + s(SAVE_GAP),
+        };
+        let r = rect_at(panel, scale, y);
+        fits(panel, scale, r).then_some(r)
+    }
+
+    /// Where the shown projects are: from the first one's top to the last one's
+    /// bottom.
+    pub fn list_rect(&self, panel: Rect, scale: f32) -> Rect {
+        let s = |n: usize| scaled(n, scale);
+        Rect {
+            h: self.shown() * s(ROW_HEIGHT),
+            ..rect_at(panel, scale, s(LIST_TOP))
         }
     }
 
@@ -170,35 +252,33 @@ impl Sidebar {
         true
     }
 
-    /// The place among the projects for one dragged to `y`: the one there, or
-    /// the first or last past the ends.
+    /// The place among the projects for one dragged to `y`: the one there.
+    /// Past an end of the list, the one past it: the list then scrolls to
+    /// follow (see `fit`), or the first or the last.
     pub fn project_slot(&self, panel: Rect, scale: f32, y: usize) -> usize {
-        let n = self.projects.len();
-        let first = row_rect(panel, scale, 1, n).y;
-        let row_h = scaled(ROW_HEIGHT, scale).max(1);
-        (y.saturating_sub(first) / row_h).min(n.saturating_sub(1))
+        let n = self.projects.len() as isize;
+        let first = (panel.y + scaled(LIST_TOP, scale)) as isize;
+        let row_h = scaled(ROW_HEIGHT, scale).max(1) as isize;
+        let place = (y as isize - first).div_euclid(row_h);
+        let shown = self.shown() as isize;
+        // Past an end: one step, not as far as the mouse went.
+        let place = place.clamp(-1, shown) + self.scroll as isize;
+        place.clamp(0, (n - 1).max(0)) as usize
     }
 
-    /// The row at (x, y) in the window, if one is there and fits in `panel`.
+    /// The row at (x, y) in the window, if one is shown there.
     pub fn row_at(&self, panel: Rect, scale: f32, x: usize, y: usize) -> Option<usize> {
         (0..self.rows()).find(|&row| {
-            let r = row_rect(panel, scale, row, self.projects.len());
-            fits(panel, scale, r) && r.contains(x, y)
+            self.row_rect(panel, scale, row)
+                .is_some_and(|r| r.contains(x, y))
         })
     }
 }
 
-/// Where row `row` is in the sidebar `panel`, with `projects` projects. e.g. at
-/// 100%, a panel from y = 8: `home` at 8 + 52; the projects at 8 + 120, 8 + 152…;
-/// with 2 of them, "Save" at 8 + 120 + 64 + 16. With none, "Save" leaves a row
-/// for "no projects yet".
-pub fn row_rect(panel: Rect, scale: f32, row: usize, projects: usize) -> Rect {
+/// A row's place at `y` from the panel's top. With no projects, the first one's
+/// place holds "no projects yet".
+pub fn rect_at(panel: Rect, scale: f32, y: usize) -> Rect {
     let s = |n: usize| scaled(n, scale);
-    let y = match row {
-        0 => s(HOME_TOP),
-        _ if row <= projects => s(LIST_TOP) + (row - 1) * s(ROW_HEIGHT),
-        _ => s(LIST_TOP) + projects.max(1) * s(ROW_HEIGHT) + s(SAVE_GAP),
-    };
     Rect {
         x: panel.x + s(8),
         y: panel.y + y,
@@ -207,14 +287,19 @@ pub fn row_rect(panel: Rect, scale: f32, row: usize, projects: usize) -> Rect {
     }
 }
 
+/// Where "no projects yet" goes: the first project's place.
+pub fn empty_rect(panel: Rect, scale: f32) -> Rect {
+    rect_at(panel, scale, scaled(LIST_TOP, scale))
+}
+
 /// Where the projects' title ("PROJECTS") goes: just above them.
 pub fn title_y(panel: Rect, scale: f32) -> usize {
     panel.y + scaled(LIST_TOP - 24, scale)
 }
 
-/// Whether the row `r` fits above the footer. More projects than fit: the last
-/// ones aren't shown (no scrolling yet).
-pub fn fits(panel: Rect, scale: f32, r: Rect) -> bool {
+/// Whether the row `r` fits above the footer: in a very short window not even
+/// one project and "Save" do.
+fn fits(panel: Rect, scale: f32, r: Rect) -> bool {
     r.y + r.h + scaled(FOOTER, scale) <= panel.y + panel.h
 }
 
@@ -338,5 +423,42 @@ mod tests {
         // A short panel: "Save" doesn't fit above the footer, it isn't there.
         let short = Rect { h: 230, ..panel };
         assert_eq!(sidebar.row_at(short, 1.0, 50, 220), None);
+    }
+
+    #[test]
+    fn more_projects_than_fit_scroll() {
+        let names: Vec<String> = (0..10).map(|i| format!("p{i}")).collect();
+        let mut sidebar = Sidebar::new(names.iter().map(|n| entry(n, false)).collect());
+        // 400 high from 8: the footer at 360; under the projects "Save" and its
+        // gap, so they end by 312: from 128, 5 rows of 32 (128..288).
+        let panel = Rect {
+            x: 8,
+            y: 8,
+            w: 280,
+            h: 400,
+        };
+        sidebar.fit(panel, 1.0);
+        assert_eq!(sidebar.hidden(), (0, 5));
+        let at = |sidebar: &Sidebar, y| sidebar.row_at(panel, 1.0, 50, y);
+        assert_eq!(at(&sidebar, 130), Some(1)); // p0
+        assert_eq!(at(&sidebar, 290 + 16 + 4), Some(11)); // "Save", under the 5
+        // The wheel: 3 down shows p3..p7, p3 at the top.
+        assert!(sidebar.scroll_by(3));
+        assert_eq!(sidebar.hidden(), (3, 2));
+        assert_eq!(at(&sidebar, 130), Some(4));
+        assert!(sidebar.row_rect(panel, 1.0, 1).is_none()); // p0: out of view
+        assert!(sidebar.scroll_by(-9)); // as far as it goes
+        assert_eq!(sidebar.hidden(), (0, 5));
+        assert!(!sidebar.scroll_by(-1)); // the top already
+        // The keys: up from home goes round to "Save", up again to p9, which
+        // comes into view.
+        sidebar.select(0);
+        sidebar.move_selection(-2);
+        sidebar.fit(panel, 1.0);
+        assert_eq!(sidebar.hidden(), (5, 0));
+        assert_eq!(at(&sidebar, 130 + 4 * 32), Some(10)); // p9, the last shown
+        // A project dragged above the list goes one place up, the list follows.
+        assert_eq!(sidebar.project_slot(panel, 1.0, 20), 4);
+        assert_eq!(sidebar.project_slot(panel, 1.0, 700), 9);
     }
 }

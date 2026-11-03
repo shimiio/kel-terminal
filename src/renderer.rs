@@ -1128,10 +1128,9 @@ fn draw_sidebar(
 
     let projects = sidebar.projects();
     for row in 0..sidebar.rows() {
-        let r = sidebar::row_rect(panel, layout.scale, row, projects.len());
-        if !sidebar::fits(panel, layout.scale, r) {
-            break;
-        }
+        let Some(r) = sidebar.row_rect(panel, layout.scale, row) else {
+            continue; // scrolled out of view, or no room
+        };
         let chosen = row == sidebar.selected();
         if chosen {
             let lit = blend(back, theme.foreground, 22);
@@ -1163,9 +1162,20 @@ fn draw_sidebar(
         };
         draw_project_row(pixels, width, theme, font, ui, back, r, &look);
     }
+    // More projects than fit: a thin bar at the list's right, as long as the
+    // part shown, where it is in the whole list.
+    let (above, below) = sidebar.hidden();
+    if above + below > 0 {
+        let list = sidebar.list_rect(panel, layout.scale);
+        let n = projects.len();
+        let top = list.y + list.h * above / n;
+        let h = (list.h * (n - above - below) / n).max(ui.px(8));
+        let x = panel.x + panel.w - b - ui.px(5);
+        fill_rect(pixels, width, x, top, ui.px(2), h, dim);
+    }
     if projects.is_empty() {
         // Where the first project would be.
-        let r = sidebar::row_rect(panel, layout.scale, 1, 1);
+        let r = sidebar::empty_rect(panel, layout.scale);
         let at = (r.x + ui.px(10), r.y + r.h.saturating_sub(ui.line_h) / 2);
         draw_ui_text(pixels, width, font, ui, "no projects yet", at, r.w, dim);
     }
