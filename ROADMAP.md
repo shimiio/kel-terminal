@@ -243,10 +243,43 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       (`grain`). A color's top byte says how clear it is, so letters' edges blend right;
       on battery Windows may drop the blur, then the glass is a plain color
 
-## Later
+## 10. Before the release
 
-- [ ] Split panes (tabs and nvim's own windows do for now)
-- [ ] License, CI, release `.exe` on GitHub
+- [ ] Pasting several lines asks first (a site's command can hide a second line that runs
+      on its own; Windows Terminal warns too). Not when the program takes pasted text
+      as a whole (`ESC[?2004h`)
+- [ ] Sidebar: scrolling when there are more projects than fit
+- [ ] A click doesn't select its one cell: only a drag selects
+- [ ] OSC 8 links: text a program marks as a link (`ls --hyperlink`, delta, compilers),
+      its address not on the screen; Ctrl+click opens it, like found links
+- [ ] Readability under lazygit / Claude Code: a solid background behind full-screen
+      programs (the alternate screen), as nvim paints its own
+- [ ] The palette's chosen line in the project's color, not gray?
+- [ ] Underlines: look over their styles and colors
+- [ ] Keys to go to the next / previous open project
+- [ ] "Open in Kel" on a folder in Explorer (`kel <folder>`)
+- [ ] Home's ASCII landscape: try other pictures
+- [ ] License, CI, a release `.exe` on GitHub
+
+Settled:
+- The project's folder in the sidebar is where its tabs start, not where a tab went:
+  it's the project's place, like a tab's name (a `cd` doesn't move the project)
+- Kel's UI already has its own font (the built-in JetBrains Mono), whatever `font` is;
+  monospaced like the rest of Kel
+- Moving tabs: Ctrl+Shift+PageUp / PageDown (or a drag). Not Alt+arrows: programs get them
+
+## After the release
+
+- [ ] Linux, then macOS (see below; a Linux VM and a clean Windows laptop to test on,
+      a friend's Mac)
+- [ ] Sessions that come back: a tab's output from last time, above its new prompt
+- [ ] A history per tab: ↑ shows the commands typed in this tab of this project (PowerShell's
+      `HistorySavePath` per tab, set by the shell integration). Ghost suggestions from it
+      (PSReadLine's `PredictionSource History`, PSReadLine 2.1+)
+- [ ] A small local AI (Ollama): reads the tab's output, suggests a command into the input
+      line, never runs it. Try first whether a small model is good enough
+- [ ] Split panes, like tmux inside Kel (tabs and nvim's own windows do for now)
+- [ ] Emoji in color (Segoe UI Emoji's COLR layers; now in the text's color)
 
 ## Fonts
 
