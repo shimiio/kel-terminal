@@ -255,8 +255,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       its address not on the screen, so the tab bar shows it (its middle cut). Ctrl+click:
       a web page in the browser; a file here shown in Explorer, never run; a file on
       another computer not at all (Windows would send your login to look)
-- [ ] Readability under lazygit / Claude Code: a solid background behind full-screen
-      programs (the alternate screen), as nvim paints its own
+- [x] Readability under lazygit / Claude Code: a solid background behind full-screen
+      programs (the alternate screen), as nvim paints its own; Claude Code draws in the
+      normal screen, it's known by its icon while it runs. The frame stays glass
 - [ ] The palette's chosen line in the project's color, not gray?
 - [ ] Underlines: look over their styles and colors
 - [ ] Ctrl+Alt+← / → : the previous / next open project (and home), as Zen's workspaces

@@ -240,6 +240,12 @@ impl Grid {
         }
     }
 
+    /// The alternate screen is shown: a full-screen program (nvim, lazygit, htop)
+    /// draws all of it, its own way.
+    pub fn alternate(&self) -> bool {
+        self.saved_screen.is_some()
+    }
+
     /// A new size. On the normal screen the lines are cut again at the new width
     /// (`reflow`); a program on the alternate screen (nvim) draws itself again,
     /// so its screen is only cut or filled up.

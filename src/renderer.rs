@@ -122,6 +122,11 @@ pub struct Chrome<'a> {
     /// the search, a card or the help has them, nor in another window: its
     /// cursor is a hollow box then, still, where typing will go on.
     pub keys_here: bool,
+    /// The terminal's background solid, not glass: a full-screen program (lazygit)
+    /// or Claude Code is on screen. They leave the background to the terminal,
+    /// and their many colors and lines read worse over what's behind the window.
+    /// nvim paints its own, so there it changes nothing.
+    pub solid: bool,
     /// The help, if it's open: over everything.
     pub help: Option<&'a Help>,
 }
@@ -220,6 +225,9 @@ pub struct Renderer {
     fallbacks: Fallbacks,
     /// The config's theme, as it is: `theme` is made from it.
     plain_theme: Theme,
+    /// `theme` with a solid background, for under a full-screen program (see
+    /// `Chrome::solid`); the frame stays glass.
+    solid_theme: Theme,
     /// See-through or not (see `glass`).
     glass: Glass,
     /// The cursor where the program hasn't asked for one (`cursor` in the config).
@@ -263,6 +271,7 @@ impl Renderer {
             glyphs: HashMap::new(),
             fallbacks: Fallbacks::default(),
             theme: glass.theme(&theme),
+            solid_theme: solid(&glass, &theme),
             plain_theme: theme,
             glass,
             cursor_shape: CursorShape::default(),
@@ -317,6 +326,7 @@ impl Renderer {
 
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = self.glass.theme(&theme);
+        self.solid_theme = solid(&self.glass, &theme);
         self.plain_theme = theme;
     }
 
@@ -333,6 +343,7 @@ impl Renderer {
 
     pub fn set_glass(&mut self, glass: Glass) {
         self.theme = glass.theme(&self.plain_theme);
+        self.solid_theme = solid(&glass, &self.plain_theme);
         self.glass = glass;
     }
 
@@ -364,7 +375,10 @@ impl Renderer {
             let _ = self.ui.set_scale(&self.ui_font, layout.scale);
         }
         let mut buffer = self.surface.buffer_mut().unwrap();
-        let theme = &self.theme;
+        let theme = match chrome.solid {
+            true => &self.solid_theme,
+            false => &self.theme,
+        };
         let width = size.width as usize;
 
         // The window around the panel, the panel's border, the panel's background.
@@ -1954,6 +1968,15 @@ fn draw_ui_hint(
             .or_insert_with(|| italic.rasterize(ch, size));
         draw_glyph(pixels, width, glyph, ui.ascent, color, x + drawn, y);
         drawn += ui.advance;
+    }
+}
+
+/// The theme glass makes, its background solid again: the frame around the
+/// panel stays glass.
+fn solid(glass: &Glass, theme: &Theme) -> Theme {
+    Theme {
+        background: theme.background,
+        ..glass.theme(theme)
     }
 }
 

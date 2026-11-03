@@ -975,6 +975,16 @@ impl App {
         false
     }
 
+    /// The tab on screen wants a solid background (see `Chrome::solid`): a
+    /// full-screen program runs in it, or Claude Code, which draws in the normal
+    /// screen (known by its icon, while a command runs: not a tab only called
+    /// "claude").
+    fn solid_under(&self) -> bool {
+        let tab = self.tab();
+        let full_screen = tab.terminal.lock().unwrap().grid.alternate();
+        full_screen || tab.command.running() && tab.icon() == "claude"
+    }
+
     /// The window's own title, seen in the taskbar and in Alt+Tab: the tab on screen.
     /// Also on each draw, as a tab's label changes when its command gets busy:
     /// set only when it's different.
@@ -2038,6 +2048,7 @@ impl App {
             card: self.card.as_ref().zip(self.card_rect()),
             help: self.help.as_ref(),
             keys_here: self.keys_here(),
+            solid: self.solid_under(),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
