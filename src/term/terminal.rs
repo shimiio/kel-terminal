@@ -674,6 +674,14 @@ mod tests {
     }
 
     #[test]
+    fn underline_color_with_semicolons() {
+        // Kel reads it; on Windows, ConPTY drops it before it gets here (it
+        // passes nvim's `58:2::r:g:b`).
+        let t = feed("[4;58;2;224;108;117mA");
+        assert_eq!(t.grid.cell(0, 0).underline_color, Color::Rgb(0xe06c75));
+    }
+
+    #[test]
     fn colors_written_with_colons() {
         let t = feed("\x1b[38:2:1:2:3mA\x1b[58:5:9mB\x1b[0mC");
         assert_eq!(t.grid.cell(0, 0).fg, Color::Rgb(0x010203)); // no color space

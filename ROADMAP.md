@@ -261,7 +261,10 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] The palette's chosen line in the project's color: a tint (tried gray, tints of
       45 and 60, a bar at the left with and without one; the tint alone is calmer, like
       the sidebar's chosen row). Home stays gray
-- [ ] Underlines: look over their styles and colors
+- [x] Underlines: looked over at sizes 12, 15, 22 (single, double, curly, dotted, dashed;
+      colored; under wide letters, bold, italic, reverse, a background): all hold. An
+      underline color written with `;` (`58;2;r;g;b`) never arrives: ConPTY drops it;
+      nvim's `58:2::r:g:b` passes
 - [ ] Ctrl+Alt+← / → : the previous / next open project (and home), as Zen's workspaces
 - [ ] "Open in Kel" on a folder in Explorer (`kel <folder>`)
 - [ ] Home's ASCII landscape: try other pictures
