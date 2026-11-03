@@ -4,14 +4,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use kel_terminal::app::{App, UserEvent};
+use kel_terminal::project;
 use winit::event_loop::EventLoop;
 
 fn main() -> anyhow::Result<()> {
     // with_user_event lets other threads wake the loop with our own UserEvent
     let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
-    // `kel <name>` opens the project <name> (see `project`).
-    let project = std::env::args().nth(1);
-    let mut app = App::new(event_loop.create_proxy(), project)?;
+    // `kel <name>` opens the project <name>; `kel <folder>` (Explorer's "Open
+    // in Kel") a tab there, or the project of that folder (see `project::launch`).
+    let launch = project::launch(std::env::args().nth(1));
+    let mut app = App::new(event_loop.create_proxy(), launch)?;
     event_loop.run_app(&mut app)?; // never returns until the window closes
     Ok(())
 }

@@ -374,6 +374,63 @@ pub fn set_color(name: &str, color: Option<u32>) -> anyhow::Result<()> {
     save(name, &project)
 }
 
+/// What `kel <arg>` opens (see `launch`).
+#[derive(Debug, PartialEq)]
+pub enum Launch {
+    /// `kel`: home, its start screen.
+    Home,
+    /// `kel <name>`: the project.
+    Project(String),
+    /// `kel <folder>`, as Explorer's "Open in Kel" runs it: home, its tab in
+    /// that folder, no start screen (you came to work there).
+    Folder(PathBuf),
+}
+
+/// What `kel <arg>` opens: a project of that name; else, if it's a folder, the
+/// project whose folder it is, or home with a tab there; else the project
+/// (which isn't there: Kel says so).
+pub fn launch(arg: Option<String>) -> Launch {
+    let Some(arg) = arg else {
+        return Launch::Home;
+    };
+    if valid_name(&arg) && exists(&arg) {
+        return Launch::Project(arg);
+    }
+    let path = PathBuf::from(clean_arg(&arg));
+    if !path.is_dir() {
+        return Launch::Project(arg);
+    }
+    match project_of_folder(&path) {
+        Some(name) => Launch::Project(name),
+        // `absolute`, not `canonicalize`: no `\\?\` in front, which the shell
+        // would show in its prompt.
+        None => Launch::Folder(std::path::absolute(&path).unwrap_or(path)),
+    }
+}
+
+/// A folder as Explorer passes it, mended. A drive's top, `"C:\"` in quotes,
+/// comes as `C:"` (and a space, at times): the `\` before the closing quote is
+/// read as escaping it.
+fn clean_arg(arg: &str) -> String {
+    let arg = arg.trim_end_matches(['"', ' ']);
+    match arg.len() == 2 && arg.ends_with(':') {
+        true => format!("{arg}\\"),
+        false => arg.to_string(),
+    }
+}
+
+/// The project whose folder is `folder`, if any: right-click a project's
+/// folder in Explorer, and the project opens.
+fn project_of_folder(folder: &Path) -> Option<String> {
+    let same = |a: &Path, b: &Path| match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    names()
+        .into_iter()
+        .find(|name| load(name).is_ok_and(|p| same(&p.folder, folder)))
+}
+
 /// Whether the project `name` has a file already.
 pub fn exists(name: &str) -> bool {
     dir().is_ok_and(|dir| dir.join(format!("{name}.toml")).exists())
@@ -410,6 +467,17 @@ pub fn save(name: &str, project: &Project) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_as_explorer_passes_it() {
+        assert_eq!(clean_arg(r"C:\code\kel"), r"C:\code\kel");
+        assert_eq!(clean_arg("C:\""), r"C:\");
+        assert_eq!(clean_arg("D:\" "), r"D:\");
+        assert_eq!(launch(None), Launch::Home);
+        // Not a project, not a folder: the project, for Kel to say it isn't there.
+        let nothing = "no-such-project-or-folder-x9".to_string();
+        assert_eq!(launch(Some(nothing.clone())), Launch::Project(nothing));
+    }
 
     #[test]
     fn the_order_of_the_projects() {

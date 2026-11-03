@@ -271,13 +271,15 @@ struct IconKey {
 }
 
 impl App {
-    /// Starts the tabs: the project's, if `project_name` is given, else one.
+    /// Starts the tabs: the project's, or one at home (in a folder: `kel <folder>`).
     /// The window comes later, in `resumed`.
     /// `proxy` is how the tabs' threads wake up the event loop.
-    pub fn new(
-        proxy: EventLoopProxy<UserEvent>,
-        project_name: Option<String>,
-    ) -> anyhow::Result<Self> {
+    pub fn new(proxy: EventLoopProxy<UserEvent>, launch: project::Launch) -> anyhow::Result<Self> {
+        let (project_name, home_folder) = match launch {
+            project::Launch::Home => (None, None),
+            project::Launch::Project(name) => (Some(name), None),
+            project::Launch::Folder(folder) => (None, Some(folder)),
+        };
         // A broken config or a missing shell shouldn't stop Kel: start with the
         // defaults and show what went wrong at the top of the screen.
         let mut problems = Vec::new();
@@ -309,8 +311,11 @@ impl App {
         let recipes = project
             .as_ref()
             .map_or_else(|| vec![TabRecipe::default()], Project::tabs);
-        // Without a project: where Kel runs.
-        let folder_of = |recipe: &TabRecipe| project.as_ref().map(|p| p.folder_of(recipe));
+        // Without a project: the folder Kel was opened on, else where Kel runs.
+        let folder_of = |recipe: &TabRecipe| match &project {
+            Some(project) => Some(project.folder_of(recipe)),
+            None => home_folder.clone(),
+        };
 
         // The first tab shows the problems. A shell that doesn't start is one more,
         // and all tabs get the default shell instead.
@@ -357,8 +362,9 @@ impl App {
         let next_id = recipes.len() as TabId;
         // No window yet: the real layout comes with the first `on_resize`.
         let layout = config.layout.layout(0, 0, 1.0);
-        // Home: the start screen. Not over the problems, they're to be read.
-        let start = (project_name.is_none() && problems.is_empty())
+        // Home: the start screen. Not over the problems, they're to be read;
+        // nor when Kel was opened on a folder, to work there.
+        let start = (project_name.is_none() && home_folder.is_none() && problems.is_empty())
             .then(|| Start::new(project::recent_entries(start::RECENT)));
 
         Ok(App {

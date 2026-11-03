@@ -268,7 +268,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] Ctrl+Alt+← / → : the previous / next open project (and home), as Zen's workspaces:
       in the sidebar's order, which you set; home first, always there. Ctrl+Alt is AltGr,
       but the arrows type nothing with it
-- [ ] "Open in Kel" on a folder in Explorer (`kel <folder>`)
+- [x] "Open in Kel" on a folder in Explorer (`kel <folder>`): install.ps1 puts it in the
+      classic menu (Windows 11: "Show more options"); a project's folder opens the project.
+      In the short Windows 11 menu: only as a package (MSIX), maybe with the release
 - [ ] Home's ASCII landscape: try other pictures
 - [ ] Settings review before Linux/macOS: what else people will want to change (keys,
       scrollback size, the bell, copy on select, the start screen, the shell per

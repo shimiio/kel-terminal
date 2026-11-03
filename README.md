@@ -17,7 +17,7 @@ cargo run            # start Kel
 cargo run -- kel     # open the project "kel" (see Projects)
 cargo test           # run the tests
 cargo build --release   # a fast build: target/release/kel.exe
-.\install.ps1        # build it and put it on the PATH: `kel` in any shell
+.\install.ps1        # build it and put it on the PATH: `kel` in any shell; "Open in Kel" in Explorer
 ```
 
 ## Install tools
@@ -238,6 +238,12 @@ when the window closes. A name that's taken has its `Open project` line instead.
 on the PATH, so there's nothing to add by hand. Run it again after changes: it works
 while Kel is open (Windows doesn't let a running exe be written over, so the old one
 is renamed first, and removed once no Kel runs it).
+
+It also puts "Open in Kel" in Explorer's menu, on a folder and on the empty space
+inside an open one (on Windows 11 under "Show more options", or Shift+right-click).
+It runs `kel "<folder>"`: a tab in that folder, at home, without the start screen; or,
+if a project has that folder, the project. For you only, no admin rights needed.
+`.\install.ps1 -NoMenu` installs without it, and takes it away if it's there.
 
 ```toml
 folder = 'C:\code\kel-terminal'   # single quotes, so a '\' stays a '\'
