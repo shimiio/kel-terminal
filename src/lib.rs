@@ -20,6 +20,7 @@
 //! - `palette`: the command palette's state: what's typed, what's shown and chosen.
 //! - `project`: a project file, the recipe for a set of tabs.
 //! - `pty`: starts the shell inside a pseudo-terminal.
+//! - `shell`: `shell` in the config: the program and its arguments, or the system's.
 //! - `term`: understands what the shell sends and keeps the screen as a grid of cells.
 //! - `renderer`: turns that grid into pixels.
 //! - `search`: the search in the output (Ctrl+Shift+F): what's typed, the matches.
@@ -55,6 +56,7 @@ pub mod pty;
 pub mod renderer;
 pub mod search;
 pub mod setup;
+pub mod shell;
 pub mod shell_integration;
 pub mod sidebar;
 pub mod start;

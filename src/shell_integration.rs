@@ -79,9 +79,10 @@ pub fn reports_folder(shell: &str) -> bool {
     matches!(name(shell).as_deref(), Some("powershell" | "pwsh" | "cmd"))
 }
 
-/// The shell's name in lowercase: `C:\...\PowerShell.exe` → `powershell`.
+/// The shell's name in lowercase: `C:\...\PowerShell.exe` → `powershell`,
+/// `pwsh.exe -NoLogo` → `pwsh`.
 fn name(shell: &str) -> Option<String> {
-    Path::new(shell)
+    Path::new(&crate::shell::split(shell).0)
         .file_stem()
         .map(|stem| stem.to_string_lossy().to_ascii_lowercase())
 }
@@ -112,6 +113,8 @@ mod tests {
     #[test]
     fn shells_that_report_their_folder() {
         assert!(reports_folder("powershell.exe"));
+        assert!(reports_folder("pwsh.exe -NoLogo"));
+        assert!(!reports_folder("wsl.exe -d Ubuntu"));
         assert!(reports_folder(r"C:\Program Files\PowerShell\7\pwsh.exe"));
         assert!(reports_folder("CMD.EXE"));
         assert!(!reports_folder("nu.exe"));

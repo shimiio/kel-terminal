@@ -319,7 +319,7 @@ impl App {
 
         // The first tab shows the problems. A shell that doesn't start is one more,
         // and all tabs get the default shell instead.
-        let mut shell = config.shell.clone();
+        let mut shell = config.shell();
         let folder = folder_of(&recipes[0]);
         let first = match Tab::spawn(
             0,
@@ -331,7 +331,7 @@ impl App {
             Ok(tab) => tab,
             Err(e) => {
                 problems.push(format!("can't start shell \"{shell}\": {e:#}"));
-                shell = Config::default().shell;
+                shell = crate::shell::system();
                 Tab::spawn(
                     0,
                     &shell,
@@ -470,7 +470,7 @@ impl App {
         let cwd = self.tab().cwd();
         match Tab::spawn(
             id,
-            &self.config.shell,
+            &self.config.shell(),
             cwd.as_deref(),
             screen,
             self.proxy.clone(),
@@ -943,7 +943,7 @@ impl App {
             let screen = Terminal::new(rows, cols);
             match Tab::spawn(
                 id,
-                &self.config.shell,
+                &self.config.shell(),
                 folder.as_deref(),
                 screen,
                 self.proxy.clone(),
@@ -951,7 +951,7 @@ impl App {
                 Ok(mut tab) => {
                     tab.name = recipe.name.clone();
                     if let Some(command) = &recipe.command {
-                        tab.type_at_start(command, &self.config.shell);
+                        tab.type_at_start(command, &self.config.shell());
                     }
                     tabs.push(tab);
                 }
@@ -1341,7 +1341,7 @@ impl App {
         let tabs = self.tabs.len();
         self.new_tab();
         if self.tabs.len() > tabs {
-            let shell = self.config.shell.clone();
+            let shell = self.config.shell();
             let tab = self.tabs.last_mut().unwrap();
             tab.type_when_ready(&setup::command(&path), &shell);
         }

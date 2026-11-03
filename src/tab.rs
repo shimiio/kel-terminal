@@ -140,7 +140,7 @@ impl Tab {
         let terminal = Arc::new(Mutex::new(terminal));
         spawn_reader(id, reader, terminal.clone(), proxy.clone());
         spawn_waiter(id, child, proxy);
-        let shell_name = short_title(shell);
+        let shell_name = short_title(&crate::shell::split(shell).0);
         Ok(Tab {
             id,
             title: shell_name.clone(),

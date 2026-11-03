@@ -9,7 +9,8 @@ use crate::shell_integration;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use std::path::Path;
 
-/// Starts `shell` (e.g. "powershell.exe") in a new PTY of `rows` x `cols` cells,
+/// Starts `shell` (e.g. "powershell.exe", or "pwsh.exe -NoLogo": its arguments
+/// too, see `shell::split`) in a new PTY of `rows` x `cols` cells,
 /// in the folder `cwd` if it's given and still there (else where Kel runs).
 /// Returns our (master) end and the shell process.
 pub fn spawn_shell(
@@ -24,7 +25,9 @@ pub fn spawn_shell(
         pixel_width: 0,
         pixel_height: 0,
     })?;
-    let mut cmd = CommandBuilder::new(shell);
+    let (program, args) = crate::shell::split(shell);
+    let mut cmd = CommandBuilder::new(program);
+    cmd.args(args);
     introduce_kel(&mut cmd);
     shell_integration::add(&mut cmd, shell);
     // A deleted folder would make the start fail.

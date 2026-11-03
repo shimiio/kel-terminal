@@ -184,7 +184,14 @@ fn settings_lines(config: &Config) -> Vec<Line> {
         Line::Gap,
         row("font", &text(&config.font), "the terminal's"),
         row("font_size", &n(config.font_size), "Ctrl+= Ctrl+- for now"),
-        row("shell", &text(&config.shell), "after a restart"),
+        row(
+            "shell",
+            &text(&config.shell()),
+            match config.shell {
+                Some(_) => "new tabs",
+                None => "the system's",
+            },
+        ),
         row("ui_scale", &n(config.ui_scale), "tabs, menus"),
         row(
             "pixel_name",

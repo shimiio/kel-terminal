@@ -89,7 +89,7 @@ Kel creates it on the first start, with a comment for every setting.
 |---|---|---|
 | `font` | `"JetBrains Mono"` | The terminal's font: `"JetBrains Mono"` is built in, or any installed font by the name Windows shows in Settings > Fonts. Kel's UI is always JetBrains Mono |
 | `font_size` | `18` | Font size in pixels |
-| `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
+| `shell` | the system's | The program Kel starts in a tab, with its arguments: `"pwsh.exe -NoLogo"`, `"wsl.exe -d Ubuntu"`; a path with spaces in `""`. Without it: PowerShell on Windows, your `$SHELL` on Linux and macOS. Applies to new tabs |
 | `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
 | `pixel_name` | `true` | The project's name before the tabs in pixels, like the logo; `false`: in the font |
 | `cursor` | `"block"` | The cursor: `"block"` (the whole cell), `"underline"` or `"bar"`. Programs can pick their own (nvim does). While the keys go elsewhere (the sidebar, the palette, another window) it's a hollow box, not blinking |
@@ -123,11 +123,13 @@ Font License 1.1) and Symbols Nerd Font (MIT).
 ### Use another shell
 
 ```toml
-shell = "pwsh.exe"   # PowerShell 7
+shell = "pwsh.exe -NoLogo"    # PowerShell 7, without its banner
 shell = "cmd.exe"
+shell = "wsl.exe -d Ubuntu"   # Linux, in WSL
+shell = '"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo'   # a path with spaces: in ""
 ```
 
-Then restart Kel.
+One line, as you'd type it. New tabs start it.
 
 Kel knows each tab's folder because the shell tells it before each prompt (shell
 integration, see `src/shell_integration.rs`). PowerShell and cmd do it on their

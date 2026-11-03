@@ -31,9 +31,12 @@ font = "JetBrains Mono"
 # Font size in pixels. Ctrl+= / Ctrl+- change it until Kel closes, Ctrl+0 comes back to this.
 font_size = 18
 
-# The program Kel starts, e.g. "pwsh.exe" for PowerShell 7, or "cmd.exe".
-# Applies after a restart.
-shell = "powershell.exe"
+# The program Kel starts in a tab, with its arguments, as you'd type it:
+# "pwsh.exe -NoLogo" (PowerShell 7), "cmd.exe", "wsl.exe -d Ubuntu".
+# A path with spaces goes in "": '"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo'
+# Without it: the system's (Windows: PowerShell; Linux, macOS: your $SHELL).
+# Applies to new tabs.
+# shell = "pwsh.exe -NoLogo"
 
 # The size of Kel's own UI (tabs, buttons, the spaces below), on top of Windows'
 # display scale (Settings > Display > Scale). e.g. 1.25: a quarter bigger.
@@ -106,7 +109,8 @@ palette = [
 pub struct Config {
     pub font: String,
     pub font_size: f32,
-    pub shell: String,
+    /// `None`: the system's (see `shell()`).
+    pub shell: Option<String>,
     pub ui_scale: f32,
     pub pixel_name: bool,
     pub cursor: CursorShape,
@@ -121,7 +125,7 @@ impl Default for Config {
         Config {
             font: crate::font::BUILT_IN.to_string(),
             font_size: 18.0,
-            shell: "powershell.exe".to_string(),
+            shell: None,
             ui_scale: 1.0,
             pixel_name: true,
             cursor: CursorShape::Block,
@@ -130,6 +134,13 @@ impl Default for Config {
             glass: Glass::default(),
             colors: Theme::default(),
         }
+    }
+}
+
+impl Config {
+    /// The shell new tabs start: the config's, or the system's.
+    pub fn shell(&self) -> String {
+        self.shell.clone().unwrap_or_else(crate::shell::system)
     }
 }
 
@@ -194,7 +205,10 @@ mod tests {
     fn missing_setting_keeps_its_default() {
         let config: Config = toml::from_str("font_size = 24").unwrap();
         assert_eq!(config.font_size, 24.0);
-        assert_eq!(config.shell, "powershell.exe");
+        assert_eq!(config.shell, None); // the system's
+        assert_eq!(config.shell(), crate::shell::system());
+        let config: Config = toml::from_str("shell = \"pwsh.exe -NoLogo\"").unwrap();
+        assert_eq!(config.shell(), "pwsh.exe -NoLogo");
     }
 
     #[test]

@@ -275,9 +275,19 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       empty, the shapes bigger: it was a wall of `=` and `-`). Other pictures tried
       (contours, mountains, the sea, wind) and kept, not shown by default: `backdrop`
       in the config picks one. Maybe later: a random one each time
-- [ ] Settings review before Linux/macOS: what else people will want to change (keys,
-      scrollback size, the bell, copy on select, the start screen, the shell per
-      project...), so the config's shape is settled before it has to work on three systems
+- Settings review before Linux/macOS, so the config's shape is settled before it has
+  to work on three systems. Chosen, in this order:
+  - [x] `shell` with its arguments (`"pwsh.exe -NoLogo"`, `"wsl.exe -d Ubuntu"`), the
+        system's without it (PowerShell; `$SHELL` on Linux/macOS); new tabs take a change
+  - [ ] A shell per project
+  - [ ] `bell`: the taskbar blinks (or a flash, or nothing); now the bell is ignored
+  - [ ] `cursor_blink`
+  - [ ] `copy_on_select`
+  - [ ] `scrollback` (10 000 lines now)
+  - [ ] `line_height`
+  - [ ] `start_screen` on / off
+  - After the release: `[keys]` (your own shortcuts; Cmd on macOS), themes as files
+    (`theme = "tokyo-night"`), the window remembering its size
 - [ ] More places that read better solid (as under lazygit): the user keeps a list
 - [ ] Linux and macOS, last: CI builds them, so testers need no Rust (a Linux VM, a clean
       Windows laptop, a friend's Mac). See below
