@@ -7,6 +7,7 @@
 //! - Every frame redraws everything: backgrounds, letters, cursor.
 
 use crate::app::Selection;
+use crate::backdrop::Backdrop;
 use crate::card::{self, Card};
 use crate::fallback::Fallbacks;
 use crate::font::{Font, Fonts, Metrics};
@@ -1347,6 +1348,23 @@ fn draw_start(
     let col = start::column(layout.text, layout.scale, projects.len());
     let left = col.x + ui.px(10);
 
+    // Behind it all: the backdrop, clear around the logo and the list.
+    let bottom = start::hint_y(col, layout.scale, projects.len()) + ui.line_h;
+    let clear = Rect {
+        h: bottom.saturating_sub(col.y),
+        ..col
+    };
+    draw_backdrop(
+        pixels,
+        width,
+        theme,
+        area,
+        clear,
+        start.backdrop(),
+        font,
+        ui,
+    );
+
     // The logo, big, its cursor blinking with the terminal's: type, it says.
     // Home: no color, the text's.
     let cursor = cursor_on.then_some(theme.accent_for(None));
@@ -1391,6 +1409,57 @@ fn draw_start(
     if hint_y + ui.line_h <= layout.text.y + layout.text.h {
         let text = "Type to start   ↑↓ Enter opens a project   Esc";
         draw_ui_text(pixels, width, font, ui, text, (left, hint_y), col.w, dim);
+    }
+}
+
+/// The start screen's backdrop (see `backdrop`) over `area`, a cell a letter of
+/// the UI's font. Its marks fade out near `clear`, where the logo and the list
+/// are: gone inside, whole from `FADE` pixels away.
+#[allow(clippy::too_many_arguments)]
+fn draw_backdrop(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    area: Rect,
+    clear: Rect,
+    backdrop: &Backdrop,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    const FADE: usize = 110;
+    let fade = ui.px(FADE).max(1) as f32;
+    let (cell_w, cell_h) = (ui.advance.max(1), ui.line_h.max(1));
+    let pad = ui.px(8);
+    let cols = area.w.saturating_sub(2 * pad) / cell_w;
+    let rows = area.h.saturating_sub(2 * pad) / cell_h;
+    for row in 0..rows {
+        for col in 0..cols {
+            let Some(mark) = backdrop.mark(col, row) else {
+                continue;
+            };
+            let (x, y) = (area.x + pad + col * cell_w, area.y + pad + row * cell_h);
+            // How far the cell's middle is from `clear`, 0 inside it.
+            let (mx, my) = (x + cell_w / 2, y + cell_h / 2);
+            let dx = clear
+                .x
+                .saturating_sub(mx)
+                .max(mx.saturating_sub(clear.x + clear.w));
+            let dy = clear
+                .y
+                .saturating_sub(my)
+                .max(my.saturating_sub(clear.y + clear.h));
+            let t = ((dx * dx + dy * dy) as f32).sqrt() / fade;
+            let t = t.min(1.0);
+            // Smooth: slow at both ends, no edge where the fade stops.
+            let strength = f32::from(mark.strength) * t * t * (3.0 - 2.0 * t);
+            if strength < 2.0 {
+                continue;
+            }
+            let color = blend(theme.background, theme.foreground, strength as u32);
+            let mut text = [0u8; 4];
+            let ch = mark.ch.encode_utf8(&mut text);
+            draw_ui_text(pixels, width, font, ui, ch, (x, y), cell_w, color);
+        }
     }
 }
 

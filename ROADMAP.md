@@ -172,6 +172,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] The exe's icon (Explorer, Start, a pinned shortcut): `build.rs` makes the `.ico` from
       `logo.rs` at each build (home's gray, 16..256 px) and puts it in `kel.exe` with
       `winresource`; the file's details say "Kel" (Task Manager)
+- [x] The start screen's backdrop: ASCII behind the logo and the list, dim, clear around
+      them. By day a terrain (smooth noise as ` .:-=+*`), at night (22:00 to 6:00) stars;
+      new each time it shows (a seed; `backdrop.rs`)
 - [x] Home is position 0: coming back to it (the sidebar, the palette, a project closed)
       shows its start screen again, the projects used last fresh; home chosen while in home
       too. Not while a command runs in its tab: you came back to watch it. Its tab says

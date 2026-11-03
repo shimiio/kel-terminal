@@ -34,6 +34,7 @@
 //! - `theme`: colors as programs ask for them, and the theme that turns them into pixels.
 
 pub mod app;
+pub mod backdrop;
 pub mod card;
 pub mod config;
 pub mod fallback;
