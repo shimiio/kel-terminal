@@ -37,7 +37,7 @@ pub const HEIGHT: usize = 7;
 pub const WIDTH: usize = K[0].len() + GAP + E[0].len() + GAP + L[0].len() + GAP + CURSOR_WIDTH;
 
 /// The icon's mark, `k▌`: its width.
-pub const MARK_WIDTH: usize = K[0].len() + GAP + CURSOR_WIDTH;
+const MARK_WIDTH: usize = K[0].len() + GAP + CURSOR_WIDTH;
 
 /// A lit pixel of the logo: where (from its top left, in its pixels) and
 /// whether it's the cursor's.
@@ -53,8 +53,8 @@ pub fn pixels() -> Vec<Pixel> {
     lay_out(&[K, E, L])
 }
 
-/// The mark alone, `k▌`: the window's icon, and the tab of home's start screen.
-pub fn mark_pixels() -> Vec<Pixel> {
+/// The mark alone, `k▌`: the window's icon (a tab's is bolder, see `icons`).
+fn mark_pixels() -> Vec<Pixel> {
     lay_out(&[K])
 }
 

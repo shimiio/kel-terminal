@@ -5,7 +5,6 @@
 //! One file then fits any color. An icon with real colors is drawn as it is.
 //! On a muted tab every icon, colored or not, is tinted with the muted text color.
 
-use crate::logo;
 use anyhow::Context;
 use std::collections::HashMap;
 
@@ -111,19 +110,46 @@ impl Icons {
     }
 }
 
-/// Kel's mark `k▌` from the logo's pixels, in the middle of 16 x 16, white:
-/// tinted like the others (gray in home).
+/// Kel's mark `k▌`, bold for a tab: lines 2 pixels thick, like the other icons,
+/// where the logo's 1 would look thin. A row of pixels a string, `#` lit.
+const KEL_MARK: [&str; 16] = [
+    "................",
+    "................",
+    ".##.......#####.",
+    ".##.......#####.",
+    ".##.......#####.",
+    ".##.......#####.",
+    ".##...##..#####.",
+    ".##..##...#####.",
+    ".##.##....#####.",
+    ".####.....#####.",
+    ".####.....#####.",
+    ".##.##....#####.",
+    ".##..##...#####.",
+    ".##...##..#####.",
+    "................",
+    "................",
+];
+
+/// The icon of home's start screen, `k▌` (see `KEL_MARK`).
 fn kel_icon() -> Icon {
-    let (w, h) = (16, 16);
-    let mut pixels = vec![[0, 0, 0, 0]; w * h];
-    let left = (w - logo::MARK_WIDTH) / 2;
-    let top = (h - logo::HEIGHT) / 2;
-    for p in logo::mark_pixels() {
-        pixels[(top + p.y) * w + left + p.x] = [255, 255, 255, 255];
-    }
+    from_grid(&KEL_MARK)
+}
+
+/// An icon from rows of `#` (white) and `.` (see-through): white, so it's tinted
+/// like the others (gray in home, the project's color in a project).
+fn from_grid(rows: &[&str]) -> Icon {
+    let pixels = rows
+        .iter()
+        .flat_map(|row| row.chars())
+        .map(|c| match c {
+            '#' => [255, 255, 255, 255],
+            _ => [0, 0, 0, 0],
+        })
+        .collect();
     Icon {
-        w,
-        h,
+        w: rows.first().map_or(0, |row| row.chars().count()),
+        h: rows.len(),
         pixels,
         tinted: true,
     }
@@ -200,6 +226,15 @@ mod tests {
         assert_eq!(pick("powershell", Some("dev server")), "terminal");
         // What runs comes first: nvim, in a tab called "docker".
         assert_eq!(pick("main.rs - Nvim", Some("docker")), "nvim");
+    }
+
+    #[test]
+    fn kel_s_mark() {
+        let icon = kel_icon();
+        assert_eq!((icon.w, icon.h), (16, 16));
+        assert_eq!(icon.pixel(1, 2, None), (0xffffff, 255)); // the k's stem
+        assert_eq!(icon.pixel(14, 13, None), (0xffffff, 255)); // the cursor
+        assert_eq!(icon.pixel(0, 0, None).1, 0); // around it: see-through
     }
 
     #[test]
