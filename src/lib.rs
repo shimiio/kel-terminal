@@ -14,7 +14,7 @@
 //! - `config`: the settings file, `%APPDATA%\kel\config.toml`.
 //! - `fallback`: fonts for the letters the terminal's font lacks (emoji, Chinese).
 //! - `font`: finds a font, and turns its letters into pixels.
-//! - `icons`: the tab icons, pixel-art PNGs built into the .exe.
+//! - `icons`: the tab icons, 8 x 8 pixel grids in code, like the logo.
 //! - `layout`: where the terminal panel goes in the window.
 //! - `mouse`: the bytes that tell a program (nvim) what the mouse does, if it asked.
 //! - `palette`: the command palette's state: what's typed, what's shown and chosen.

@@ -612,18 +612,14 @@ fn draw_tab_bar(
             dim
         };
         // The icon, in the middle from top to bottom. The tab on screen has it in
-        // the accent color (or its own colors); a muted tab, in the muted gray
-        // of its name.
+        // the window's color (the project's, gray in home); a muted tab, in the
+        // muted gray of its name.
         let icon = ui.icons.get(label.icon);
         let (icon_w, icon_h) = (icon.w * ui.icon_scale, icon.h * ui.icon_scale);
         let padding = ui.px(TAB_TEXT_PADDING);
         let icon_x = tab.x + padding;
         let icon_y = tab.y + tab.h.saturating_sub(icon_h) / 2;
-        let tint = match (on_screen, icon.tinted) {
-            (true, true) => Some(accent),
-            (true, false) => None,
-            (false, _) => Some(dim),
-        };
+        let tint = if on_screen { accent } else { dim };
         draw_icon(pixels, width, icon, ui.icon_scale, tint, icon_x, icon_y);
 
         let gap = ui.px(ICON_GAP);
@@ -1684,29 +1680,21 @@ fn draw_underline(
     }
 }
 
-/// Draws `icon` with its top-left corner at (x, y), tinted (see `Icon::pixel`).
+/// Draws `icon` with its top-left corner at (x, y), its lit pixels in `color`.
 /// Each of its pixels becomes a `k` x `k` square: at ×2, a 16x16 icon is 32x32.
 fn draw_icon(
     pixels: &mut [u32],
     width: usize,
     icon: &Icon,
     k: usize,
-    tint: Option<u32>,
+    color: u32,
     x: usize,
     y: usize,
 ) {
-    let height = pixels.len() / width;
     for iy in 0..icon.h {
         for ix in 0..icon.w {
-            let (color, alpha) = icon.pixel(ix, iy, tint);
-            if alpha == 0 {
-                continue;
-            }
-            for py in (y + iy * k..y + (iy + 1) * k).take_while(|&py| py < height) {
-                for px in (x + ix * k..x + (ix + 1) * k).take_while(|&px| px < width) {
-                    let pixel = &mut pixels[py * width + px];
-                    *pixel = blend(*pixel, color, alpha as u32);
-                }
+            if icon.lit(ix, iy) {
+                fill_rect(pixels, width, x + ix * k, y + iy * k, k, k, color);
             }
         }
     }

@@ -288,7 +288,7 @@ the file keeps the tabs it had, not none.
 | `src/layout.rs` | Where the terminal panel goes in the window |
 | `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
 | `src/config.rs` | Reads `config.toml` |
-| `src/icons.rs` | The tab icons (`assets/icons/*.png`, built into the .exe) and which tab gets which |
+| `src/icons.rs` | The tab icons (8 x 8 pixel grids, a pixel 2 x 2 on screen, like the logo) and which tab gets which |
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
 | `src/project.rs` | Reads and writes a project file: the tabs, their folders and commands |
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |

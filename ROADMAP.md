@@ -67,7 +67,7 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       resize at the edges, the window shadow. Config errors move into Kel's own UI
 - [x] Activity dot on a background tab with new output
 - [x] Tab/window title from OSC 0/2
-- [x] Tab icons: pixel art PNGs in `assets/icons/`, built into the binary, tinted with a color;
+- [x] Tab icons: pixel art (PNGs at first, grids in code now), tinted with a color;
       picked by the program in the title (nvim, cargo...); in a plain shell, by the tab's
       name (docker, run/start)
 - [ ] Icon by the command that runs (`docker compose up` → docker): PowerShell would send
@@ -161,7 +161,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       against a line on the tab, a colored block, a colored frame: the name won
 - [ ] Maybe: a thin line in the project color on top of the tab on screen (tried on a mockup:
       with the name and the icon, three spots of color; decide after using the name a while)
-- [ ] Pixel-art tab icons (made in Aseprite, PNG), outlines filled with the accent color
+- [x] Pixel-art tab icons like the logo: 8 x 8 grids in `icons.rs`, a pixel 2 x 2 on screen,
+      so it shows it's pixels; in the window's color. The PNGs and their decoder are gone
 - [x] The Kel logo: "kel" and a cursor, in pixels (`logo.rs`). Big on the start screen,
       the cursor blinking with the terminal's; small, still, at the sidebar's top. The cursor
       is the project's color; home has none (the text's): Kel takes the color of what you

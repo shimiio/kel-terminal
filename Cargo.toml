@@ -19,7 +19,6 @@ arboard = "3.7.0"
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.1.8"
 fontdb = "0.24.0"
-png = "0.18.1"
 unicode-width = "0.2"
 ttf-parser = "0.25.1"
 ab_glyph = "0.2.32"

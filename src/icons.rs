@@ -1,27 +1,68 @@
-//! Tab icons: small pixel-art PNGs from `assets/icons`, built into Kel's .exe.
+//! Tab icons: pixel art like Kel's logo, drawn here as grids of 8 x 8, a pixel
+//! of them 2 x 2 on screen (`PIXEL`): big enough to see it's pixels. A tab's
+//! icon is in the tab's color: the project's on the tab on screen (gray in
+//! home), the muted gray on the others.
 //!
-//! An icon drawn only in grays is tinted: each pixel becomes the accent color times
-//! its brightness, so white is the accent itself and 50% gray is half as bright.
-//! One file then fits any color. An icon with real colors is drawn as it is.
-//! On a muted tab every icon, colored or not, is tinted with the muted text color.
+//! ```text
+//! k▌        >_        N         git       docker    ▶
+//! #...###.  #.......  .#...#..  ##...##.  ...#....  .##.....
+//! ```
 
-use anyhow::Context;
 use std::collections::HashMap;
 
-/// The icons: a name and the PNG file. `include_bytes!` puts the file's bytes into
-/// the .exe when Kel is built, so Kel needs no files next to it.
-const FILES: [(&str, &[u8]); 5] = [
-    ("terminal", include_bytes!("../assets/icons/terminal.png")),
-    ("nvim", include_bytes!("../assets/icons/nvim.png")),
-    ("git", include_bytes!("../assets/icons/git.png")),
-    ("docker", include_bytes!("../assets/icons/docker.png")),
-    ("start", include_bytes!("../assets/icons/start.png")),
+/// A pixel of an icon's grid, in screen pixels at 100%: 2 x 2.
+const PIXEL: usize = 2;
+
+/// The icons: a name and its grid, 8 rows of 8, `#` lit.
+const GRIDS: [(&str, [&str; 8]); 6] = [
+    (
+        "kel",
+        [
+            "........", "#...###.", "#...###.", "#.#.###.", "##..###.", "#.#.###.", "#.#.###.",
+            "........",
+        ],
+    ),
+    (
+        "terminal",
+        [
+            "........", "#.......", ".#......", "..#.....", ".#......", "#.......", "...####.",
+            "........",
+        ],
+    ),
+    (
+        "nvim",
+        [
+            "........", ".#...#..", ".##..#..", ".#.#.#..", ".#..##..", ".#...#..", ".#...#..",
+            "........",
+        ],
+    ),
+    (
+        "git",
+        [
+            "##...##.", "##...##.", ".#...#..", ".#..#...", ".#.#....", ".##.....", "##......",
+            "##......",
+        ],
+    ),
+    (
+        "docker",
+        [
+            "........", "...#....", ".#.#.#..", ".......#", "#######.", ".#####..", "..###...",
+            "........",
+        ],
+    ),
+    (
+        "start",
+        [
+            "........", ".##.....", ".####...", ".######.", ".####...", ".##.....", "........",
+            "........",
+        ],
+    ),
 ];
 
 /// The icon of a tab whose title and name pick none.
 const DEFAULT: &str = "terminal";
 
-/// The tab of home's start screen: Kel's own mark, `k▌` (see `kel_icon`).
+/// The tab of home's start screen: Kel's own mark, `k▌`.
 pub const KEL: &str = "kel";
 
 /// Words in a tab's title or name that pick an icon, checked in this order.
@@ -59,49 +100,42 @@ fn find(text: &str) -> Option<&'static str> {
         .map(|(_, icon)| *icon)
 }
 
+/// An icon: which of its pixels are lit, on screen at 100% (16 x 16).
 pub struct Icon {
     pub w: usize,
     pub h: usize,
-    /// [red, green, blue, alpha] per pixel, row after row. Alpha 0 is transparent.
-    pixels: Vec<[u8; 4]>,
-    /// Only grays: tinted with the accent color.
-    pub tinted: bool,
+    /// Row after row.
+    lit: Vec<bool>,
 }
 
 impl Icon {
-    /// The pixel at (x, y): its color `0xRRGGBB` and its alpha, 0-255.
-    /// With a `tint`, the pixel's brightness times the tint; without, its own color.
-    /// e.g. gray 128 with the tint 0x4080ff: 0x204080.
-    pub fn pixel(&self, x: usize, y: usize, tint: Option<u32>) -> (u32, u8) {
-        let [r, g, b, a] = self.pixels[y * self.w + x];
-        let (r, g, b) = (r as u32, g as u32, b as u32);
-        let color = match tint {
-            Some(tint) => {
-                // How bright the pixel looks: green counts most, blue least
-                // (77 + 150 + 29 = 256). For a gray, it's the gray itself.
-                let brightness = (77 * r + 150 * g + 29 * b) / 256;
-                let times = |channel: u32| channel * brightness / 255;
-                let (tr, tg, tb) = ((tint >> 16) & 0xff, (tint >> 8) & 0xff, tint & 0xff);
-                (times(tr) << 16) | (times(tg) << 8) | times(tb)
-            }
-            None => (r << 16) | (g << 8) | b,
-        };
-        (color, a)
+    /// An icon from its grid: each `#` a lit square of `PIXEL` x `PIXEL`.
+    fn from_grid(rows: &[&str]) -> Icon {
+        let w = rows.first().map_or(0, |row| row.len()) * PIXEL;
+        let h = rows.len() * PIXEL;
+        let mut lit = Vec::with_capacity(w * h);
+        for y in 0..h {
+            let row = rows[y / PIXEL].as_bytes();
+            lit.extend((0..w).map(|x| row.get(x / PIXEL) == Some(&b'#')));
+        }
+        Icon { w, h, lit }
+    }
+
+    /// Whether the pixel at (x, y) is lit.
+    pub fn lit(&self, x: usize, y: usize) -> bool {
+        self.lit[y * self.w + x]
     }
 }
 
 pub struct Icons(HashMap<&'static str, Icon>);
 
 impl Icons {
-    /// Reads all the icons. They are part of Kel itself, so a broken one is a bug,
-    /// not a user's mistake (a test reads them all).
+    /// All the icons, from their grids.
     pub fn load() -> Icons {
-        let mut icons: HashMap<_, _> = FILES
+        let icons = GRIDS
             .iter()
-            .map(|(name, png)| (*name, decode(png).expect("a built-in icon")))
-            .collect();
-        icons.insert(KEL, kel_icon());
-        Icons(icons)
+            .map(|(name, rows)| (*name, Icon::from_grid(rows)));
+        Icons(icons.collect())
     }
 
     /// The icon named `name`, or the default one.
@@ -110,101 +144,34 @@ impl Icons {
     }
 }
 
-/// Kel's mark `k▌`, bold for a tab: lines 2 pixels thick, like the other icons,
-/// where the logo's 1 would look thin. A row of pixels a string, `#` lit.
-const KEL_MARK: [&str; 16] = [
-    "................",
-    "................",
-    ".##.......#####.",
-    ".##.......#####.",
-    ".##.......#####.",
-    ".##.......#####.",
-    ".##...##..#####.",
-    ".##..##...#####.",
-    ".##.##....#####.",
-    ".####.....#####.",
-    ".####.....#####.",
-    ".##.##....#####.",
-    ".##..##...#####.",
-    ".##...##..#####.",
-    "................",
-    "................",
-];
-
-/// The icon of home's start screen, `k▌` (see `KEL_MARK`).
-fn kel_icon() -> Icon {
-    from_grid(&KEL_MARK)
-}
-
-/// An icon from rows of `#` (white) and `.` (see-through): white, so it's tinted
-/// like the others (gray in home, the project's color in a project).
-fn from_grid(rows: &[&str]) -> Icon {
-    let pixels = rows
-        .iter()
-        .flat_map(|row| row.chars())
-        .map(|c| match c {
-            '#' => [255, 255, 255, 255],
-            _ => [0, 0, 0, 0],
-        })
-        .collect();
-    Icon {
-        w: rows.first().map_or(0, |row| row.chars().count()),
-        h: rows.len(),
-        pixels,
-        tinted: true,
-    }
-}
-
-/// Unpacks a PNG file into pixels.
-fn decode(png: &[u8]) -> anyhow::Result<Icon> {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
-    // Whatever the file holds (16-bit, a palette of colors...): 8-bit channels.
-    decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info()?;
-    let mut buf = vec![0; reader.output_buffer_size().context("icon too big")?];
-    let info = reader.next_frame(&mut buf)?;
-    let data = &buf[..info.buffer_size()];
-    // Aseprite saves gray icons as gray + alpha, 2 bytes a pixel.
-    let pixels: Vec<[u8; 4]> = match info.color_type {
-        png::ColorType::Grayscale => data.iter().map(|&g| [g, g, g, 255]).collect(),
-        png::ColorType::GrayscaleAlpha => data
-            .chunks_exact(2)
-            .map(|p| [p[0], p[0], p[0], p[1]])
-            .collect(),
-        png::ColorType::Rgb => data
-            .chunks_exact(3)
-            .map(|p| [p[0], p[1], p[2], 255])
-            .collect(),
-        png::ColorType::Rgba => data
-            .chunks_exact(4)
-            .map(|p| [p[0], p[1], p[2], p[3]])
-            .collect(),
-        png::ColorType::Indexed => anyhow::bail!("palette PNG left unexpanded"),
-    };
-    let tinted = pixels
-        .iter()
-        .all(|&[r, g, b, a]| a == 0 || (r == g && g == b));
-    Ok(Icon {
-        w: info.width as usize,
-        h: info.height as usize,
-        pixels,
-        tinted,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn built_in_icons_load() {
-        let icons = Icons::load();
-        let names = FILES.iter().map(|(name, _)| *name).chain([KEL]);
-        for name in names {
-            let icon = icons.get(name);
-            assert_eq!((icon.w, icon.h), (16, 16), "{name}");
-            assert!(icon.tinted, "{name}");
+    fn every_grid_is_8_by_8() {
+        // A short row would shift every row after it, and the last pixel asked
+        // for wouldn't be there.
+        for (name, rows) in GRIDS {
+            assert!(rows.iter().all(|row| row.len() == 8), "{name}");
+            assert!(
+                rows.iter().all(|row| row.chars().all(|c| "#.".contains(c))),
+                "{name}"
+            );
         }
+        let icons = Icons::load();
+        assert_eq!((icons.get(KEL).w, icons.get(KEL).h), (16, 16));
+    }
+
+    #[test]
+    fn a_grid_s_pixel_is_2_by_2() {
+        let icon = Icons::load();
+        let kel = icon.get(KEL);
+        // Its row 1 is "#...###.": (0, 1) lit, so screen pixels 0..2, 2..4.
+        assert!(kel.lit(0, 2) && kel.lit(1, 3));
+        assert!(!kel.lit(2, 2)); // (1, 1): a dot
+        assert!(kel.lit(8, 2) && kel.lit(13, 3)); // the cursor, 4..7
+        assert!(!kel.lit(0, 0)); // row 0: empty
     }
 
     #[test]
@@ -226,26 +193,5 @@ mod tests {
         assert_eq!(pick("powershell", Some("dev server")), "terminal");
         // What runs comes first: nvim, in a tab called "docker".
         assert_eq!(pick("main.rs - Nvim", Some("docker")), "nvim");
-    }
-
-    #[test]
-    fn kel_s_mark() {
-        let icon = kel_icon();
-        assert_eq!((icon.w, icon.h), (16, 16));
-        assert_eq!(icon.pixel(1, 2, None), (0xffffff, 255)); // the k's stem
-        assert_eq!(icon.pixel(14, 13, None), (0xffffff, 255)); // the cursor
-        assert_eq!(icon.pixel(0, 0, None).1, 0); // around it: see-through
-    }
-
-    #[test]
-    fn tinted_pixel() {
-        let icon = Icon {
-            w: 1,
-            h: 1,
-            pixels: vec![[128, 128, 128, 255]],
-            tinted: true,
-        };
-        assert_eq!(icon.pixel(0, 0, Some(0x4080ff)), (0x204080, 255));
-        assert_eq!(icon.pixel(0, 0, None), (0x808080, 255));
     }
 }
