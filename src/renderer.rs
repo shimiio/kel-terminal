@@ -639,12 +639,14 @@ impl Renderer {
         }
         // Last: the palette is on top of everything.
         if let Some(palette) = chrome.palette {
+            // The project's color (or the theme's accent): its chosen line's.
+            let color = chrome.project.and_then(|(_, color)| color).or(theme.accent);
             draw_palette(
                 &mut buffer,
                 width,
                 theme,
                 layout,
-                palette,
+                (palette, color),
                 font,
                 &mut self.ui,
             );
@@ -989,7 +991,7 @@ fn draw_palette(
     width: usize,
     theme: &Theme,
     layout: &Layout,
-    palette: &Palette,
+    (palette, color): (&Palette, Option<u32>),
     font: &Font,
     ui: &mut Ui,
 ) {
@@ -1075,16 +1077,17 @@ fn draw_palette(
         .enumerate()
     {
         let line_y = list_y + row * line_h;
+        // The chosen line: in a project, a tint of its color and a bar of it at
+        // the left; at home (no color), gray.
         if i == palette.selected() {
-            fill_rect(
-                pixels,
-                width,
-                x + b,
-                line_y,
-                box_w - 2 * b,
-                line_h,
-                theme.selection,
-            );
+            let fill = match color {
+                Some(color) => blend(theme.frame, color, 45),
+                None => theme.selection,
+            };
+            fill_rect(pixels, width, x + b, line_y, box_w - 2 * b, line_h, fill);
+            if let Some(color) = color {
+                fill_rect(pixels, width, x + b, line_y, ui.px(3), line_h, color);
+            }
         }
         // The hint at the right end, then the label in the room left of it.
         // At most half the line, so a long folder leaves the label room.

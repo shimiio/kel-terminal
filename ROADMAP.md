@@ -258,7 +258,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] Readability under lazygit / Claude Code: a solid background behind full-screen
       programs (the alternate screen), as nvim paints its own; Claude Code draws in the
       normal screen, it's known by its icon while it runs. The frame stays glass
-- [ ] The palette's chosen line in the project's color, not gray?
+- [x] The palette's chosen line in the project's color: a tint and a bar at the left
+      (tried gray, a tint, a stronger tint, a bar; home stays gray)
 - [ ] Underlines: look over their styles and colors
 - [ ] Ctrl+Alt+← / → : the previous / next open project (and home), as Zen's workspaces
 - [ ] "Open in Kel" on a folder in Explorer (`kel <folder>`)
