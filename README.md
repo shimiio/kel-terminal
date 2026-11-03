@@ -265,8 +265,9 @@ screen are in it, and the logo's cursor and the window's icon in the taskbar. Wi
 of what you work on (`accent` in `[colors]` gives home and such projects one).
 
 A tab's icon shows what runs in it (nvim, git, claude, ssh, a database client like
-`psql` or `redis-cli`), as the program's title says. In a plain shell, the tab's
-`name` picks it: a tab called `docker` has the whale, `vps` a server, `db` a database,
+`psql` or `redis-cli`, python, node, cargo), as the program's title says, or else the
+command you typed in PowerShell (`docker compose up` has the whale, once it has run
+for half a second). In a plain shell, the tab's `name` picks it: a tab called `docker` has the whale, `vps` a server, `db` a database,
 `run` or `start` a ▶. The name itself stays whatever runs.
 
 When the window closes (the × button or Alt+F4), Kel writes the file again with the

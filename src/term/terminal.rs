@@ -18,8 +18,10 @@ use crate::theme::Color;
 use vte::Perform;
 
 /// The shell's word about a command (`ESC]133;...`, see `shell_integration`).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Mark {
+    /// `ESC]633;E;text`: the text of the command about to start, e.g. `nvim .`.
+    Command(String),
     /// `ESC]133;C`: Enter was pressed, the command runs.
     Started,
     /// `ESC]133;D;0`: the command ended; `true` if it worked (code 0, or none given).
@@ -278,6 +280,9 @@ impl Perform for Terminal {
     ///
     /// `ESC]9;9;C:\folder ESC\`: the shell's current folder, sent before each prompt.
     ///
+    /// `ESC]633;E;text`: the command's text, `\xNN` for `\`, `;`, ESC... (see `unescape`).
+    /// After it, VS Code's shells may send a `;nonce`: ignored.
+    ///
     /// `ESC]133;C` / `ESC]133;D;code`: a command started / ended (see `Mark`).
     /// `133;A` and `133;B` (where the prompt starts and ends) say nothing Kel needs.
     fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
@@ -291,6 +296,10 @@ impl Perform for Terminal {
                 let folder = folder.trim_matches('"');
                 self.cwd = Some(folder.to_string());
             }
+            [b"633", b"E", command, ..] => {
+                let command = unescape(&String::from_utf8_lossy(command));
+                self.marks.push(Mark::Command(command));
+            }
             [b"133", b"C", ..] => self.marks.push(Mark::Started),
             [b"133", b"D", code @ ..] => {
                 let ok = matches!(code, [] | [b"0", ..]);
@@ -299,6 +308,34 @@ impl Perform for Terminal {
             _ => {}
         }
     }
+}
+
+/// A command's text as `633;E` sends it, back as typed: `\xNN` is the character
+/// NN (hex), `\\` a `\`. e.g. `a\x3b b` → `a; b`. Anything else stays as it is.
+fn unescape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find('\\') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        let hex = rest.get(2..4).filter(|_| rest[1..].starts_with('x'));
+        match hex.and_then(|hex| u8::from_str_radix(hex, 16).ok()) {
+            Some(byte) => {
+                out.push(byte as char);
+                rest = &rest[4..];
+            }
+            None if rest[1..].starts_with('\\') => {
+                out.push('\\');
+                rest = &rest[2..];
+            }
+            None => {
+                out.push('\\');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 #[cfg(test)]
@@ -351,6 +388,26 @@ mod tests {
             marks("\x1b]133;C\x07ok\r\n\x1b]133;D;0\x07"),
             [Started, Ended(true)]
         );
+        // The text first, as PowerShell sends it; a nonce after it is ignored.
+        assert_eq!(
+            marks("\x1b]633;E;nvim .\x1b\\\x1b]133;C\x1b\\"),
+            [Command("nvim .".into()), Started]
+        );
+        assert_eq!(
+            marks("\x1b]633;E;ls\x07\x1b]633;E;ls;abc123\x07"),
+            [Command("ls".into()), Command("ls".into())]
+        );
+    }
+
+    #[test]
+    fn a_command_s_text_unescaped() {
+        assert_eq!(unescape(r"a\x3b b"), "a; b");
+        assert_eq!(unescape(r"C:\x5cWindows"), r"C:\Windows");
+        assert_eq!(unescape(r"C:\\Windows"), r"C:\Windows");
+        assert_eq!(unescape(r"one\x0atwo\x1b"), "one\ntwo\x1b");
+        // Not an escape: stays.
+        assert_eq!(unescape(r"\xz1 \ end\"), r"\xz1 \ end\");
+        assert_eq!(unescape("кот\\x3b"), "кот;");
     }
 
     #[test]

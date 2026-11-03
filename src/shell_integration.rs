@@ -7,10 +7,13 @@
 //! | Code | When | Kel then |
 //! |---|---|---|
 //! | `ESC]9;9;<folder> ESC\` | before each prompt | opens new tabs there |
+//! | `ESC]633;E;<command> ESC\` | Enter: the command's text | picks the tab's icon by it |
 //! | `ESC]133;C ESC\` | Enter, a command starts | knows the tab is busy |
 //! | `ESC]133;D;<0 or 1> ESC\` | before the next prompt: it ended, 0 if it worked | not busy |
 //!
-//! The same codes as Windows Terminal and VS Code.
+//! The same codes as Windows Terminal and VS Code (`633;E` is VS Code's). In the
+//! command's text, `\`, `;` and anything below a space are written `\xNN`
+//! (`;` is `\x3b`): a real ESC or BEL would end the code early.
 //!
 //! - **PowerShell** (`powershell.exe`, `pwsh.exe`): Kel starts it with `-NoExit -Command`
 //!   and a script that wraps two functions: `prompt` (it makes the prompt's text) and
@@ -31,8 +34,8 @@ use std::path::Path;
 /// first, and set back to "failed" for the old prompt, which may show it.
 ///
 /// The new `PSConsoleHostReadLine`: the old one reads the line; once it's done
-/// (Enter, and the input is whole: no `{` left open), "the command starts".
-/// Not for an empty line: nothing starts.
+/// (Enter, and the input is whole: no `{` left open), the command's text, then
+/// "the command starts". Not for an empty line: nothing starts.
 ///
 /// No `"` anywhere: Windows hands the script over inside `"..."`, and PowerShell 5
 /// mixes up `"` inside it. Hence `[char]27` (ESC) and single quotes.
@@ -50,7 +53,11 @@ if (Test-Path Function:\PSConsoleHostReadLine) {
   $global:__kel_readline = $function:PSConsoleHostReadLine
   function global:PSConsoleHostReadLine {
     $line = & $global:__kel_readline
-    if ([string]$line -match '\S') { [Console]::Write([string][char]27 + ']133;C' + [char]27 + '\') }
+    if ([string]$line -match '\S') {
+      $e = [string][char]27
+      $text = [regex]::Replace([string]$line, '[\\;\x00-\x1f]', { '\x{0:x2}' -f [int][char]$args[0].Value })
+      [Console]::Write($e + ']633;E;' + $text + $e + '\' + $e + ']133;C' + $e + '\')
+    }
     $line
   }
 }";

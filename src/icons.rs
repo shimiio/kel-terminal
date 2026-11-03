@@ -6,15 +6,21 @@
 //! ```text
 //! k▌        >_        N         git       docker    ▶         claude    ssh       database
 //! #...###.  #.......  .#...#..  ##...##.  ...#....  .##.....  .#.#.#..  #.#...#.  #######.
+//!
+//! python    node      rust
+//! .##.##..  .##.##..  ##.#.##.
 //! ```
+//!
+//! (Each icon's middle row: the grids below have all 8.)
 
 use std::collections::HashMap;
+use std::path::Path;
 
 /// A pixel of an icon's grid, in screen pixels at 100%: 2 x 2.
 const PIXEL: usize = 2;
 
 /// The icons: a name and its grid, 8 rows of 8, `#` lit.
-const GRIDS: [(&str, [&str; 8]); 9] = [
+const GRIDS: [(&str, [&str; 8]); 12] = [
     (
         "kel",
         [
@@ -81,6 +87,30 @@ const GRIDS: [(&str, [&str; 8]); 9] = [
             "........",
         ],
     ),
+    (
+        // A snake, an S with an eye.
+        "python",
+        [
+            "..####..", ".##.##..", ".##.....", "..####..", ".....##.", ".....##.", ".#####..",
+            "........",
+        ],
+    ),
+    (
+        // A hexagon, like Node's.
+        "node",
+        [
+            "...#....", ".##.##..", "#.....#.", "#.....#.", "#.....#.", ".##.##..", "...#....",
+            "........",
+        ],
+    ),
+    (
+        // A gear, like Rust's (and cargo's builds).
+        "rust",
+        [
+            "...#....", ".#####..", ".#...#..", "##.#.##.", ".#...#..", ".#####..", "...#....",
+            "........",
+        ],
+    ),
 ];
 
 /// The icon of a tab whose title and name pick none.
@@ -89,8 +119,8 @@ const DEFAULT: &str = "terminal";
 /// The tab of home's start screen: Kel's own mark, `k▌`.
 pub const KEL: &str = "kel";
 
-/// Words in a tab's title or name that pick an icon, checked in this order.
-const WORDS: [(&str, &str); 22] = [
+/// Words in a tab's title, command or name that pick an icon, checked in this order.
+const WORDS: [(&str, &str); 38] = [
     ("nvim", "nvim"),
     ("vim", "nvim"),
     ("claude", "claude"),
@@ -112,17 +142,50 @@ const WORDS: [(&str, &str); 22] = [
     ("mongo", "database"),
     ("mongosh", "database"),
     ("postgres", "database"),
+    ("python", "python"),
+    ("python3", "python"),
+    ("py", "python"),
+    ("ipython", "python"),
+    ("pip", "python"),
+    ("uv", "python"),
+    ("node", "node"),
+    ("npm", "node"),
+    ("npx", "node"),
+    ("pnpm", "node"),
+    ("yarn", "node"),
+    ("bun", "node"),
+    ("deno", "node"),
+    ("cargo", "rust"),
+    ("rustc", "rust"),
+    ("rustup", "rust"),
     ("start", "start"),
     ("run", "start"),
 ];
 
-/// A tab's icon. First what runs in it, as its title says: a tab you called
-/// "docker" shows nvim's icon while nvim is open in it. When the title says
-/// nothing (a plain shell), the tab's `name`: a "docker" tab has the whale.
-pub fn pick(title: &str, name: Option<&str>) -> &'static str {
+/// A tab's icon. First what runs in it: as its title says (nvim names the
+/// window), then as the command typed says (`docker compose up` doesn't). A tab
+/// you called "docker" shows nvim's icon while nvim is open in it. When neither
+/// says anything (a plain shell), the tab's `name`: a "docker" tab has the whale.
+pub fn pick(title: &str, command: Option<&str>, name: Option<&str>) -> &'static str {
     find(title)
+        .or_else(|| command.and_then(from_command))
         .or_else(|| name.and_then(find))
         .unwrap_or(DEFAULT)
+}
+
+/// The icon a command picks: by its program first, the first word, as a file's
+/// name (`& 'C:\tools\lazygit.exe'` → lazygit, `.\run.ps1` → run). Then by any
+/// of its words: `npm run dev` runs something. The program wins: in
+/// `git commit -m "nvim fix"` it's git.
+fn from_command(command: &str) -> Option<&'static str> {
+    let rest = command.trim_start().trim_start_matches('&').trim_start();
+    let first = match rest.chars().next() {
+        // Quoted: up to the closing quote.
+        Some(q @ ('\'' | '"')) => rest[1..].split(q).next().unwrap_or(""),
+        _ => rest.split_whitespace().next().unwrap_or(""),
+    };
+    let program = Path::new(first).file_stem().and_then(|stem| stem.to_str());
+    program.and_then(find).or_else(|| find(command))
 }
 
 /// The icon a text's words pick, if any. Words are compared whole, in any case:
@@ -216,7 +279,7 @@ mod tests {
 
     #[test]
     fn icon_from_the_title() {
-        let for_title = |title| pick(title, None);
+        let for_title = |title| pick(title, None, None);
         assert_eq!(for_title("Cargo.toml - Nvim"), "nvim");
         assert_eq!(for_title("nvim ."), "nvim");
         assert_eq!(for_title("dsnvim"), "terminal");
@@ -228,6 +291,7 @@ mod tests {
 
     #[test]
     fn icon_from_the_name_when_the_title_says_nothing() {
+        let pick = |title, name| pick(title, None, name);
         assert_eq!(pick("powershell", Some("docker")), "docker");
         assert_eq!(pick("powershell", Some("Run")), "start");
         assert_eq!(pick("powershell", Some("dev server")), "terminal");
@@ -236,7 +300,28 @@ mod tests {
     }
 
     #[test]
+    fn icon_from_the_command() {
+        let run = |command| pick("Windows PowerShell", Some(command), Some("web"));
+        assert_eq!(run("docker compose up"), "docker");
+        assert_eq!(run("docker-compose up"), "docker");
+        assert_eq!(run("python -c 'import time; time.sleep(9)'"), "python");
+        assert_eq!(run("npm run dev"), "node");
+        assert_eq!(run("cargo run"), "rust");
+        assert_eq!(run(r"& 'C:\tools\lazygit.exe' -p ."), "git");
+        assert_eq!(run(r".\run.ps1"), "start");
+        // The program wins over the other words.
+        assert_eq!(run(r#"git commit -m "nvim fix""#), "git");
+        // An unknown program: any word.
+        assert_eq!(run("uvicorn app:main --reload --db"), "database");
+        assert_eq!(run("ping -t 1.1.1.1"), "terminal");
+        // The title still comes first; nothing runs: the tab's name.
+        assert_eq!(pick("main.rs - Nvim", Some("cargo run"), None), "nvim");
+        assert_eq!(pick("powershell", None, Some("docker")), "docker");
+    }
+
+    #[test]
     fn claude_ssh_and_databases() {
+        let pick = |title, name| pick(title, None, name);
         assert_eq!(pick("powershell", Some("claude")), "claude");
         assert_eq!(pick("Claude Code", None), "claude");
         assert_eq!(pick("ssh root@1.2.3.4", None), "ssh");

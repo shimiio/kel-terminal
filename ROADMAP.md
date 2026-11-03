@@ -72,9 +72,10 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       name (docker, run/start)
 - [x] More icons: claude (a spark), ssh (a server; also a tab called `vps`), database (a
       cylinder; `db`, `psql`, `redis`, `lazysql`...)
-- [ ] Icon by the command that runs (`docker compose up` → docker): PowerShell would send
-      the command's text (like VS Code's `ESC]633;E`), its first word picks the icon.
-      Order: the command, the title, the tab's name
+- [x] Icon by the command that runs (`docker compose up` → docker): PowerShell sends the
+      command's text (VS Code's `ESC]633;E`), its program picks the icon, else any word.
+      Order: the title (nvim's own), the command (once busy: no blink), the tab's name.
+      New icons with it: python (a snake), node (a hexagon), rust/cargo (a gear)
 - [x] Display scaling: the UI and the font follow Windows' scale (100%, 150%...),
       `ui_scale` in the config on top; pixel art only at whole steps (×1, ×2, ×3)
 

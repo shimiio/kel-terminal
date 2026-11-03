@@ -45,11 +45,15 @@ pub struct CommandState {
     /// A command ended while the tab was not on screen: did it work? A green
     /// or red dot, until the tab is seen.
     pub done: Option<bool>,
+    /// The text of the command that runs, as the shell sent it (`633;E`), e.g.
+    /// `docker compose up`: picks the tab's icon.
+    pub line: Option<String>,
 }
 
 impl CommandState {
     fn apply(&mut self, mark: Mark, on_screen: bool) {
         match mark {
+            Mark::Command(line) => self.line = Some(line),
             Mark::Started => {
                 self.running_since = Some(Instant::now());
                 self.done = None;
@@ -57,6 +61,7 @@ impl CommandState {
             // Only after a start: the first prompt, or Enter on an empty line,
             // send "ended" too.
             Mark::Ended(ok) => {
+                self.line = None;
                 if self.running_since.take().is_some() && !on_screen {
                     self.done = Some(ok);
                 }
@@ -162,11 +167,13 @@ impl Tab {
         self.name.as_deref().unwrap_or(&self.title)
     }
 
-    /// The icon's name: by what runs (the title), else by the tab's name (see
-    /// `icons::pick`). Picked on each draw: a few words compared, and a renamed
-    /// tab or a new title shows right away.
+    /// The icon's name: by what runs (the title, then the command's text), else
+    /// by the tab's name (see `icons::pick`). The command only once it's busy:
+    /// `git status` ends sooner, its icon would only blink. Picked on each draw:
+    /// a few words compared, and a renamed tab or a new title shows right away.
     pub fn icon(&self) -> &'static str {
-        icons::pick(&self.title, self.name.as_deref())
+        let line = self.command.line.as_deref().filter(|_| self.command.busy());
+        icons::pick(&self.title, line, self.name.as_deref())
     }
 
     /// The project's command for this tab: typed at start (see `type_when_ready`),
