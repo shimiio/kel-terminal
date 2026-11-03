@@ -222,15 +222,14 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [ ] Split panes (tabs and nvim's own windows do for now)
 - [ ] License, CI, release `.exe` on GitHub
 
-## Fonts (to decide)
+## Fonts
 
-A font that works on any computer without installing it: built into the Kel binary.
-Options:
-- A. JetBrainsMono Nerd Font as is: 4 files × 2.5 MB, each with the same icons (~10 MB)
-- B. JetBrains Mono (4 small files) + Symbols Nerd Font (icons once, any font gets them), ~3–4 MB
-
-Either way:
-- [ ] Fallback font for missing glyphs: config font → built-in icons → system emoji/CJK fonts
+- [x] Built into the exe (~3.5 MB): JetBrains Mono (4 styles) + Symbols Nerd Font Mono (the
+      icons once, any font gets them). Not a Nerd version of each style (~10 MB)
+- [x] Kel's UI always in the built-in font; `font` is the terminal's (default the built-in
+      one; one that isn't installed: the built-in one, and a line saying so)
+- [x] Fallback for missing glyphs: the terminal's font → built-in icons → Windows'
+      emoji/CJK fonts
 
 ## Linux / macOS
 

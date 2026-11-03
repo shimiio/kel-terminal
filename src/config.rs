@@ -20,9 +20,11 @@ const DEFAULT_CONFIG: &str = r##"# Kel config. Lines starting with # are comment
 # Ctrl+, opens this file. Saved changes apply right away, unless a setting says otherwise.
 # Delete a setting to go back to its default value.
 
-# Any installed font, by the name Windows shows in Settings > Fonts.
-# A Nerd Font (e.g. "JetBrainsMono Nerd Font") also has icons, which nvim plugins use.
-font = "Consolas"
+# The terminal's font. "JetBrains Mono" is built into Kel: it works on any computer.
+# Or any installed font, by the name Windows shows in Settings > Fonts.
+# Kel's own UI (tabs, menus, the sidebar) is always JetBrains Mono, and the icons
+# nvim plugins use (Nerd Font's) are built in too, for any font.
+font = "JetBrains Mono"
 
 # Font size in pixels. Ctrl+= / Ctrl+- change it until Kel closes, Ctrl+0 comes back to this.
 font_size = 18
@@ -95,7 +97,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            font: "Consolas".to_string(),
+            font: crate::font::BUILT_IN.to_string(),
             font_size: 18.0,
             shell: "powershell.exe".to_string(),
             ui_scale: 1.0,

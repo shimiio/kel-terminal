@@ -10,6 +10,10 @@
 //!
 //! Sizes are as fontdue had them, so `font_size` means the same: `size` pixels
 //! is the font's em, the square its letters are designed in.
+//!
+//! Built into the exe (`assets/fonts`, ~3.5 MB): JetBrains Mono in 4 styles, Kel's
+//! own font (its UI always, the terminal's unless the config names another), and
+//! the Nerd Font icons alone (Symbols Nerd Font Mono), which any font gets.
 
 use ab_glyph::{Font as _, FontVec, GlyphId, PxScale};
 use anyhow::Context;
@@ -21,6 +25,32 @@ pub type Fonts = [Font; 4];
 
 /// One font file (or one font of a `.ttc` file, which holds several).
 pub struct Font(FontVec);
+
+/// The built-in font's name: `font` in the config by this name (any case) is
+/// it, installed or not.
+pub const BUILT_IN: &str = "JetBrains Mono";
+
+/// Its files, in the order of `Fonts`: regular, bold, italic, bold italic.
+const BUILT_IN_FILES: [&[u8]; 4] = [
+    include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
+    include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf"),
+    include_bytes!("../assets/fonts/JetBrainsMono-Italic.ttf"),
+    include_bytes!("../assets/fonts/JetBrainsMono-BoldItalic.ttf"),
+];
+
+/// The Nerd Font icons ("Mono": each a square of 1 em, ~1.7 of JetBrains Mono's
+/// cells; the renderer lets them reach into the next cell, see `glyph`).
+const SYMBOLS_FILE: &[u8] = include_bytes!("../assets/fonts/SymbolsNerdFontMono-Regular.ttf");
+
+/// The built-in font, its 4 styles.
+pub fn built_in() -> Fonts {
+    BUILT_IN_FILES.map(|data| Font::from_bytes(data.to_vec(), 0).expect("the built-in font"))
+}
+
+/// The built-in icons.
+pub fn symbols() -> Font {
+    Font::from_bytes(SYMBOLS_FILE.to_vec(), 0).expect("the built-in icons")
+}
 
 /// Where a rasterized letter goes, relative to where it's drawn: the pen on the
 /// baseline, the line letters sit on.
@@ -122,6 +152,9 @@ impl Font {
 /// Finds the font family `family` (e.g. "Consolas") among the installed fonts and
 /// loads its 4 styles. A family without, say, an italic file gets the closest style.
 pub fn load_family(family: &str) -> anyhow::Result<Fonts> {
+    if family.eq_ignore_ascii_case(BUILT_IN) {
+        return Ok(built_in());
+    }
     let mut db = fontdb::Database::new();
     // Reads the names of all installed fonts, in C:\Windows\Fonts and the user's
     // own fonts folder. About 20 ms (the first time after a reboot, ~1 s: from disk).
@@ -188,6 +221,22 @@ mod tests {
         let (g, _) = font.rasterize('g', 18.0);
         assert!(g.ymin < 0, "{g:?}"); // below it
         assert!(g.height > x.height);
+    }
+
+    #[test]
+    fn the_built_in_font() {
+        // By its name, in any case: the files in the exe, not Windows' fonts.
+        let [regular, bold, ..] = load_family("jetbrains mono").unwrap();
+        assert!(regular.has_glyph('A') && regular.has_glyph('ж'));
+        assert!(bold.has_glyph('A'));
+        // Icons aren't in it (only powerline's arrows, U+E0A0...); the built-in
+        // icons have them, each a square of 1 em: wider than a letter.
+        let folder = '\u{F07B}'; // Nerd Font's (Font Awesome's) folder
+        assert!(!regular.has_glyph(folder));
+        let icons = symbols();
+        assert!(icons.has_glyph(folder) && icons.has_glyph('\u{F418}')); // and a git branch
+        assert!((icons.advance(folder, 18.0) - 18.0).abs() < 0.5);
+        assert!(regular.advance('M', 18.0) < 12.0);
     }
 
     #[test]

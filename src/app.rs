@@ -264,13 +264,11 @@ impl App {
             problems.push(format!("{e:#}"));
             Config::default()
         });
-        let fonts = match font::load_family(&config.font) {
-            Ok(fonts) => fonts,
-            Err(e) => {
-                problems.push(format!("{e:#}"));
-                font::load_family(&Config::default().font)?
-            }
-        };
+        // A font that isn't installed: the built-in one, and a line that says so.
+        let fonts = font::load_family(&config.font).unwrap_or_else(|e| {
+            problems.push(format!("{e:#}"));
+            font::built_in()
+        });
         // A screen with the problems so far in red. The shell starts below them:
         // when ConPTY asks where the cursor is, the answer is the line after them.
         let screen = |problems: &[String]| {

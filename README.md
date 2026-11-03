@@ -85,7 +85,7 @@ Kel creates it on the first start, with a comment for every setting.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `font` | `"Consolas"` | Font name, as Windows shows it in Settings > Fonts |
+| `font` | `"JetBrains Mono"` | The terminal's font: `"JetBrains Mono"` is built in, or any installed font by the name Windows shows in Settings > Fonts. Kel's UI is always JetBrains Mono |
 | `font_size` | `18` | Font size in pixels |
 | `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
 | `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
@@ -106,9 +106,15 @@ To get the original file back with all its comments, delete it and restart Kel.
    ```
 3. Save. The font changes at once.
 
-For the icons that nvim plugins show (file types, git), pick a
-[Nerd Font](https://www.nerdfonts.com). In kickstart.nvim, also set
-`vim.g.have_nerd_font = true` in `init.lua`.
+Kel has JetBrains Mono built in, so nothing needs installing; the steps are for
+another font. Only the terminal changes: Kel's own tabs and menus stay JetBrains Mono.
+
+The icons that nvim plugins show (file types, git) are built in as well, from
+[Nerd Fonts](https://www.nerdfonts.com), and work with any font. In kickstart.nvim,
+set `vim.g.have_nerd_font = true` in `init.lua`.
+
+The built-in fonts and their licenses are in `assets/fonts`: JetBrains Mono (SIL Open
+Font License 1.1) and Symbols Nerd Font (MIT).
 
 ### Use another shell
 

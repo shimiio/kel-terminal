@@ -1,12 +1,13 @@
-//! Fallback fonts: for the characters the terminal's font doesn't have (emoji,
-//! Chinese, Japanese, Korean), fonts that come with Windows.
+//! Fallback fonts: for the characters the terminal's font doesn't have. First
+//! Kel's built-in icons (Nerd Font's, which nvim plugins use: any font gets
+//! them), then fonts that come with Windows (emoji, Chinese, Japanese, Korean).
 //!
 //! They're big (Segoe UI Emoji 12 MB, Microsoft YaHei 19 MB), so nothing is
 //! loaded at start, and each font only when a character first needs it. Which
 //! font has the character: its character map, read with ttf-parser without
 //! loading the rest (fast).
 
-use crate::font::Font;
+use crate::font::{self, Font};
 use fontdb::{Database, Family, ID, Query};
 
 /// Tried in this order: emoji, symbols, Chinese (also Japanese kana), Korean.
@@ -17,9 +18,13 @@ const FAMILIES: [&str; 4] = [
     "Malgun Gothic",
 ];
 
-/// `None` until the first character needs a fallback.
+/// Each `None` until the first character needs it.
 #[derive(Default)]
-pub struct Fallbacks(Option<Installed>);
+pub struct Fallbacks {
+    /// The built-in icons.
+    symbols: Option<Font>,
+    installed: Option<Installed>,
+}
 
 /// The installed fonts' names, and ours among them, in `FAMILIES` order.
 struct Installed {
@@ -35,8 +40,16 @@ struct Fallback {
 
 impl Fallbacks {
     /// The first fallback font that has `c`, loaded now if it wasn't yet.
+    /// Whether `c` is one of the built-in icons.
+    pub fn is_icon(&mut self, c: char) -> bool {
+        self.symbols.get_or_insert_with(font::symbols).has_glyph(c)
+    }
+
     pub fn font_for(&mut self, c: char) -> Option<&Font> {
-        let Installed { db, fonts } = self.0.get_or_insert_with(Installed::find);
+        if self.is_icon(c) {
+            return self.symbols.as_ref();
+        }
+        let Installed { db, fonts } = self.installed.get_or_insert_with(Installed::find);
         let fallback = fonts.iter_mut().find(|fallback| has(db, fallback.id, c))?;
         if fallback.font.is_none() {
             fallback.font = db.with_face_data(fallback.id, load).flatten();

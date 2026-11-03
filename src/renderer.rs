@@ -10,7 +10,7 @@ use crate::app::Selection;
 use crate::backdrop::Backdrop;
 use crate::card::{self, Card};
 use crate::fallback::Fallbacks;
-use crate::font::{Font, Fonts, Metrics};
+use crate::font::{self, Font, Fonts, Metrics};
 use crate::glass::Glass;
 use crate::icons::{Icon, Icons};
 use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
@@ -182,6 +182,8 @@ pub struct Renderer {
     /// The window's pixels, which we draw into.
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
     fonts: Fonts,
+    /// Kel's own UI's font: the built-in one, whatever the terminal's is.
+    ui_font: Font,
     /// The terminal's font size at 100%: the config's, or zoomed.
     font_size: f32,
     /// Windows' display scale, e.g. 1.5 at 150%. The font is drawn
@@ -226,12 +228,14 @@ impl Renderer {
         // All 4 styles share the same sizes, so measuring the regular one is enough.
         let font_size = font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], font_size * text_scale)?;
-        let ui = Ui::new(&fonts[0])?;
+        let [ui_font, ..] = font::built_in();
+        let ui = Ui::new(&ui_font)?;
 
         Ok(Renderer {
             window,
             surface,
             fonts,
+            ui_font,
             font_size,
             text_scale,
             cell_w,
@@ -285,7 +289,7 @@ impl Renderer {
             return 0;
         };
         if scale != self.ui.scale {
-            let _ = self.ui.set_scale(&self.fonts[0], scale);
+            let _ = self.ui.set_scale(&self.ui_font, scale);
         }
         let name_w = project_name_width(&project_name_shown(name), &self.ui);
         self.ui.px(PROJECT_NAME_LEFT) + name_w + self.ui.px(PROJECT_NAME_GAP)
@@ -310,7 +314,6 @@ impl Renderer {
     /// Switches to another font family. Like a size change, the cell is measured
     /// again: call `App::on_resize` after this.
     pub fn set_fonts(&mut self, fonts: Fonts) {
-        let _ = self.ui.set_font(&fonts[0]);
         self.fonts = fonts;
         self.glyphs.clear(); // letters of the old font
         self.set_font_size(self.font_size);
@@ -333,7 +336,7 @@ impl Renderer {
         self.surface.resize(w, h).unwrap();
         // The UI follows the layout's scale, which `App::on_resize` sets.
         if layout.scale != self.ui.scale {
-            let _ = self.ui.set_scale(&self.fonts[0], layout.scale);
+            let _ = self.ui.set_scale(&self.ui_font, layout.scale);
         }
         let mut buffer = self.surface.buffer_mut().unwrap();
         let theme = &self.theme;
@@ -367,7 +370,7 @@ impl Renderer {
             theme.background,
         );
         // After the panel: the tab on screen covers a piece of the panel's top line.
-        let font = &self.fonts[0];
+        let font = &self.ui_font; // all of the UI below: the built-in font
         draw_tab_bar(
             &mut buffer,
             width,
@@ -1716,7 +1719,9 @@ fn invisible(c: char) -> bool {
 ///
 /// A letter the font lacks comes from a fallback font, made smaller if it's
 /// bigger than its cells (1, or 2 for a wide one): Segoe UI Emoji's 😀 is 2.5
-/// cells wide at the font's size. A letter no font has: the font's "missing" box.
+/// cells wide at the font's size. The built-in icons may take 2: they're drawn
+/// big and reach into the next cell (a space, after an icon), as in Nerd Fonts'
+/// own fonts. A letter no font has: the font's "missing" box.
 fn glyph<'a>(
     cache: &'a mut HashMap<(char, usize), Glyph>,
     font: &Font,
@@ -1729,10 +1734,12 @@ fn glyph<'a>(
         if font.has_glyph(c) {
             return font.rasterize(c, size);
         }
+        let is_icon = fallbacks.is_icon(c);
         let Some(fallback) = fallbacks.font_for(c) else {
             return font.rasterize(c, size);
         };
-        let room = (char_width(c) * cell_w) as f32;
+        let cells = if is_icon { 2 } else { char_width(c) };
+        let room = (cells * cell_w) as f32;
         let advance = fallback.advance(c, size);
         let size = if advance > room {
             size * room / advance
