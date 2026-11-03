@@ -1344,9 +1344,8 @@ impl App {
             Some(open) => open.color,
             None => project::load(name).ok().and_then(|p| p.color),
         };
-        let palette = &self.config.colors.palette;
-        // The theme's red, green, yellow, blue, magenta, cyan.
-        let colors = &palette[1..=6];
+        // Kel's soft colors, not the terminal's palette.
+        let colors = &self.config.colors.project_colors;
         self.card = Some(Card::project(name, color, colors));
         self.request_redraw();
     }

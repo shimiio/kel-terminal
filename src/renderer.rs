@@ -385,7 +385,7 @@ impl Renderer {
         // A question waits for an answer now, so it comes before a problem.
         let message = match (chrome.question, chrome.status) {
             (Some(question), _) => Some((question, theme.palette[11])),
-            (None, Some(status)) => Some((status, theme.palette[9])),
+            (None, Some(status)) => Some((status, theme.failed)),
             (None, None) => None,
         };
         if let Some((text, color)) = message {
@@ -696,9 +696,9 @@ fn draw_tab_bar(
         let mark = match (label.busy, label.done) {
             _ if hovered.is_some() => None,
             (true, _) => Some((theme.foreground, RING_WIDTH)),
-            // Bright green and bright red, so they follow the theme.
-            (false, Some(true)) => Some((theme.palette[10], 0.0)),
-            (false, Some(false)) => Some((theme.palette[9], 0.0)),
+            // Kel's soft green and red, not the palette's loud ones.
+            (false, Some(true)) => Some((theme.done, 0.0)),
+            (false, Some(false)) => Some((theme.failed, 0.0)),
             (false, None) if label.activity => Some((theme.foreground, 0.0)),
             _ => None,
         };
@@ -1257,7 +1257,7 @@ fn draw_card(
     let n = card.fields().len();
     let note = card.fields()[card.focus()].note;
     let (hint, color) = match &card.error {
-        Some(error) => (error.clone(), theme.palette[9]),
+        Some(error) => (error.clone(), theme.failed),
         None => (format!("{note}   Enter   Esc"), dim),
     };
     let y = card::hint_y(rect, layout.scale, n) + ui.px(6);
@@ -1622,7 +1622,7 @@ fn draw_search(
     let status = search.status().unwrap_or_default();
     let color = match search.current() {
         Some(_) => blend(theme.frame, theme.foreground, 128),
-        None => theme.palette[9],
+        None => theme.failed,
     };
     let status_w = (status.chars().count() * ui.advance).min(text_w / 2);
     let status_x = text_x + text_w - status_w;

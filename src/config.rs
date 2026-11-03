@@ -72,7 +72,14 @@ frame = "#141414"    # the window around the panel
 border = "#333333"   # the panel's border line
 # accent = "#569cd6" # home's color, and of projects without their own: the tab
                      # icons, the logo's cursor. Without it: none, the text's gray
-# 16 colors: black, red, green, yellow, blue, magenta, cyan, white,
+# Kel's own colors, soft: a project's color is one of these (or any #hex).
+project_colors = [
+    "#e06c75", "#e5a46b", "#e5c07b", "#98c379", "#6cc4b8", "#7aa2e6", "#b39ae6", "#e690b8",
+]
+done = "#98c379"     # a command that ended well: the dot on its tab
+failed = "#e06c75"   # one that failed; and Kel's own errors
+# The terminal's 16 colors, which programs color their text with:
+# black, red, green, yellow, blue, magenta, cyan, white,
 # then the bright versions of the same 8.
 palette = [
     "#0c0c0c", "#c50f1f", "#13a10e", "#c19c00", "#0037da", "#881798", "#3a96dd", "#cccccc",
@@ -178,6 +185,20 @@ mod tests {
         let config: Config = toml::from_str("[colors]\nbackground = \"#000000\"").unwrap();
         assert_eq!(config.colors.background, 0x000000);
         assert_eq!(config.colors.foreground, Theme::default().foreground);
+    }
+
+    #[test]
+    fn project_colors() {
+        let config: Config = toml::from_str(
+            "[colors]
+project_colors = [\"#112233\", \"#445566\"]",
+        )
+        .unwrap();
+        assert_eq!(config.colors.project_colors, [0x112233, 0x445566]);
+        assert_eq!(config.colors.done, Theme::default().done);
+        let bad = "[colors]
+project_colors = [\"#112233\", \"blue\"]";
+        assert!(toml::from_str::<Config>(bad).is_err());
     }
 
     #[test]

@@ -44,6 +44,17 @@ pub struct Theme {
     /// own color is then the only color the window has. See `accent_for`.
     #[serde(deserialize_with = "optional_hex")]
     pub accent: Option<u32>,
+    /// Kel's own colors, soft, all as bright: a project's color is picked among
+    /// them (or is any #hex). Not the palette: programs color their text with
+    /// that, and its colors are loud.
+    #[serde(deserialize_with = "hex_list")]
+    pub project_colors: Vec<u32>,
+    /// A command that ended well: the dot on its tab.
+    #[serde(deserialize_with = "hex_color")]
+    pub done: u32,
+    /// One that failed; and Kel's own errors (a bad config, nothing found).
+    #[serde(deserialize_with = "hex_color")]
+    pub failed: u32,
     /// The 16 basic colors: 0-7 normal (codes 30-37), 8-15 bright (codes 90-97).
     #[serde(deserialize_with = "hex_palette")]
     pub palette: [u32; 16],
@@ -59,6 +70,18 @@ impl Default for Theme {
             frame: 0x141414,     // a bit darker than the background
             border: 0x333333,    // a bit lighter
             accent: None,        // none: home is gray
+            project_colors: vec![
+                0xe06c75, // red
+                0xe5a46b, // orange
+                0xe5c07b, // yellow
+                0x98c379, // green
+                0x6cc4b8, // teal
+                0x7aa2e6, // blue
+                0xb39ae6, // purple
+                0xe690b8, // pink
+            ],
+            done: 0x98c379,   // the green
+            failed: 0xe06c75, // the red
             palette: [
                 0x0c0c0c, 0xc50f1f, 0x13a10e, 0xc19c00, 0x0037da, 0x881798, 0x3a96dd, 0xcccccc,
                 0x767676, 0xe74856, 0x16c60c, 0xf9f1a5, 0x3b78ff, 0xb4009e, 0x61d6d6, 0xf2f2f2,
@@ -134,6 +157,19 @@ pub fn write_hex<S: Serializer>(color: &Option<u32>, serializer: S) -> Result<S:
         Some(color) => serializer.serialize_str(&format!("#{color:06x}")),
         None => serializer.serialize_none(),
     }
+}
+
+/// Reads a list of colors, as many as there are.
+fn hex_list<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u32>, D::Error> {
+    let texts = Vec::<String>::deserialize(deserializer)?;
+    texts
+        .iter()
+        .map(|text| {
+            parse_hex(text).ok_or_else(|| {
+                D::Error::custom(format!("\"{text}\" is not a color like \"#ff8000\""))
+            })
+        })
+        .collect()
 }
 
 /// Reads the palette from the config: exactly 16 colors.

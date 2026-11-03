@@ -309,14 +309,14 @@ impl Card {
 
 /// The card's size and the room in it, pixels at 100%: its width, the room around
 /// the fields, a field's height, the line with the keys under them.
-const WIDTH: usize = 380;
+const WIDTH: usize = 420;
 const PADDING: usize = 8;
 const FIELD_HEIGHT: usize = 30;
 const HINT_HEIGHT: usize = 28;
 
 /// Where the card goes: under `anchor` (the tab), from its left edge, moved left
 /// if it would go past the window's right edge. e.g. a tab at x = 700 in a
-/// 1000-wide window: 1000 - 8 - 380 = 612.
+/// 1000-wide window: 1000 - 8 - 420 = 572.
 pub fn rect(anchor: Rect, window: Rect, scale: f32, fields: usize) -> Rect {
     let s = |n: usize| scaled(n, scale);
     let w = s(WIDTH).min(window.w.saturating_sub(2 * s(PADDING)));
@@ -457,10 +457,10 @@ mod tests {
             h: 32,
         };
         let card = rect(tab, window, 1.0, 2);
-        assert_eq!((card.x, card.y, card.w, card.h), (36, 44, 380, 104));
+        assert_eq!((card.x, card.y, card.w, card.h), (36, 44, 420, 104));
         // A tab near the right edge: the card moves left to fit.
         let far = rect(Rect { x: 700, ..tab }, window, 1.0, 2);
-        assert_eq!(far.x, 612);
+        assert_eq!(far.x, 572);
         // Fields at 52..82 and 82..112.
         let card_ = Card::tab(1, None, None, true);
         assert_eq!(card_.field_at(card, 1.0, 100, 60), Some(0));
