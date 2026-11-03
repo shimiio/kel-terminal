@@ -93,6 +93,7 @@ Kel creates it on the first start, with a comment for every setting.
 | `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
 | `pixel_name` | `true` | The project's name before the tabs in pixels, like the logo; `false`: in the font |
 | `cursor` | `"block"` | The cursor: `"block"` (the whole cell), `"underline"` or `"bar"`. Programs can pick their own (nvim does). While the keys go elsewhere (the sidebar, the palette, another window) it's a hollow box, not blinking |
+| `backdrop` | `"auto"` | The start screen's ASCII picture, new each time it shows: `"auto"` (a terrain by day, stars at night), `"terrain"`, `"contours"`, `"mountains"`, `"sea"`, `"wind"`, `"stars"` or `"none"`. Mountains and the sea have stars in their sky at night |
 | `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |
 | `[glass]` | `effect = "acrylic"`, `opacity = 0.85`, `grain = 0.1` | Kel see-through: `"acrylic"` blurs what's behind the window, `"mica"` takes a faint tint of the wallpaper, `"none"` is solid (`effect` applies after a restart). Under a full-screen program (lazygit, htop) and Claude Code the terminal's background is solid anyway, the frame around it glass: their many colors and lines read better so (nvim paints its own background). `solid_under_apps = false` turns it off, `solid_color = "#000000"` picks its color (the theme's background without it). `opacity`: how much of the theme's colors cover the glass; `grain`: a fine grain on it, like frosted glass |
 | `[colors]` | dark gray, soft colors | Text, background, cursor, selection, frame, border, `accent` (home's color, none by default: gray), Kel's own soft colors (`project_colors` to pick a project's from, `done` and `failed` for a command's dot and errors) and the terminal's 16 basic colors |
@@ -320,7 +321,7 @@ the file keeps the tabs it had, not none.
 | `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
 | `src/config.rs` | Reads `config.toml` |
 | `src/glass.rs` | Glass: which colors are see-through, the grain, asking Windows for the blur |
-| `src/backdrop.rs` | The start screen's ASCII background: terrain by day, stars at night |
+| `src/backdrop.rs` | The start screen's ASCII background: terrain by day, stars at night; or contours, mountains, the sea, wind (`backdrop`) |
 | `src/icons.rs` | The tab icons (8 x 8 pixel grids, a pixel 2 x 2 on screen, like the logo) and which tab gets which |
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
 | `src/project.rs` | Reads and writes a project file: the tabs, their folders and commands |

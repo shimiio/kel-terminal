@@ -365,7 +365,7 @@ impl App {
         // Home: the start screen. Not over the problems, they're to be read;
         // nor when Kel was opened on a folder, to work there.
         let start = (project_name.is_none() && home_folder.is_none() && problems.is_empty())
-            .then(|| Start::new(project::recent_entries(start::RECENT)));
+            .then(|| Start::new(project::recent_entries(start::RECENT), config.backdrop));
 
         Ok(App {
             window: None,
@@ -916,7 +916,8 @@ impl App {
     /// terminal stays as it was (a key puts the screen away).
     fn start_screen(&self) -> Option<Start> {
         let idle = !self.tab().command.running();
-        (self.project.is_none() && idle).then(|| Start::new(project::recent_entries(start::RECENT)))
+        (self.project.is_none() && idle)
+            .then(|| Start::new(project::recent_entries(start::RECENT), self.config.backdrop))
     }
 
     /// The tabs of the project `name` (`None`: home, one plain tab), started now:
@@ -1141,7 +1142,13 @@ impl App {
                     }
                     self.request_redraw();
                 }
+                // Another picture: shown at once, if the start screen is up.
+                let backdrop = new.backdrop != self.config.backdrop;
                 self.config = new;
+                if backdrop && self.start.is_some() {
+                    self.start = self.start_screen();
+                    self.request_redraw();
+                }
                 error
             }
             // e.g. "config.toml, line 3: invalid type: string "big", expected f32"

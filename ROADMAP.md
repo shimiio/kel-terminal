@@ -271,7 +271,10 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] "Open in Kel" on a folder in Explorer (`kel <folder>`): install.ps1 puts it in the
       classic menu (Windows 11: "Show more options"); a project's folder opens the project.
       In the short Windows 11 menu: only as a package (MSIX), maybe with the release
-- [ ] Home's ASCII landscape: try other pictures
+- [x] Home's ASCII landscape: the terrain with air between its hills (the lows
+      empty, the shapes bigger: it was a wall of `=` and `-`). Other pictures tried
+      (contours, mountains, the sea, wind) and kept, not shown by default: `backdrop`
+      in the config picks one. Maybe later: a random one each time
 - [ ] Settings review before Linux/macOS: what else people will want to change (keys,
       scrollback size, the bell, copy on select, the start screen, the shell per
       project...), so the config's shape is settled before it has to work on three systems

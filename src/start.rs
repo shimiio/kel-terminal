@@ -18,7 +18,7 @@
 //! line. Only its state and where its rows are live here: `App` sends the keys
 //! and the clicks, `renderer` draws it.
 
-use crate::backdrop::Backdrop;
+use crate::backdrop::{self, Backdrop};
 use crate::keys::Action;
 use crate::layout::{Rect, scaled};
 use crate::sidebar::{Entry, Live};
@@ -43,17 +43,18 @@ pub struct Start {
     /// Under the mouse: lit, and a click opens it. Not chosen: a mouse resting
     /// over the list shouldn't make Enter open a project.
     hovered: Option<usize>,
-    /// Behind it: terrain by day, stars at night, new each time it shows.
-    backdrop: Backdrop,
+    /// Behind it: terrain by day, stars at night (or what the config says),
+    /// new each time it shows.
+    backdrop: Option<Backdrop>,
 }
 
 impl Start {
-    pub fn new(projects: Vec<Entry>) -> Start {
+    pub fn new(projects: Vec<Entry>, backdrop: backdrop::Choice) -> Start {
         Start {
             projects,
             selected: None,
             hovered: None,
-            backdrop: Backdrop::now(),
+            backdrop: Backdrop::now(backdrop),
         }
     }
 
@@ -61,8 +62,8 @@ impl Start {
         &self.projects
     }
 
-    pub fn backdrop(&self) -> &Backdrop {
-        &self.backdrop
+    pub fn backdrop(&self) -> Option<&Backdrop> {
+        self.backdrop.as_ref()
     }
 
     /// Whether row `row` is lit: chosen, or under the mouse.
@@ -173,7 +174,7 @@ mod tests {
             current: false,
             live: Live::default(),
         };
-        Start::new(names.iter().map(entry).collect())
+        Start::new(names.iter().map(entry).collect(), backdrop::Choice::None)
     }
 
     #[test]

@@ -1483,16 +1483,9 @@ fn draw_start(
         h: bottom.saturating_sub(col.y),
         ..col
     };
-    draw_backdrop(
-        pixels,
-        width,
-        theme,
-        area,
-        clear,
-        start.backdrop(),
-        font,
-        ui,
-    );
+    if let Some(backdrop) = start.backdrop() {
+        draw_backdrop(pixels, width, theme, area, clear, backdrop, font, ui);
+    }
 
     // The logo, big, its cursor blinking with the terminal's: type, it says.
     // Home: no color, the text's.
@@ -1739,7 +1732,7 @@ fn draw_backdrop(
     let rows = area.h.saturating_sub(2 * pad) / cell_h;
     for row in 0..rows {
         for col in 0..cols {
-            let Some(mark) = backdrop.mark(col, row) else {
+            let Some(mark) = backdrop.mark(col, row, rows) else {
                 continue;
             };
             let (x, y) = (area.x + pad + col * cell_w, area.y + pad + row * cell_h);

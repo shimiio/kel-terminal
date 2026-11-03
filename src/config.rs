@@ -3,6 +3,7 @@
 //! On the first start Kel writes the default file, with a comment for every setting.
 //! A setting missing from the file keeps its default value.
 
+use crate::backdrop;
 use crate::glass::Glass;
 use crate::layout::Spacing;
 use crate::term::CursorShape;
@@ -45,6 +46,11 @@ pixel_name = true
 # The cursor: "block" (the whole cell), "underline" or "bar".
 # Programs can pick their own (nvim does); this is for the rest.
 cursor = "block"
+
+# The start screen's picture behind the logo, new each time it shows:
+# "auto" (a terrain by day, stars at night), "terrain", "contours", "mountains",
+# "sea", "wind", "stars", or "none". Mountains and the sea have stars at night.
+backdrop = "auto"
 
 # Spaces around the terminal, in pixels. The terminal is a panel inside the window:
 # margin (window edge → panel), border (the panel's line), padding (line → text).
@@ -104,6 +110,7 @@ pub struct Config {
     pub ui_scale: f32,
     pub pixel_name: bool,
     pub cursor: CursorShape,
+    pub backdrop: backdrop::Choice,
     pub layout: Spacing,
     pub glass: Glass,
     pub colors: Theme,
@@ -118,6 +125,7 @@ impl Default for Config {
             ui_scale: 1.0,
             pixel_name: true,
             cursor: CursorShape::Block,
+            backdrop: backdrop::Choice::Auto,
             layout: Spacing::default(),
             glass: Glass::default(),
             colors: Theme::default(),
@@ -238,6 +246,16 @@ project_colors = [\"#112233\", \"blue\"]";
             toml::from_str("[glass]\nsolid_under_apps = false\nsolid_color = \"#000000\"").unwrap();
         assert!(!config.glass.solid_under_apps);
         assert_eq!(config.glass.solid_color, Some(0));
+    }
+
+    #[test]
+    fn backdrop() {
+        use crate::backdrop::Choice;
+        assert_eq!(Config::default().backdrop, Choice::Auto);
+        let config: Config = toml::from_str("backdrop = \"mountains\"").unwrap();
+        assert_eq!(config.backdrop, Choice::Mountains);
+        assert_eq!(config.backdrop.name(), "mountains");
+        assert!(toml::from_str::<Config>("backdrop = \"forest\"").is_err());
     }
 
     #[test]

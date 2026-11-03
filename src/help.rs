@@ -192,6 +192,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             "the name in pixels",
         ),
         row("cursor", &text(cursor), "programs can pick theirs"),
+        row(
+            "backdrop",
+            &text(config.backdrop.name()),
+            "the start screen's",
+        ),
         Line::Gap,
         title("[LAYOUT]"),
         row("margin", &layout.margin.to_string(), "window edge to panel"),
