@@ -70,6 +70,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
 - [x] Tab icons: pixel art (PNGs at first, grids in code now), tinted with a color;
       picked by the program in the title (nvim, cargo...); in a plain shell, by the tab's
       name (docker, run/start)
+- [x] More icons: claude (a spark), ssh (a server; also a tab called `vps`), database (a
+      cylinder; `db`, `psql`, `redis`, `lazysql`...)
 - [ ] Icon by the command that runs (`docker compose up` → docker): PowerShell would send
       the command's text (like VS Code's `ESC]633;E`), its first word picks the icon.
       Order: the command, the title, the tab's name

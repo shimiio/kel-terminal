@@ -4,8 +4,8 @@
 //! home), the muted gray on the others.
 //!
 //! ```text
-//! k▌        >_        N         git       docker    ▶
-//! #...###.  #.......  .#...#..  ##...##.  ...#....  .##.....
+//! k▌        >_        N         git       docker    ▶         claude    ssh       database
+//! #...###.  #.......  .#...#..  ##...##.  ...#....  .##.....  .#.#.#..  #.#...#.  #######.
 //! ```
 
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ use std::collections::HashMap;
 const PIXEL: usize = 2;
 
 /// The icons: a name and its grid, 8 rows of 8, `#` lit.
-const GRIDS: [(&str, [&str; 8]); 6] = [
+const GRIDS: [(&str, [&str; 8]); 9] = [
     (
         "kel",
         [
@@ -57,6 +57,30 @@ const GRIDS: [(&str, [&str; 8]); 6] = [
             "........",
         ],
     ),
+    (
+        // A spark, its middle empty.
+        "claude",
+        [
+            "...#....", ".#.#.#..", "..###...", "###.###.", "..###...", ".#.#.#..", "...#....",
+            "........",
+        ],
+    ),
+    (
+        // A server: two units with a light each, on a stand.
+        "ssh",
+        [
+            "#######.", "#.#...#.", "#######.", "#.#...#.", "#######.", "...#....", ".#####..",
+            "........",
+        ],
+    ),
+    (
+        // A cylinder: the lid, a band, the bottom.
+        "database",
+        [
+            ".#####..", "#######.", "#.....#.", ".#####..", "#.....#.", "#.....#.", ".#####..",
+            "........",
+        ],
+    ),
 ];
 
 /// The icon of a tab whose title and name pick none.
@@ -66,12 +90,28 @@ const DEFAULT: &str = "terminal";
 pub const KEL: &str = "kel";
 
 /// Words in a tab's title or name that pick an icon, checked in this order.
-const WORDS: [(&str, &str); 7] = [
+const WORDS: [(&str, &str); 22] = [
     ("nvim", "nvim"),
     ("vim", "nvim"),
+    ("claude", "claude"),
     ("lazygit", "git"),
     ("git", "git"),
     ("docker", "docker"),
+    // Not "server": a "dev server" tab is a terminal.
+    ("ssh", "ssh"),
+    ("vps", "ssh"),
+    ("db", "database"),
+    ("sql", "database"),
+    ("psql", "database"),
+    ("pgcli", "database"),
+    ("mysql", "database"),
+    ("sqlite", "database"),
+    ("sqlite3", "database"),
+    ("lazysql", "database"),
+    ("redis", "database"),
+    ("mongo", "database"),
+    ("mongosh", "database"),
+    ("postgres", "database"),
     ("start", "start"),
     ("run", "start"),
 ];
@@ -193,5 +233,19 @@ mod tests {
         assert_eq!(pick("powershell", Some("dev server")), "terminal");
         // What runs comes first: nvim, in a tab called "docker".
         assert_eq!(pick("main.rs - Nvim", Some("docker")), "nvim");
+    }
+
+    #[test]
+    fn claude_ssh_and_databases() {
+        assert_eq!(pick("powershell", Some("claude")), "claude");
+        assert_eq!(pick("Claude Code", None), "claude");
+        assert_eq!(pick("ssh root@1.2.3.4", None), "ssh");
+        assert_eq!(pick("powershell", Some("VPS")), "ssh");
+        assert_eq!(pick("powershell", Some("db")), "database");
+        assert_eq!(pick("redis-cli", None), "database");
+        assert_eq!(pick("psql -U postgres", None), "database");
+        // Whole words only: "dbg" isn't "db", "sshd_config" isn't "ssh".
+        assert_eq!(pick("dbg", None), "terminal");
+        assert_eq!(pick("sshd_config", None), "terminal");
     }
 }
