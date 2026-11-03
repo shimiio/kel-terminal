@@ -204,8 +204,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       their colors, the last line saves the tabs as a new one. Over the terminal, so nothing
       reflows when it opens. First row `home`: Kel without a project, where you go to the
       projects from
-- [ ] Sidebar: open on hover over `≡` (with a delay)? Tried without first;
-      scrolling when there are more projects than fit
+- [x] Sidebar peek: the mouse resting on `≡` 0.4 s opens it, leaving it closes it; a click
+      or a key in it keeps it. Passing over `≡` on the way to a tab doesn't open it
+- [ ] Sidebar: scrolling when there are more projects than fit
 - [x] Workspaces in one window: home and projects, switched from the sidebar or the palette.
       Switching hides a set of tabs, nothing stops: a `ping -t` keeps going. Leaving saves
       the project's file; a project's last tab closed goes home. Home has no file: it lives

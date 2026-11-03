@@ -42,6 +42,9 @@ const COLS: usize = 80;
 const DOUBLE_CLICK: Duration = Duration::from_millis(500);
 /// How long the cursor stays on, then off.
 const BLINK_INTERVAL: Duration = Duration::from_millis(500);
+/// How long the mouse rests on `≡` before the sidebar opens by itself: long
+/// enough that passing over it on the way to a tab doesn't.
+const PEEK_DELAY: Duration = Duration::from_millis(400);
 
 /// The selected area, from where the mouse was pressed to where it is now. (row, col)
 #[derive(Clone, Copy, Debug)]
@@ -240,6 +243,12 @@ pub struct App {
     last_tab_click: Option<(TabId, Instant)>,
     /// A project held by the mouse in the sidebar.
     sidebar_drag: Option<SidebarDrag>,
+    /// When the mouse came onto `≡`, the sidebar closed: at `PEEK_DELAY` after
+    /// it, the sidebar opens (see `peek`).
+    burger_since: Option<Instant>,
+    /// The open sidebar came from resting on `≡`, a peek: it closes when the
+    /// mouse leaves it. A click or a key in it keeps it, as if opened by hand.
+    sidebar_peek: bool,
     /// The window's icon as set last: its colors and size (see `update_icon`).
     icon: Option<IconKey>,
 }
@@ -396,6 +405,8 @@ impl App {
             help: None,
             last_tab_click: None,
             sidebar_drag: None,
+            burger_since: None,
+            sidebar_peek: false,
             icon: None,
         })
     }
@@ -1125,6 +1136,7 @@ impl App {
                 self.request_redraw();
             }
             Action::Sidebar => {
+                self.sidebar_peek = false;
                 self.sidebar = match self.sidebar {
                     Some(_) => None,
                     None => {
@@ -1875,6 +1887,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CursorLeft { .. } => {
                 self.mouse_inside = false;
                 self.set_hovered(None);
+                self.leave_peek();
                 self.update_link();
                 if let Some(start) = &mut self.start
                     && start.hover(None)
@@ -1915,8 +1928,14 @@ impl ApplicationHandler<UserEvent> for App {
                 self.pending_close = None;
             }
         }
-        // Sleep until the next event, or until it's time to blink, whichever comes first.
-        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_blink));
+        self.peek();
+        // Sleep until the next event, or until it's time to blink (or to open the
+        // sidebar, the mouse resting on `≡`), whichever comes first.
+        let wake = match self.burger_since {
+            Some(since) => (since + PEEK_DELAY).min(self.next_blink),
+            None => self.next_blink,
+        };
+        event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
     }
 }
 
@@ -2094,6 +2113,7 @@ impl App {
     /// or a key for the shell.
     fn on_key(&mut self, event: KeyEvent) {
         self.restart_blink();
+        self.sidebar_peek = false; // a key in a peek: it stays
         // An open card gets every key: it's typed in.
         if self.card.is_some() {
             self.card_key(&event);
@@ -2248,6 +2268,7 @@ impl App {
             }
         }
         self.update_hovered();
+        self.leave_peek();
         // The sidebar is open: the row under the mouse is chosen, nothing else.
         // A project held: it follows the mouse, a place at a time.
         if let Some(sidebar) = &mut self.sidebar {
@@ -2377,6 +2398,9 @@ impl App {
     /// A mouse button: the program's, if it asked for the mouse; else Kel's (the
     /// left one selects text). The title bar and the edges are always Kel's.
     fn on_mouse_button(&mut self, state: ElementState, button: MouseButton) {
+        if state == ElementState::Pressed {
+            self.sidebar_peek = false; // a click in a peek: it stays
+        }
         // A card: a click on a field puts the cursor there; one outside keeps
         // what's typed and closes it (as renaming a file in Explorer does).
         if self.card.is_some() && state == ElementState::Pressed {
@@ -2530,10 +2554,44 @@ impl App {
         self.set_hovered(hit);
     }
 
-    /// What's under the mouse in the title bar changed: draw it again.
+    /// What's under the mouse in the title bar changed: draw it again. Onto
+    /// `≡`, with nothing open: the wait for a peek starts (see `peek`).
     fn set_hovered(&mut self, hit: Option<TitleHit>) {
         if self.hovered != hit {
             self.hovered = hit;
+            self.request_redraw();
+            let nothing_open = self.sidebar.is_none()
+                && self.palette.is_none()
+                && self.card.is_none()
+                && self.help.is_none();
+            self.burger_since = (hit == Some(TitleHit::Sidebar) && nothing_open).then(Instant::now);
+        }
+    }
+
+    /// The mouse has rested on `≡` for `PEEK_DELAY`: the sidebar opens, as a
+    /// peek, closing again when the mouse leaves it (see `leave_peek`).
+    fn peek(&mut self) {
+        let due = self
+            .burger_since
+            .is_some_and(|since| Instant::now() >= since + PEEK_DELAY);
+        if !due {
+            return;
+        }
+        self.burger_since = None;
+        if self.sidebar.is_none() {
+            self.run(Action::Sidebar);
+            self.sidebar_peek = true;
+        }
+    }
+
+    /// A peek closes when the mouse is out of the sidebar (or the window), unless
+    /// a click or a key kept it.
+    fn leave_peek(&mut self) {
+        let (x, y) = self.mouse_pos;
+        let inside = self.mouse_inside && self.layout.sidebar().contains(x, y);
+        if self.sidebar_peek && self.sidebar.is_some() && !inside {
+            self.sidebar = None;
+            self.sidebar_peek = false;
             self.request_redraw();
         }
     }
