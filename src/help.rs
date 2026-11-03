@@ -144,7 +144,7 @@ fn keys_lines() -> Vec<Line> {
         row("Drag a tab", "Move it", ""),
         row("Ctrl+click link", "Open it", ""),
         row("Drag a project", "Move it, in the sidebar", ""),
-        row("Rest on ≡", "The sidebar, till you leave it", ""),
+        row("Rest on ◫", "The sidebar, till you leave it", ""),
         Line::Gap,
         row("Esc", "Closes what's open", ""),
     ]);

@@ -1,4 +1,4 @@
-//! The sidebar (`≡` at the tab bar's start, or Ctrl+Shift+B): a panel over the
+//! The sidebar (the sidebar button at the tab bar's start, or Ctrl+Shift+B): a panel over the
 //! left of the window, the rest dimmed. First `home`, Kel without a project; then
 //! the projects, each with its color; last "Save the tabs as a project".
 //!

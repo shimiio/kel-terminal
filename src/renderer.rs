@@ -849,7 +849,7 @@ fn draw_bar_buttons(
         // A square in the middle of the button's place, 24 x 24 at 100%.
         let side = s(24).min(r.w).min(r.h);
         let (bx, by) = (r.x + (r.w - side) / 2, r.y + (r.h - side) / 2);
-        // `≡` stays lit while its sidebar is open.
+        // The sidebar's button stays lit while its sidebar is open.
         let open = hit == TitleHit::Sidebar && chrome.sidebar.is_some();
         let fg = if chrome.hovered == Some(hit) || open {
             fill_rect(pixels, width, bx, by, side, side, lit);
@@ -861,11 +861,15 @@ fn draw_bar_buttons(
         let (n, t) = (s(10), s(1));
         let (x, y) = (bx + (side - n) / 2, by + (side - n) / 2);
         match hit {
-            // Three lines across: the top, the middle, the bottom.
+            // A panel with a column on its left: what it opens. 12 x 10 at 100%,
+            // the column 4 wide.
             TitleHit::Sidebar => {
-                for line_y in [y + s(1), y + (n - t) / 2, y + n - t - s(1)] {
-                    fill_rect(pixels, width, x, line_y, n, t, fg);
-                }
+                let (w, x) = (s(12), bx + (side - s(12)) / 2);
+                fill_rect(pixels, width, x, y, w, t, fg);
+                fill_rect(pixels, width, x, y + n - t, w, t, fg);
+                fill_rect(pixels, width, x, y, t, n, fg);
+                fill_rect(pixels, width, x + w - t, y, t, n, fg);
+                fill_rect(pixels, width, x + s(4), y, t, n, fg);
             }
             // Two lines through the middle.
             TitleHit::NewTab => {

@@ -42,7 +42,7 @@ const COLS: usize = 80;
 const DOUBLE_CLICK: Duration = Duration::from_millis(500);
 /// How long the cursor stays on, then off.
 const BLINK_INTERVAL: Duration = Duration::from_millis(500);
-/// How long the mouse rests on `≡` before the sidebar opens by itself: long
+/// How long the mouse rests on the sidebar button before the sidebar opens by itself: long
 /// enough that passing over it on the way to a tab doesn't.
 const PEEK_DELAY: Duration = Duration::from_millis(400);
 
@@ -243,10 +243,10 @@ pub struct App {
     last_tab_click: Option<(TabId, Instant)>,
     /// A project held by the mouse in the sidebar.
     sidebar_drag: Option<SidebarDrag>,
-    /// When the mouse came onto `≡`, the sidebar closed: at `PEEK_DELAY` after
+    /// When the mouse came onto the sidebar button, the sidebar closed: at `PEEK_DELAY` after
     /// it, the sidebar opens (see `peek`).
     burger_since: Option<Instant>,
-    /// The open sidebar came from resting on `≡`, a peek: it closes when the
+    /// The open sidebar came from resting on the sidebar button, a peek: it closes when the
     /// mouse leaves it. A click or a key in it keeps it, as if opened by hand.
     sidebar_peek: bool,
     /// The window's icon as set last: its colors and size (see `update_icon`).
@@ -1930,7 +1930,7 @@ impl ApplicationHandler<UserEvent> for App {
         }
         self.peek();
         // Sleep until the next event, or until it's time to blink (or to open the
-        // sidebar, the mouse resting on `≡`), whichever comes first.
+        // sidebar, the mouse resting on the sidebar button), whichever comes first.
         let wake = match self.burger_since {
             Some(since) => (since + PEEK_DELAY).min(self.next_blink),
             None => self.next_blink,
@@ -2555,7 +2555,7 @@ impl App {
     }
 
     /// What's under the mouse in the title bar changed: draw it again. Onto
-    /// `≡`, with nothing open: the wait for a peek starts (see `peek`).
+    /// the sidebar button, with nothing open: the wait for a peek starts (see `peek`).
     fn set_hovered(&mut self, hit: Option<TitleHit>) {
         if self.hovered != hit {
             self.hovered = hit;
@@ -2568,7 +2568,7 @@ impl App {
         }
     }
 
-    /// The mouse has rested on `≡` for `PEEK_DELAY`: the sidebar opens, as a
+    /// The mouse has rested on the sidebar button for `PEEK_DELAY`: the sidebar opens, as a
     /// peek, closing again when the mouse leaves it (see `leave_peek`).
     fn peek(&mut self) {
         let due = self

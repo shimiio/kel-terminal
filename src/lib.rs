@@ -23,7 +23,7 @@
 //! - `term`: understands what the shell sends and keeps the screen as a grid of cells.
 //! - `renderer`: turns that grid into pixels.
 //! - `search`: the search in the output (Ctrl+Shift+F): what's typed, the matches.
-//! - `sidebar`: the panel of projects (`≡`, Ctrl+Shift+B).
+//! - `sidebar`: the panel of projects (the sidebar button, Ctrl+Shift+B).
 //! - `card`: the small box for changing a tab's name and command.
 //! - `start`: the start screen of a new home: the recent projects.
 //! - `help`: all the keys and the settings now (Ctrl+Shift+/).

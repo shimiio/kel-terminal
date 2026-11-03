@@ -65,7 +65,7 @@ pub enum TitleHit {
     NewTab,
     /// `⌄`: the command palette.
     Palette,
-    /// `≡`, before the tabs: the sidebar.
+    /// the sidebar button, before the tabs: the sidebar.
     Sidebar,
     /// The tab at `index`; `close`: on its `×`.
     Tab {
@@ -142,7 +142,7 @@ pub struct Layout {
     pub title_bar: Rect,
     /// The part of the title bar where the tabs are.
     pub tab_bar: Rect,
-    /// `≡` at the tab bar's start: opens the sidebar. The project's name and the
+    /// the sidebar button at the tab bar's start: opens the sidebar. The project's name and the
     /// tabs come after it.
     pub sidebar_button: Rect,
     /// The window buttons, top right, from the window's top edge down to the panel.
@@ -279,7 +279,7 @@ impl Layout {
         .map(|(_, button)| button)
     }
 
-    /// Leaves `lead` pixels after `≡`, before the first tab, for the project's
+    /// Leaves `lead` pixels after the sidebar button, before the first tab, for the project's
     /// name. At most half the bar: the tabs need room too.
     pub fn set_lead(&mut self, lead: usize) {
         self.lead = lead.min(self.tab_bar.w / 2);
@@ -297,13 +297,13 @@ impl Layout {
         }
     }
 
-    /// Where the first tab starts: after `≡` and the project's name.
+    /// Where the first tab starts: after the sidebar button and the project's name.
     fn tabs_start(&self) -> usize {
         self.sidebar_button.x + self.sidebar_button.w + self.lead
     }
 
     /// Where each of `count` tabs is, left to right in the tab bar. They leave room
-    /// for `≡` before them and the `+` and `⌄` buttons after them. e.g. an
+    /// for the sidebar button before them and the `+` and `⌄` buttons after them. e.g. an
     /// 846-pixel bar: 3 tabs are 180 wide each; 10 tabs get (846 - 3 x 28) / 10
     /// = 76 each.
     pub fn tabs(&self, count: usize) -> Vec<Rect> {
@@ -457,7 +457,7 @@ mod tests {
     fn tabs_side_by_side() {
         let layout = Spacing::default().layout(1000, 700, 1.0);
         let tabs = layout.tabs(3);
-        // After `≡`, 28 wide.
+        // After the sidebar button, 28 wide.
         assert_eq!(
             tabs[0],
             Rect {
@@ -468,7 +468,7 @@ mod tests {
             }
         );
         assert_eq!(tabs[2].x, 36 + 2 * 180);
-        // Too many for 180 each: (846 - 3 x 28 for ≡, + and ⌄) / 10 = 76
+        // Too many for 180 each: (846 - 3 x 28 for the sidebar button, + and ⌄) / 10 = 76
         assert_eq!(layout.tabs(10)[0].w, 76);
         // A click at (250, 20) is on the second tab.
         assert!(tabs[1].contains(250, 20));
@@ -501,7 +501,7 @@ mod tests {
     #[test]
     fn title_bar_hits() {
         let layout = Spacing::default().layout(1000, 700, 1.0);
-        // ≡ at 8..36, 2 tabs: 36..216 and 216..396, then + at 396..424 and ⌄
+        // the sidebar button at 8..36, 2 tabs: 36..216 and 216..396, then + at 396..424 and ⌄
         // at 424..452.
         let hit = |x| layout.title_hit(x, 20, 2);
         assert_eq!(hit(20), Some(TitleHit::Sidebar));

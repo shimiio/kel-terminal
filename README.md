@@ -59,7 +59,7 @@ the new program.
 | F2 in the sidebar | The project's card (or a right click on it, or `Edit project` in the palette): its name, which renames its file, and its color: ←→ through the theme's, or a `#hex` typed, a dot showing it as it's typed |
 | Double-click a tab | Its card (or a right click): the tab's name (empty: the program's title) and, in a project, its command, which runs when the project opens. Enter or a click outside keeps it, in the project's file at once; Esc doesn't. Also `Edit tab` in the palette |
 | Ctrl+Shift+H | Home, its start screen: position 0, a calm place to start from. In home too: the start screen comes back (unless a command runs there) |
-| Ctrl+Shift+B | The sidebar of projects (or `≡` at the tab bar's start: a click, or the mouse resting on it a moment, which opens it until the mouse leaves it; a click or a key in it keeps it). First `home`: Kel without a project. Then the projects, each with its color; Enter or a click goes to one, Del closes an open one, Shift+Del deletes one, the last line saves the tabs as a new one. Esc or a click outside closes the sidebar |
+| Ctrl+Shift+B | The sidebar of projects (or the panel button at the tab bar's start: a click, or the mouse resting on it a moment, which opens it until the mouse leaves it; a click or a key in it keeps it). First `home`: Kel without a project. Then the projects, each with its color; Enter or a click goes to one, Del closes an open one, Shift+Del deletes one, the last line saves the tabs as a new one. Esc or a click outside closes the sidebar |
 | Ctrl+Shift+F | Find in the output (not the typed commands: that's PowerShell's Ctrl+R). Type: every match is marked, the newest one chosen. Enter or Up: the one before, Shift+Enter or Down: the next one. Any case: `error` finds `ERROR`, also cut at the window's edge. Esc closes |
 | Ctrl+click | Opens the `https://` link under the mouse in the browser (also in nvim). Hold Ctrl and the link is underlined. A link cut at the window's edge is one link; a `.` or `,` after it isn't part of it |
 | Ctrl+C | Stop the running command |
@@ -200,7 +200,7 @@ A project is a file in `%APPDATA%\kel\projects`, a recipe for a set of tabs. The
 file's name is the project's: `projects\kel.toml` opens with `kel kel`
 (or `cargo run -- kel`). Each `kel` opens a new window.
 
-From an open Kel: the sidebar (`≡` or Ctrl+Shift+B) or the command palette
+From an open Kel: the sidebar (the panel button or Ctrl+Shift+B) or the command palette
 (Ctrl+Shift+P, `Open project: kel`). The project comes in this window, and the one
 you were in goes out of sight: nothing in it stops, a `ping -t` keeps going, an
 unsaved nvim stays unsaved. Choose it again and it's as you left it. `home`, at
