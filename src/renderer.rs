@@ -1971,11 +1971,11 @@ fn draw_ui_hint(
     }
 }
 
-/// The theme glass makes, its background solid again: the frame around the
-/// panel stays glass.
+/// The theme glass makes, its background solid again (`solid_color`, or the
+/// theme's): the frame around the panel stays glass.
 fn solid(glass: &Glass, theme: &Theme) -> Theme {
     Theme {
-        background: theme.background,
+        background: glass.solid_color.unwrap_or(theme.background),
         ..glass.theme(theme)
     }
 }

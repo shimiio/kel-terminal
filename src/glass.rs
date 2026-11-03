@@ -36,6 +36,12 @@ pub struct Glass {
     pub opacity: f32,
     /// How strong the grain is: 0 none, 1 strong.
     pub grain: f32,
+    /// Under a full-screen program (lazygit) and Claude Code the terminal's
+    /// background is solid, the frame still glass (see `App::solid_under`).
+    pub solid_under_apps: bool,
+    /// The color of that solid background. None (the default): the theme's.
+    #[serde(deserialize_with = "crate::theme::optional_hex")]
+    pub solid_color: Option<u32>,
 }
 
 impl Default for Glass {
@@ -45,6 +51,8 @@ impl Default for Glass {
             effect: Effect::Acrylic,
             opacity: 0.85,
             grain: 0.1,
+            solid_under_apps: true,
+            solid_color: None,
         }
     }
 }
@@ -194,6 +202,7 @@ mod tests {
             effect: Effect::Acrylic,
             opacity: 0.8,
             grain: 0.0,
+            ..Glass::default()
         };
         let mut pixels = [0x00d4_d4d4, see_through(0x1e1e1e, 204)];
         glass.finish(&mut pixels, 2);
@@ -206,6 +215,7 @@ mod tests {
             effect: Effect::Acrylic,
             opacity: 0.8,
             grain: 1.0,
+            ..Glass::default()
         };
         let back = see_through(0x1e1e1e, 204);
         let mut pixels = vec![back; 64];

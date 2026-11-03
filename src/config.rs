@@ -65,6 +65,8 @@ tab_width = 180   # narrower when there are many tabs
 effect = "acrylic"
 opacity = 0.85   # how much of the theme's colors cover the glass: 1 solid, 0 all glass
 grain = 0.1      # a fine grain on the glass, like frosted glass: 0 none, 1 strong
+solid_under_apps = true   # a solid background under lazygit, htop, Claude Code: they read better
+# solid_color = "#000000" # its color; without it, the theme's background
 
 # Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
 # Programs that pick exact colors themselves (like nvim color schemes) don't use them.
@@ -230,6 +232,12 @@ project_colors = [\"#112233\", \"blue\"]";
         assert_eq!(config.glass.effect, Effect::None);
         assert_eq!(config.glass.opacity, Glass::default().opacity);
         assert!(toml::from_str::<Config>("[glass]\neffect = \"frosted\"").is_err());
+        // The solid background under lazygit: on, the theme's color; or off, or black.
+        assert!(Config::default().glass.solid_under_apps);
+        let config: Config =
+            toml::from_str("[glass]\nsolid_under_apps = false\nsolid_color = \"#000000\"").unwrap();
+        assert!(!config.glass.solid_under_apps);
+        assert_eq!(config.glass.solid_color, Some(0));
     }
 
     #[test]

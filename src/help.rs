@@ -208,6 +208,15 @@ fn settings_lines(config: &Config) -> Vec<Line> {
         row("effect", &text(effect), "acrylic, mica: restart"),
         row("opacity", &n(glass.opacity), "1 solid, 0 all glass"),
         row("grain", &n(glass.grain), "0 none, 1 strong"),
+        row(
+            "solid_under_apps",
+            &glass.solid_under_apps.to_string(),
+            "lazygit, Claude Code",
+        ),
+        match glass.solid_color {
+            Some(c) => color("solid_color", c, "under them"),
+            None => row("solid_color", "none", "the background's"),
+        },
         Line::Gap,
         title("[COLORS]"),
         color("foreground", colors.foreground, "text"),

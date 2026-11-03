@@ -980,6 +980,9 @@ impl App {
     /// screen (known by its icon, while a command runs: not a tab only called
     /// "claude").
     fn solid_under(&self) -> bool {
+        if !self.config.glass.solid_under_apps {
+            return false;
+        }
         let tab = self.tab();
         let full_screen = tab.terminal.lock().unwrap().grid.alternate();
         full_screen || tab.command.running() && tab.icon() == "claude"
