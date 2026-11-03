@@ -90,6 +90,10 @@ pub struct Tab {
     pub name: Option<String>,
     /// The shell's name, e.g. "powershell".
     shell_name: String,
+    /// The title while no command ran: the shell's own (its name, or what a
+    /// prompt like oh-my-posh sets). A command that leaves it as it is has no
+    /// title of its own: the tab shows the command (see `label`).
+    idle_title: String,
     /// The folder the shell started in, if Kel gave one.
     started_in: Option<PathBuf>,
     /// The project's command for the tab, e.g. `nvim .`: typed at start (see
@@ -140,6 +144,7 @@ impl Tab {
         Ok(Tab {
             id,
             title: shell_name.clone(),
+            idle_title: shell_name.clone(),
             name: None,
             shell_name,
             started_in: cwd.map(Path::to_path_buf),
@@ -162,9 +167,24 @@ impl Tab {
         let _ = self.writer.flush();
     }
 
-    /// What the tab bar shows: the project's name for the tab, else the title.
+    /// What the tab bar shows: the project's name for the tab; else the command
+    /// that runs, if it gave no title of its own (`python app.py`, not
+    /// "powershell"); else the title (nvim's "Cargo.toml - Nvim").
     pub fn label(&self) -> &str {
-        self.name.as_deref().unwrap_or(&self.title)
+        self.name
+            .as_deref()
+            .or_else(|| self.running_command())
+            .unwrap_or(&self.title)
+    }
+
+    /// The command that runs, as typed, when the title is still the shell's: its
+    /// first line. Only once busy, as the icon (`git status` would only blink).
+    fn running_command(&self) -> Option<&str> {
+        if !self.command.busy() || self.title != self.idle_title {
+            return None;
+        }
+        let line = self.command.line.as_deref()?;
+        line.lines().map(str::trim).find(|line| !line.is_empty())
     }
 
     /// The icon's name: by what runs (the title, then the command's text), else
@@ -229,6 +249,9 @@ impl Tab {
             // No title, or an empty one: back to the shell's name.
             _ => self.shell_name.clone(),
         };
+        if !self.command.running() {
+            self.idle_title.clone_from(&title);
+        }
         if title == self.title {
             return false;
         }
@@ -381,6 +404,16 @@ mod tests {
         command.apply(Mark::Ended(true), true);
         assert!(!command.running());
         assert!(!command.busy());
+    }
+
+    #[test]
+    fn the_command_while_it_runs() {
+        let mut command = CommandState::default();
+        command.apply(Mark::Command("python app.py\n".into()), true);
+        command.apply(Mark::Started, true);
+        assert_eq!(command.line.as_deref(), Some("python app.py\n"));
+        command.apply(Mark::Ended(true), true);
+        assert_eq!(command.line, None);
     }
 
     #[test]

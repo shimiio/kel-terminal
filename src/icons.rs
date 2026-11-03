@@ -7,8 +7,8 @@
 //! k▌        >_        N         git       docker    ▶         claude    ssh       database
 //! #...###.  #.......  .#...#..  ##...##.  ...#....  .##.....  .#.#.#..  #.#...#.  #######.
 //!
-//! python    node      rust
-//! .##.##..  .##.##..  ##.#.##.
+//! python    node      rust      backend   frontend
+//! .##.##..  .##.##..  ##.#.##.  #......#  #.....#.
 //! ```
 //!
 //! (Each icon's middle row: the grids below have all 8.)
@@ -20,7 +20,7 @@ use std::path::Path;
 const PIXEL: usize = 2;
 
 /// The icons: a name and its grid, 8 rows of 8, `#` lit.
-const GRIDS: [(&str, [&str; 8]); 12] = [
+const GRIDS: [(&str, [&str; 8]); 14] = [
     (
         "kel",
         [
@@ -104,6 +104,22 @@ const GRIDS: [(&str, [&str; 8]); 12] = [
         ],
     ),
     (
+        // Braces, `{ }`: code that serves.
+        "backend",
+        [
+            "..#..#..", ".#....#.", ".#....#.", "#......#", ".#....#.", ".#....#.", "..#..#..",
+            "........",
+        ],
+    ),
+    (
+        // A browser's window: its bar with three dots, the page.
+        "frontend",
+        [
+            "........", "#######.", "#.#.#.#.", "#######.", "#.....#.", "#.....#.", "#######.",
+            "........",
+        ],
+    ),
+    (
         // A gear, like Rust's (and cargo's builds).
         "rust",
         [
@@ -120,12 +136,13 @@ const DEFAULT: &str = "terminal";
 pub const KEL: &str = "kel";
 
 /// Words in a tab's title, command or name that pick an icon, checked in this order.
-const WORDS: [(&str, &str); 38] = [
+const WORDS: [(&str, &str); 46] = [
     ("nvim", "nvim"),
     ("vim", "nvim"),
     ("claude", "claude"),
     ("lazygit", "git"),
     ("git", "git"),
+    ("repo", "git"),
     ("docker", "docker"),
     // Not "server": a "dev server" tab is a terminal.
     ("ssh", "ssh"),
@@ -158,6 +175,15 @@ const WORDS: [(&str, &str); 38] = [
     ("cargo", "rust"),
     ("rustc", "rust"),
     ("rustup", "rust"),
+    // What a tab is for, by its name. After the programs: a "backend" tab
+    // running `cargo run` has the gear.
+    ("backend", "backend"),
+    ("api", "backend"),
+    ("frontend", "frontend"),
+    ("web", "frontend"),
+    ("ui", "frontend"),
+    ("site", "frontend"),
+    ("client", "frontend"),
     ("start", "start"),
     ("run", "start"),
 ];
@@ -301,7 +327,7 @@ mod tests {
 
     #[test]
     fn icon_from_the_command() {
-        let run = |command| pick("Windows PowerShell", Some(command), Some("web"));
+        let run = |command| pick("Windows PowerShell", Some(command), Some("dev"));
         assert_eq!(run("docker compose up"), "docker");
         assert_eq!(run("docker-compose up"), "docker");
         assert_eq!(run("python -c 'import time; time.sleep(9)'"), "python");
@@ -317,6 +343,18 @@ mod tests {
         // The title still comes first; nothing runs: the tab's name.
         assert_eq!(pick("main.rs - Nvim", Some("cargo run"), None), "nvim");
         assert_eq!(pick("powershell", None, Some("docker")), "docker");
+    }
+
+    #[test]
+    fn what_a_tab_is_for() {
+        assert_eq!(pick("powershell", None, Some("backend")), "backend");
+        assert_eq!(pick("powershell", None, Some("Frontend")), "frontend");
+        assert_eq!(pick("powershell", None, Some("repo")), "git");
+        // What runs comes first.
+        assert_eq!(
+            pick("powershell", Some("npm run dev"), Some("frontend")),
+            "node"
+        );
     }
 
     #[test]

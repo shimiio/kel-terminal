@@ -267,8 +267,11 @@ of what you work on (`accent` in `[colors]` gives home and such projects one).
 A tab's icon shows what runs in it (nvim, git, claude, ssh, a database client like
 `psql` or `redis-cli`, python, node, cargo), as the program's title says, or else the
 command you typed in PowerShell (`docker compose up` has the whale, once it has run
-for half a second). In a plain shell, the tab's `name` picks it: a tab called `docker` has the whale, `vps` a server, `db` a database,
-`run` or `start` a ▶. The name itself stays whatever runs.
+for half a second). Such a command, with no title of its own, is the tab's name
+too: `ping -t 1.1.1.1`, not `powershell` (a tab you named keeps its name). In a
+plain shell, the tab's `name` picks the icon: a tab called `docker` has the whale,
+`vps` a server, `db` a database, `backend` (or `api`) braces, `frontend` (or `web`) a
+browser's window, `repo` git's branch, `run` or `start` a ▶. The name itself stays whatever runs.
 
 When the window closes (the × button or Alt+F4), Kel writes the file again with the
 tabs open then, so the project opens next time as you left it:

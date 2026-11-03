@@ -243,6 +243,8 @@ pub struct App {
     last_tab_click: Option<(TabId, Instant)>,
     /// A project held by the mouse in the sidebar.
     sidebar_drag: Option<SidebarDrag>,
+    /// The window's title as last set (see `update_window_title`).
+    window_title: String,
     /// When the mouse came onto the sidebar button, the sidebar closed: at `PEEK_DELAY` after
     /// it, the sidebar opens (see `peek`).
     burger_since: Option<Instant>,
@@ -405,6 +407,7 @@ impl App {
             help: None,
             last_tab_click: None,
             sidebar_drag: None,
+            window_title: String::new(),
             burger_since: None,
             sidebar_peek: false,
             icon: None,
@@ -968,13 +971,18 @@ impl App {
     }
 
     /// The window's own title, seen in the taskbar and in Alt+Tab: the tab on screen.
-    fn update_window_title(&self) {
+    /// Also on each draw, as a tab's label changes when its command gets busy:
+    /// set only when it's different.
+    fn update_window_title(&mut self) {
         if let Some(window) = &self.window {
             let title = match &self.project {
                 Some(project) => format!("{} - {} - Kel", self.tab().label(), project.name),
                 None => format!("{} - Kel", self.tab().label()),
             };
-            window.set_title(&title);
+            if title != self.window_title {
+                window.set_title(&title);
+                self.window_title = title;
+            }
         }
     }
 
@@ -1954,6 +1962,7 @@ impl App {
     /// at most half a second after `BUSY_DELAY`, without a timer of its own.
     fn on_redraw(&mut self) {
         self.update_icon();
+        self.update_window_title();
         if self.minimized() {
             return; // nothing to see
         }
