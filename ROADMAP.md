@@ -185,6 +185,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       "home", with Kel's mark `k▌`, while the screen is up. Ctrl+Shift+H goes there
 - [x] Home neutral in the whole UI: the project's color is the only one (`accent_for`); home
       and projects without one are gray. `accent` in `[colors]` is optional now
+- [x] `COLORTERM=truecolor` for the programs in a tab: delta (lazygit's diffs) sent its
+      colors rounded to 256, its dark red and green behind lines came out loud
 - [x] Soft defaults: the terminal's 16 colors of the same family as `project_colors` (not
       Windows' Campbell), a gray selection (a project's color would look like the search's
       matches), acrylic glass with a light grain (0.1)

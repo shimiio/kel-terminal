@@ -142,7 +142,9 @@ asks first in the tab bar: do it again within 3 seconds to close.
 Programs in a tab can tell they run in Kel: it sets `TERM_PROGRAM=kel` (and
 `TERM_PROGRAM_VERSION`). It also sets `LANG` from Windows' language, e.g.
 `en_US.UTF-8`, unless you set it yourself; programs from Linux (nvim, git) read
-their language from it, and nvim's `:checkhealth` asks for it.
+their language from it, and nvim's `:checkhealth` asks for it. And `COLORTERM=truecolor`:
+Kel draws any color, so programs like delta (git's diffs, lazygit's too) don't round
+their colors to the 256-color table, where they come out loud.
 
 ### Change the spaces around the terminal
 

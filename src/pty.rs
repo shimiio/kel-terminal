@@ -46,10 +46,14 @@ pub fn spawn_shell(
 /// - `LANG=en_US.UTF-8`, from Windows' display language, unless it's set already.
 ///   Programs born on Unix (nvim, git, less) read their language from it. On Windows
 ///   nobody sets it, and nvim's `:checkhealth` reports "Locale does not support UTF-8".
+/// - `COLORTERM=truecolor`: Kel draws any color, not only 256. Without it, delta
+///   (git's diffs, in lazygit too) rounds its colors to the 256-color table: its
+///   dark red behind a removed line (#3f0001) became a loud one (#5f0000).
 ///   Not `TERM`: nvim talks to ConPTY, not to Kel, and knows ConPTY without it.
 fn introduce_kel(cmd: &mut CommandBuilder) {
     cmd.env("TERM_PROGRAM", "kel");
     cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+    cmd.env("COLORTERM", "truecolor");
     if std::env::var_os("LANG").is_none()
         && let Some(lang) = display_language().as_deref().and_then(lang)
     {
