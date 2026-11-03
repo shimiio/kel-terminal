@@ -21,6 +21,7 @@
 use crate::config::Config;
 use crate::glass::Effect;
 use crate::keys;
+use crate::term::CursorShape;
 use std::cell::Cell;
 
 /// A line of the help.
@@ -160,6 +161,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
         Effect::Acrylic => "acrylic",
         Effect::Mica => "mica",
     };
+    let cursor = match config.cursor {
+        CursorShape::Block => "block",
+        CursorShape::Underline => "underline",
+        CursorShape::Bar => "bar",
+    };
     let colors = &config.colors;
     let color = |key: &str, value: u32, note: &str| Line::Row {
         key: key.to_string(),
@@ -184,6 +190,7 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             &config.pixel_name.to_string(),
             "the name in pixels",
         ),
+        row("cursor", &text(cursor), "programs can pick theirs"),
         Line::Gap,
         title("[LAYOUT]"),
         row("margin", &layout.margin.to_string(), "window edge to panel"),

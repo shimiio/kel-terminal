@@ -1058,6 +1058,12 @@ impl App {
                     self.on_resize(); // the name's width: the tabs move
                     self.request_redraw();
                 }
+                if new.cursor != self.config.cursor
+                    && let Some(renderer) = &mut self.renderer
+                {
+                    renderer.set_cursor(new.cursor);
+                    self.request_redraw();
+                }
                 if new.colors != self.config.colors
                     && let Some(renderer) = &mut self.renderer
                 {
@@ -1794,6 +1800,7 @@ impl ApplicationHandler<UserEvent> for App {
         let mut renderer =
             Renderer::new(window.clone(), fonts, font_size, text_scale, theme, glass).unwrap();
         renderer.set_pixel_name(self.config.pixel_name);
+        renderer.set_cursor(self.config.cursor);
         let (cell_w, cell_h) = renderer.cell_size();
         self.window = Some(window.clone());
         let ui_scale = self.ui_scale();
@@ -1879,6 +1886,8 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::Focused(focused) => {
                 self.focused = focused;
                 self.update_focus();
+                self.restart_blink();
+                self.request_redraw(); // the cursor: hollow, or not
             }
             _ => {}
         }
@@ -1976,6 +1985,7 @@ impl App {
             start: self.start.as_ref(),
             card: self.card.as_ref().zip(self.card_rect()),
             help: self.help.as_ref(),
+            keys_here: self.keys_here(),
         };
         if let Some(renderer) = &mut self.renderer {
             renderer.draw(
@@ -1986,6 +1996,17 @@ impl App {
                 self.cursor_on,
             );
         }
+    }
+
+    /// Whether the keys go to the terminal: the window has them, and nothing
+    /// over the terminal takes them (see `on_key`). Else its cursor is hollow.
+    fn keys_here(&self) -> bool {
+        self.focused
+            && self.sidebar.is_none()
+            && self.palette.is_none()
+            && self.search.is_none()
+            && self.card.is_none()
+            && self.help.is_none()
     }
 
     /// The window's icon (`k▌`, see `logo::icon`), its cursor the color of the

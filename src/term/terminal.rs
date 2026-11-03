@@ -227,10 +227,10 @@ impl Perform for Terminal {
         // Cursor shape, `ESC[n q`.
         if intermediates == [b' '] && action == 'q' {
             self.grid.cursor_shape = match param(params, 0, 0) {
-                1 | 2 => CursorShape::Block,
-                3 | 4 => CursorShape::Underline,
-                5 | 6 => CursorShape::Bar,
-                _ => CursorShape::Underline, // 0 or unknown: Kel's default
+                1 | 2 => Some(CursorShape::Block),
+                3 | 4 => Some(CursorShape::Underline),
+                5 | 6 => Some(CursorShape::Bar),
+                _ => None, // 0 or unknown: Kel's own again
             };
             return;
         }
@@ -633,9 +633,15 @@ mod tests {
 
     #[test]
     fn cursor_shape() {
-        assert_eq!(feed("\x1b[2 q").grid.cursor_shape, CursorShape::Block);
-        assert_eq!(feed("\x1b[4 q").grid.cursor_shape, CursorShape::Underline);
-        assert_eq!(feed("\x1b[6 q").grid.cursor_shape, CursorShape::Bar);
+        assert_eq!(feed("\x1b[2 q").grid.cursor_shape, Some(CursorShape::Block));
+        assert_eq!(
+            feed("\x1b[4 q").grid.cursor_shape,
+            Some(CursorShape::Underline)
+        );
+        assert_eq!(feed("\x1b[6 q").grid.cursor_shape, Some(CursorShape::Bar));
+        // Nothing asked, or 0 (nvim on its way out): Kel's own.
+        assert_eq!(feed("").grid.cursor_shape, None);
+        assert_eq!(feed("\x1b[6 q\x1b[0 q").grid.cursor_shape, None);
     }
 
     #[test]

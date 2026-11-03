@@ -5,6 +5,7 @@
 
 use crate::glass::Glass;
 use crate::layout::Spacing;
+use crate::term::CursorShape;
 use crate::theme::Theme;
 use anyhow::Context;
 use serde::Deserialize;
@@ -40,6 +41,10 @@ ui_scale = 1
 
 # The project's name before the tabs in pixels, like Kel's logo. false: in the font.
 pixel_name = true
+
+# The cursor: "block" (the whole cell), "underline" or "bar".
+# Programs can pick their own (nvim does); this is for the rest.
+cursor = "block"
 
 # Spaces around the terminal, in pixels. The terminal is a panel inside the window:
 # margin (window edge → panel), border (the panel's line), padding (line → text).
@@ -96,6 +101,7 @@ pub struct Config {
     pub shell: String,
     pub ui_scale: f32,
     pub pixel_name: bool,
+    pub cursor: CursorShape,
     pub layout: Spacing,
     pub glass: Glass,
     pub colors: Theme,
@@ -109,6 +115,7 @@ impl Default for Config {
             shell: "powershell.exe".to_string(),
             ui_scale: 1.0,
             pixel_name: true,
+            cursor: CursorShape::Block,
             layout: Spacing::default(),
             glass: Glass::default(),
             colors: Theme::default(),

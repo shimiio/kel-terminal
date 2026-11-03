@@ -185,6 +185,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       "home", with Kel's mark `k▌`, while the screen is up. Ctrl+Shift+H goes there
 - [x] Home neutral in the whole UI: the project's color is the only one (`accent_for`); home
       and projects without one are gray. `accent` in `[colors]` is optional now
+- [x] The cursor a whole cell by default (`cursor` in the config: block, underline, bar;
+      programs still pick theirs). Where the keys don't go (the sidebar, the palette, the
+      search, a card, the help, another window): a hollow box, not blinking
 - [x] Kel's own soft colors (`project_colors`, `done`, `failed` in `[colors]`): a project's
       color is picked among 8 of one brightness, not the terminal's loud palette; a
       command's dot and Kel's errors in the soft green and red

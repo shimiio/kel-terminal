@@ -11,6 +11,7 @@
 //! width (`reflow`).
 
 use crate::theme::Color;
+use serde::Deserialize;
 use std::collections::VecDeque;
 use unicode_width::UnicodeWidthChar;
 
@@ -171,17 +172,23 @@ pub struct Grid {
     pub inverse: bool,
     /// Hidden by `ESC[?25l`, shown again by `ESC[?25h`.
     pub cursor_visible: bool,
-    /// Set by ESC[n q.
-    pub cursor_shape: CursorShape,
+    /// Set by ESC[n q. `None`: the program hasn't asked for one, Kel's own
+    /// (`cursor` in the config) is drawn.
+    pub cursor_shape: Option<CursorShape>,
 
     /// While the alternate screen is shown (vim, less...): the normal screen and
     /// its cursor (row, col), put aside. `None` = we are on the normal screen.
     saved_screen: Option<(Vec<Line>, usize, usize)>,
 }
 
-/// How the cursor looks. Apps choose it with `ESC[n q`.
-#[derive(Clone, Copy, PartialEq, Debug)]
+/// How the cursor looks. Apps choose it with `ESC[n q`; `cursor` in the config
+/// is Kel's own, for the rest.
+#[derive(Clone, Copy, PartialEq, Debug, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CursorShape {
+    /// The whole cell, the letter in it in the background's color. Like the
+    /// logo's cursor.
+    #[default]
     Block,
     Underline,
     Bar,
@@ -207,7 +214,7 @@ impl Grid {
             underline_color: Color::Default,
             inverse: false,
             cursor_visible: true,
-            cursor_shape: CursorShape::Underline,
+            cursor_shape: None,
             saved_screen: None,
         }
     }

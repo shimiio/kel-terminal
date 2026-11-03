@@ -114,6 +114,10 @@ pub struct Chrome<'a> {
     pub start: Option<&'a Start>,
     /// The open card, and where it is.
     pub card: Option<(&'a Card, Rect)>,
+    /// Whether the keys go to the terminal. Not while the sidebar, the palette,
+    /// the search, a card or the help has them, nor in another window: its
+    /// cursor is a hollow box then, still, where typing will go on.
+    pub keys_here: bool,
     /// The help, if it's open: over everything.
     pub help: Option<&'a Help>,
 }
@@ -208,6 +212,8 @@ pub struct Renderer {
     plain_theme: Theme,
     /// See-through or not (see `glass`).
     glass: Glass,
+    /// The cursor where the program hasn't asked for one (`cursor` in the config).
+    cursor_shape: CursorShape,
     /// Turns the colors in the cells into pixels. With glass, its background
     /// and frame are see-through (`Glass::theme`).
     theme: Theme,
@@ -249,6 +255,7 @@ impl Renderer {
             theme: glass.theme(&theme),
             plain_theme: theme,
             glass,
+            cursor_shape: CursorShape::default(),
             ui,
         })
     }
@@ -307,6 +314,11 @@ impl Renderer {
     /// `App::on_resize` after this, for the tabs to move.
     pub fn set_pixel_name(&mut self, on: bool) {
         self.ui.pixel_name = on;
+    }
+
+    /// Kel's own cursor, for where the program hasn't asked for one.
+    pub fn set_cursor(&mut self, shape: CursorShape) {
+        self.cursor_shape = shape;
     }
 
     pub fn set_glass(&mut self, glass: Glass) {
@@ -409,6 +421,11 @@ impl Renderer {
         // On a wide letter, the cursor covers both its cells.
         let cursor_wide = grid.cell(cursor_row, cursor_col).width == Width::Wide;
         let (cell_w, cell_h) = (self.cell_w, self.cell_h);
+        // The program's cursor, or Kel's. With the keys elsewhere: a hollow box,
+        // whatever the shape, shown all the time (no blinking where you don't type).
+        let shape = grid.cursor_shape.unwrap_or(self.cursor_shape);
+        let keys_here = chrome.keys_here;
+        let cursor_shown = cursor_on || !keys_here;
         // Lines around the text (underline, cursor) grow with the text.
         let text_scale = self.text_scale;
         let text_px = |n: usize| scaled(n, text_scale);
@@ -433,12 +450,12 @@ impl Renderer {
                     let cell = grid.visible_cell(row, col);
                     // Is the cursor drawn on this cell right now?
                     let is_cursor = grid.cursor_visible
-                        && cursor_on
+                        && cursor_shown
                         && grid.scroll_offset() == 0
                         && row == cursor_row
                         && (col == cursor_col || cursor_wide && col == cursor_col + 1);
                     // A block cursor is drawn by swapping colors, so the letter stays visible.
-                    let block = is_cursor && grid.cursor_shape == CursorShape::Block;
+                    let block = is_cursor && keys_here && shape == CursorShape::Block;
 
                     // Look the colors up in the theme. "Default" means a different
                     // color for text and background, so this comes before the swap.
@@ -509,8 +526,18 @@ impl Renderer {
                         );
                     }
 
+                    if is_cursor && !keys_here {
+                        // Once, around both cells of a wide letter.
+                        if col == cursor_col {
+                            let w = if cursor_wide { 2 * cell_w } else { cell_w };
+                            let line = text_px(1).max(1);
+                            let r = Rect { x, y, w, h: cell_h };
+                            outline(&mut buffer, width, r, line, theme.cursor);
+                        }
+                        continue;
+                    }
                     if is_cursor {
-                        let (w, h) = match grid.cursor_shape {
+                        let (w, h) = match shape {
                             CursorShape::Underline => (cell_w, text_px(CURSOR_HEIGHT)),
                             CursorShape::Bar if col == cursor_col => (text_px(2), cell_h),
                             CursorShape::Bar => continue, // not again in a wide letter's 2nd cell
