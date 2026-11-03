@@ -264,6 +264,10 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [ ] Ctrl+Alt+← / → : the previous / next open project (and home), as Zen's workspaces
 - [ ] "Open in Kel" on a folder in Explorer (`kel <folder>`)
 - [ ] Home's ASCII landscape: try other pictures
+- [ ] Settings review before Linux/macOS: what else people will want to change (keys,
+      scrollback size, the bell, copy on select, the start screen, the shell per
+      project...), so the config's shape is settled before it has to work on three systems
+- [ ] More places that read better solid (as under lazygit): the user keeps a list
 - [ ] Linux and macOS, last: CI builds them, so testers need no Rust (a Linux VM, a clean
       Windows laptop, a friend's Mac). See below
 - [ ] License, a release on GitHub
