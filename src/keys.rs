@@ -42,7 +42,8 @@ pub enum Action {
     /// Goes to the project of this name in this window (see `project`); the one
     /// on screen goes out of sight, still running.
     OpenProject(String),
-    /// Goes home in this window: Kel without a project, `home` in the sidebar.
+    /// Goes home in this window: Kel without a project, `home` in the sidebar;
+    /// its start screen, position 0 (in home too). Ctrl+Shift+H.
     OpenHome,
     /// Closes the project on screen: saves it, ends its shells, goes home.
     CloseProject,
@@ -95,6 +96,7 @@ pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
         (KeyCode::KeyP, true) => Action::Palette,
         (KeyCode::KeyF, true) => Action::Find,
         (KeyCode::KeyB, true) => Action::Sidebar, // like VS Code's Ctrl+B
+        (KeyCode::KeyH, true) => Action::OpenHome,
         _ => return None,
     };
     Some(action)
@@ -124,6 +126,7 @@ pub fn palette_items() -> Vec<Item> {
         item("Copy the selection", "Ctrl+Shift+C", Action::Copy),
         item("Find in the output", "Ctrl+Shift+F", Action::Find),
         item("Projects: the sidebar", "Ctrl+Shift+B", Action::Sidebar),
+        item("Home: its start screen", "Ctrl+Shift+H", Action::OpenHome),
         item("Stop the running command", "Ctrl+C", Action::Interrupt),
         item("Zoom in: bigger font", "Ctrl+=", Action::ZoomIn),
         item("Zoom out: smaller font", "Ctrl+-", Action::ZoomOut),
@@ -393,6 +396,14 @@ mod tests {
     }
 
     #[test]
+    fn home_is_ctrl_shift_h() {
+        let home = shortcut(key(KeyCode::KeyH), CTRL_SHIFT);
+        assert_eq!(home, Some(Action::OpenHome));
+        // Ctrl+H alone is the shell's (a Backspace, in some programs).
+        assert_eq!(shortcut(key(KeyCode::KeyH), CTRL), None);
+    }
+
+    #[test]
     fn ctrl_c_and_ctrl_shift_c() {
         assert_eq!(shortcut(key(KeyCode::KeyC), CTRL), Some(Action::Interrupt));
         assert_eq!(shortcut(key(KeyCode::KeyC), CTRL_SHIFT), Some(Action::Copy));
@@ -423,6 +434,7 @@ mod tests {
             "B" => KeyCode::KeyB,
             "C" => KeyCode::KeyC,
             "F" => KeyCode::KeyF,
+            "H" => KeyCode::KeyH,
             "T" => KeyCode::KeyT,
             "V" => KeyCode::KeyV,
             "W" => KeyCode::KeyW,
