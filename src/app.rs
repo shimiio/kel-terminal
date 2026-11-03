@@ -95,6 +95,9 @@ enum Closing {
     /// Deleting the project of this name (open or not).
     Delete(String),
     Window,
+    /// Not a close: pasting this text of several lines, which would run them
+    /// (see `paste`). The text itself: a new copy asks again.
+    Paste(String),
 }
 
 /// A close waiting for a second press, because it would end a running command.
@@ -1714,11 +1717,25 @@ impl App {
         self.request_redraw();
     }
 
-    /// Pastes the clipboard into the shell.
+    /// Pastes the clipboard into the shell. A program that takes pasted text as
+    /// a whole (bracketed paste: nvim, a newer PSReadLine) gets it as it is.
+    /// Else each line would run as it comes: one line goes in without its line
+    /// break, and several ask first, in the tab bar ("paste 2 lines?"), as
+    /// Windows Terminal does.
     fn paste(&mut self) {
-        if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-            let bracketed = self.tab().terminal.lock().unwrap().bracketed_paste;
-            self.send_to_shell(&keys::paste_bytes(&text, bracketed));
+        let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) else {
+            return;
+        };
+        let bracketed = self.tab().terminal.lock().unwrap().bracketed_paste;
+        if bracketed {
+            self.send_to_shell(&keys::paste_bytes(&text, true));
+            return;
+        }
+        let (text, lines) = keys::plain_paste(&text);
+        let message = format!("Paste {lines} lines? They run. Ctrl+Shift+V again");
+        let what = Closing::Paste(text.to_string());
+        if self.confirm_close(what, lines > 1, message) {
+            self.send_to_shell(&keys::paste_bytes(text, false));
         }
     }
 

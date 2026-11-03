@@ -245,9 +245,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 
 ## 10. Before the release
 
-- [ ] Pasting several lines asks first (a site's command can hide a second line that runs
+- [x] Pasting several lines asks first (a site's command can hide a second line that runs
       on its own; Windows Terminal warns too). Not when the program takes pasted text
-      as a whole (`ESC[?2004h`)
+      as a whole (`ESC[?2004h`). One line goes in without its line break: it waits
 - [ ] Sidebar: scrolling when there are more projects than fit
 - [ ] A click doesn't select its one cell: only a drag selects
 - [ ] OSC 8 links: text a program marks as a link (`ls --hyperlink`, delta, compilers),
@@ -256,10 +256,12 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       programs (the alternate screen), as nvim paints its own
 - [ ] The palette's chosen line in the project's color, not gray?
 - [ ] Underlines: look over their styles and colors
-- [ ] Keys to go to the next / previous open project
+- [ ] Ctrl+Alt+← / → : the previous / next open project (and home), as Zen's workspaces
 - [ ] "Open in Kel" on a folder in Explorer (`kel <folder>`)
 - [ ] Home's ASCII landscape: try other pictures
-- [ ] License, CI, a release `.exe` on GitHub
+- [ ] Linux and macOS, last: CI builds them, so testers need no Rust (a Linux VM, a clean
+      Windows laptop, a friend's Mac). See below
+- [ ] License, a release on GitHub
 
 Settled:
 - The project's folder in the sidebar is where its tabs start, not where a tab went:
@@ -270,8 +272,6 @@ Settled:
 
 ## After the release
 
-- [ ] Linux, then macOS (see below; a Linux VM and a clean Windows laptop to test on,
-      a friend's Mac)
 - [ ] Sessions that come back: a tab's output from last time, above its new prompt
 - [ ] A history per tab: ↑ shows the commands typed in this tab of this project (PowerShell's
       `HistorySavePath` per tab, set by the shell integration). Ghost suggestions from it

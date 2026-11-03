@@ -159,6 +159,22 @@ pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
     }
 }
 
+/// What pasted text would do in a shell that runs each line as it comes (no
+/// bracketed paste): the text to paste, and how many lines it holds if they'd
+/// run on their own, 0 if none would.
+/// - One line, with a line break after it (copied with its end, as a site's
+///   code block gives it): just the line. It waits for your Enter.
+/// - Several lines: as they are, and their number: worth asking first. A site
+///   can show one line and copy two, the second hidden.
+pub fn plain_paste(text: &str) -> (&str, usize) {
+    let body = text.trim_end_matches(['\r', '\n']);
+    if body.contains(['\r', '\n']) {
+        (text, body.lines().count())
+    } else {
+        (body, 0)
+    }
+}
+
 /// Translates a key press into the bytes a terminal would send to the shell.
 /// `key` is what the layout says the key is (without Ctrl: `d` for Ctrl+D), and where
 /// it is on the keyboard. `None` means the key sends nothing (e.g. Shift alone).
@@ -494,6 +510,18 @@ mod tests {
             paste_bytes(evil, true),
             b"\x1b[200~echo hirm -rf ~\r\x1b[201~"
         );
+    }
+
+    #[test]
+    fn several_lines_are_worth_asking() {
+        assert_eq!(plain_paste("ls"), ("ls", 0));
+        // The line break after one line goes: it would run it.
+        assert_eq!(plain_paste("ls -la\r\n"), ("ls -la", 0));
+        assert_eq!(plain_paste("ls\n\n"), ("ls", 0));
+        // Two lines: the first would run at once.
+        let hidden = "echo \"harmless\"\necho \"HIDDEN COMMAND RAN\"";
+        assert_eq!(plain_paste(hidden), (hidden, 2));
+        assert_eq!(plain_paste("a\r\nb\r\nc\r\n"), ("a\r\nb\r\nc\r\n", 3));
     }
 
     #[test]
