@@ -251,6 +251,7 @@ if a project has that folder, the project. For you only, no admin rights needed.
 ```toml
 folder = 'C:\code\kel-terminal'   # single quotes, so a '\' stays a '\'
 color = "#e0af68"                 # optional, see below
+shell = "pwsh.exe -NoLogo"        # optional: its tabs' shell, instead of the config's
 
 [[tab]]
 name = "editor"      # shown in the tab bar instead of the program's title
@@ -262,11 +263,17 @@ command = "cargo run"
 
 [[tab]]
 folder = "docs"      # inside the project's folder; a full path works too
+
+[[tab]]
+shell = "wsl.exe -d Ubuntu"   # this tab's own shell
 ```
 
 Every line of a `[[tab]]` is optional: `[[tab]]` alone is a shell in the project's
 folder. A file without any is one such tab. The running programs aren't saved, they
 can't be: opening the project starts them again.
+
+A tab's shell is its own `shell`, else the project's, else the config's. A new tab
+(Ctrl+Shift+T) in the project gets the project's.
 
 A project's window shows its name before the tabs, so you see which one it is at a
 glance. `color` is the project's own accent: the name and the icon of the tab on

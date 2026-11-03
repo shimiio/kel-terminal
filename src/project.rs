@@ -10,6 +10,7 @@
 //! ```toml
 //! folder = 'C:\code\kel-terminal'   # single quotes: a '\' stays a '\'
 //! color = "#e0af68"                 # optional: its name and icons in this color
+//! shell = "pwsh.exe -NoLogo"        # optional: its tabs' shell, not the config's
 //!
 //! [[tab]]
 //! name = "editor"
@@ -17,6 +18,9 @@
 //!
 //! [[tab]]
 //! folder = "docs"   # inside the project's folder
+//!
+//! [[tab]]
+//! shell = "wsl.exe -d Ubuntu"   # optional: this tab's own shell
 //! ```
 
 use crate::config;
@@ -56,6 +60,10 @@ pub struct Project {
         skip_serializing_if = "Option::is_none"
     )]
     pub color: Option<u32>,
+    /// The shell of its tabs, new ones too, as `shell` in the config (which
+    /// it takes the place of). Without it: the config's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<String>,
     /// `[[tab]]` in the file, one per tab, left to right.
     #[serde(default, rename = "tab", skip_serializing_if = "Vec::is_empty")]
     pub tabs: Vec<TabRecipe>,
@@ -75,6 +83,9 @@ pub struct TabRecipe {
     /// Typed into the shell once it's ready, e.g. `nvim .`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// This tab's own shell, e.g. `wsl.exe -d Ubuntu`: not the project's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shell: Option<String>,
 }
 
 impl Project {
@@ -85,6 +96,15 @@ impl Project {
         } else {
             self.tabs.clone()
         }
+    }
+
+    /// The shell `tab` starts: its own, else the project's, else `config`
+    /// (the config's, or the system's).
+    pub fn shell_of(&self, tab: &TabRecipe, config: impl FnOnce() -> String) -> String {
+        tab.shell
+            .clone()
+            .or_else(|| self.shell.clone())
+            .unwrap_or_else(config)
     }
 
     /// Where `tab` starts. A full path in `tab.folder` replaces the project's
@@ -597,6 +617,34 @@ folder = 'D:\other'
         assert!(!plain.to_file().unwrap().contains("color"));
         let bad = config::parse_toml::<Project>("kel.toml", "folder = 'C:'\ncolor = \"orange\"");
         assert!(bad.unwrap_err().to_string().contains("not a color"));
+    }
+
+    #[test]
+    fn a_tab_s_shell() {
+        let text = "folder = 'C:\\code'
+shell = \"pwsh.exe -NoLogo\"
+
+[[tab]]
+
+[[tab]]
+shell = \"wsl.exe -d Ubuntu\"
+";
+        let project: Project = config::parse_toml("kel.toml", text).unwrap();
+        let config = || "powershell.exe".to_string();
+        let tabs = project.tabs();
+        // The tab's own, else the project's; the config's only without both.
+        assert_eq!(project.shell_of(&tabs[0], config), "pwsh.exe -NoLogo");
+        assert_eq!(project.shell_of(&tabs[1], config), "wsl.exe -d Ubuntu");
+        let plain: Project = config::parse_toml("kel.toml", "folder = 'C:\\code'").unwrap();
+        assert_eq!(
+            plain.shell_of(&TabRecipe::default(), config),
+            "powershell.exe"
+        );
+        // Both stay when Kel writes the file; none: no line.
+        let saved = project.to_file().unwrap();
+        assert!(saved.contains("shell = \"pwsh.exe -NoLogo\""), "{saved}");
+        assert!(saved.contains("shell = \"wsl.exe -d Ubuntu\""), "{saved}");
+        assert!(!plain.to_file().unwrap().contains("shell"));
     }
 
     #[test]

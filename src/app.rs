@@ -155,6 +155,8 @@ struct OpenProject {
     /// Its `color`: the name before the tabs and the icons. `None`: none, gray
     /// (see `Theme::accent_for`).
     color: Option<u32>,
+    /// Its `shell`, for its new tabs. `None`: the config's.
+    shell: Option<String>,
 }
 
 pub struct App {
@@ -317,9 +319,14 @@ impl App {
             None => home_folder.clone(),
         };
 
+        // Each tab's shell: its own, the project's, or the config's.
+        let shell_of = |recipe: &TabRecipe| match &project {
+            Some(project) => project.shell_of(recipe, || config.shell()),
+            None => config.shell(),
+        };
         // The first tab shows the problems. A shell that doesn't start is one more,
-        // and all tabs get the default shell instead.
-        let mut shell = config.shell();
+        // and the tab gets the system's shell instead.
+        let shell = shell_of(&recipes[0]);
         let folder = folder_of(&recipes[0]);
         let first = match Tab::spawn(
             0,
@@ -331,10 +338,9 @@ impl App {
             Ok(tab) => tab,
             Err(e) => {
                 problems.push(format!("can't start shell \"{shell}\": {e:#}"));
-                shell = crate::shell::system();
                 Tab::spawn(
                     0,
-                    &shell,
+                    &crate::shell::system(),
                     folder.as_deref(),
                     screen(&problems),
                     proxy.clone(),
@@ -344,19 +350,28 @@ impl App {
         let mut tabs = vec![first];
         let mut status = None;
         for (id, recipe) in (1..).zip(&recipes[1..]) {
-            let folder = folder_of(recipe);
-            let screen = Terminal::new(ROWS, COLS);
-            match Tab::spawn(id, &shell, folder.as_deref(), screen, proxy.clone()) {
+            let (shell, folder) = (shell_of(recipe), folder_of(recipe));
+            let spawn = |shell: &str| {
+                let screen = Terminal::new(ROWS, COLS);
+                Tab::spawn(id, shell, folder.as_deref(), screen, proxy.clone())
+            };
+            // The others say it in the tab bar, and get the system's shell too.
+            let tab = spawn(&shell).or_else(|e| {
+                status = Some(format!("can't start shell \"{shell}\": {e:#}"));
+                spawn(&crate::shell::system())
+            });
+            match tab {
                 Ok(tab) => tabs.push(tab),
                 Err(e) => status = Some(format!("can't open a tab: {e:#}")),
             }
         }
-        // Each tab's name and command, by its id: a tab that failed has no place.
+        // Each tab's name, shell and command, by its id: a tab that failed has no place.
         for tab in &mut tabs {
             let recipe = &recipes[tab.id as usize];
             tab.name = recipe.name.clone();
+            tab.own_shell = recipe.shell.clone();
             if let Some(command) = &recipe.command {
-                tab.type_at_start(command, &shell);
+                tab.type_at_start(command);
             }
         }
         let next_id = recipes.len() as TabId;
@@ -406,6 +421,7 @@ impl App {
                     name,
                     folder: project.folder,
                     color: project.color,
+                    shell: project.shell,
                 }),
             parked: Vec::new(),
             palette: None,
@@ -470,7 +486,7 @@ impl App {
         let cwd = self.tab().cwd();
         match Tab::spawn(
             id,
-            &self.config.shell(),
+            &self.shell(),
             cwd.as_deref(),
             screen,
             self.proxy.clone(),
@@ -481,6 +497,14 @@ impl App {
             }
             Err(e) => self.set_status(Some(format!("can't open a tab: {e:#}"))),
         }
+    }
+
+    /// The shell of a new tab: the project's, or the config's.
+    fn shell(&self) -> String {
+        self.project
+            .as_ref()
+            .and_then(|project| project.shell.clone())
+            .unwrap_or_else(|| self.config.shell())
     }
 
     /// The shell of tab `id` ended (`exit`, or Ctrl+Shift+W): the tab goes away.
@@ -938,20 +962,19 @@ impl App {
         let mut failed = None;
         for recipe in &recipes {
             let folder = project.as_ref().map(|p| p.folder_of(recipe));
+            let shell = match &project {
+                Some(project) => project.shell_of(recipe, || self.config.shell()),
+                None => self.config.shell(),
+            };
             let id = self.next_id;
             self.next_id += 1;
             let screen = Terminal::new(rows, cols);
-            match Tab::spawn(
-                id,
-                &self.config.shell(),
-                folder.as_deref(),
-                screen,
-                self.proxy.clone(),
-            ) {
+            match Tab::spawn(id, &shell, folder.as_deref(), screen, self.proxy.clone()) {
                 Ok(mut tab) => {
                     tab.name = recipe.name.clone();
+                    tab.own_shell = recipe.shell.clone();
                     if let Some(command) = &recipe.command {
-                        tab.type_at_start(command, &self.config.shell());
+                        tab.type_at_start(command);
                     }
                     tabs.push(tab);
                 }
@@ -969,6 +992,7 @@ impl App {
             name: name.to_string(),
             folder: project.folder,
             color: project.color,
+            shell: project.shell,
         });
         // Home's start screen comes with `enter`.
         Ok(Workspace {
@@ -1309,11 +1333,14 @@ impl App {
             self.set_status(Some("can't save: no folder for this tab".to_string()));
             return;
         };
+        // Its color and shell, if this window had them, stay.
         let color = self.project.as_ref().and_then(|p| p.color);
+        let shell = self.project.as_ref().and_then(|p| p.shell.clone());
         let before = self.project.replace(OpenProject {
             name,
             folder,
             color,
+            shell,
         });
         if let Err(e) = self.save_project() {
             self.project = before;
@@ -1341,9 +1368,8 @@ impl App {
         let tabs = self.tabs.len();
         self.new_tab();
         if self.tabs.len() > tabs {
-            let shell = self.config.shell();
             let tab = self.tabs.last_mut().unwrap();
-            tab.type_when_ready(&setup::command(&path), &shell);
+            tab.type_when_ready(&setup::command(&path));
         }
     }
 
@@ -1826,21 +1852,24 @@ impl App {
 
 // winit calls these methods when something happens; we never call them ourselves.
 /// Writes the project `open`'s file with `tabs`, each in its last folder. Only
-/// what you wrote in the file comes back, the name and the command: Kel never
-/// adds a command, so opening a project never runs `git push` by itself. A tab
-/// opened since (Ctrl+Shift+T) is saved as a plain one, with its folder.
+/// what you wrote in the file comes back, the name, the command and the shell:
+/// Kel never adds a command, so opening a project never runs `git push` by
+/// itself. A tab opened since (Ctrl+Shift+T) is saved as a plain one, with its
+/// folder.
 fn save_tabs(open: &OpenProject, tabs: &[Tab]) -> anyhow::Result<()> {
     // Everything the file had but the tabs, or a line would be lost: the tabs
     // are written again, the rest is kept as it was read.
     let mut project = Project {
         folder: open.folder.clone(),
         color: open.color,
+        shell: open.shell.clone(),
         tabs: Vec::new(),
     };
     let tabs = tabs.iter().map(|tab| TabRecipe {
         name: tab.name.clone(),
         folder: tab.cwd().and_then(|cwd| project.tab_folder(&cwd)),
         command: tab.start_command.clone(),
+        shell: tab.own_shell.clone(),
     });
     project.tabs = tabs.collect();
     project::save(&open.name, &project)

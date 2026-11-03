@@ -279,7 +279,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
   to work on three systems. Chosen, in this order:
   - [x] `shell` with its arguments (`"pwsh.exe -NoLogo"`, `"wsl.exe -d Ubuntu"`), the
         system's without it (PowerShell; `$SHELL` on Linux/macOS); new tabs take a change
-  - [ ] A shell per project
+  - [x] A shell per project (`shell` in its file), and per tab (`shell` in a `[[tab]]`);
+        new tabs get the project's
   - [ ] `bell`: the taskbar blinks (or a flash, or nothing); now the bell is ignored
   - [ ] `cursor_blink`
   - [ ] `copy_on_select`

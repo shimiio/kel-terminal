@@ -88,6 +88,11 @@ pub struct Tab {
     pub title: String,
     /// The project's name for the tab: shown instead of `title` (see `label`).
     pub name: Option<String>,
+    /// What started it, as `shell` in the config: e.g. "pwsh.exe -NoLogo".
+    shell: String,
+    /// Its own `shell` line in the project's file (`[[tab]]`): saved with the
+    /// project. `None`: it has the project's (or the config's).
+    pub own_shell: Option<String>,
     /// The shell's name, e.g. "powershell".
     shell_name: String,
     /// The title while no command ran: the shell's own (its name, or what a
@@ -146,6 +151,8 @@ impl Tab {
             title: shell_name.clone(),
             idle_title: shell_name.clone(),
             name: None,
+            shell: shell.to_string(),
+            own_shell: None,
             shell_name,
             started_in: cwd.map(Path::to_path_buf),
             start_command: None,
@@ -198,17 +205,17 @@ impl Tab {
 
     /// The project's command for this tab: typed at start (see `type_when_ready`),
     /// and saved with the project.
-    pub fn type_at_start(&mut self, command: &str, shell: &str) {
+    pub fn type_at_start(&mut self, command: &str) {
         self.start_command = Some(command.to_string());
-        self.type_when_ready(command, shell);
+        self.type_when_ready(command);
     }
 
     /// Types `command` and Enter into the shell, once it's ready for typing: at
     /// its first prompt. Typed sooner, it would reach ConPTY while it still sets
     /// up. The first prompt is when shell integration first reports the folder;
     /// a shell without it gets the command at once.
-    pub fn type_when_ready(&mut self, command: &str, shell: &str) {
-        if shell_integration::reports_folder(shell) {
+    pub fn type_when_ready(&mut self, command: &str) {
+        if shell_integration::reports_folder(&self.shell) {
             self.to_type = Some(command.to_string());
         } else {
             self.write(format!("{command}\r").as_bytes());
