@@ -76,6 +76,9 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       command's text (VS Code's `ESC]633;E`), its program picks the icon, else any word.
       Order: the title (nvim's own), the command (once busy: no blink), the tab's name.
       New icons with it: python (a snake), node (a hexagon), rust/cargo (a gear)
+- [x] Hints in italics (the built-in JetBrains Mono Italic): the start screen's, the
+      palette's keys, the sidebar's and the help's last lines, the card's. They read as
+      side notes, apart from names and commands. Questions and errors stay upright
 - [x] The command as the tab's name while it runs, when it gave no title of its own (the
       title is still the one from before it): `ping -t ...`, not `powershell`. Not for
       a tab you named. Icons for what a tab is for: backend `{ }`, frontend (a browser's

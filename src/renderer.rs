@@ -134,6 +134,9 @@ struct Ui {
     line_h: usize,
     ascent: i32,
     glyphs: HashMap<char, Glyph>,
+    /// The hints' font: the built-in italic (see `draw_ui_hint`), and its letters.
+    italic: Font,
+    italic_glyphs: HashMap<char, Glyph>,
     icons: Icons,
     /// The project's name in the pixel font (`pixel_name` in the config), or
     /// in this font.
@@ -141,7 +144,7 @@ struct Ui {
 }
 
 impl Ui {
-    fn new(font: &Font) -> anyhow::Result<Ui> {
+    fn new(font: &Font, italic: Font) -> anyhow::Result<Ui> {
         let mut ui = Ui {
             scale: 1.0,
             icon_scale: 1,
@@ -149,6 +152,8 @@ impl Ui {
             line_h: 0,
             ascent: 0,
             glyphs: HashMap::new(),
+            italic,
+            italic_glyphs: HashMap::new(),
             icons: Icons::load(),
             pixel_name: true,
         };
@@ -160,6 +165,7 @@ impl Ui {
     fn set_font(&mut self, font: &Font) -> anyhow::Result<()> {
         (self.advance, self.line_h, self.ascent) = measure_cell(font, self.font_size())?;
         self.glyphs.clear();
+        self.italic_glyphs.clear();
         Ok(())
     }
 
@@ -237,8 +243,8 @@ impl Renderer {
         // All 4 styles share the same sizes, so measuring the regular one is enough.
         let font_size = font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], font_size * text_scale)?;
-        let [ui_font, ..] = font::built_in();
-        let ui = Ui::new(&ui_font)?;
+        let [ui_font, _, italic, _] = font::built_in();
+        let ui = Ui::new(&ui_font, italic)?;
 
         Ok(Renderer {
             window,
@@ -1060,10 +1066,9 @@ fn draw_palette(
         // At most half the line, so a long folder leaves the label room.
         let hint_w = (item.hint.chars().count() * ui.advance).min(text_w / 2);
         let hint_x = (text_x + text_w).saturating_sub(hint_w);
-        draw_ui_text(
+        draw_ui_hint(
             pixels,
             width,
-            font,
             ui,
             &item.hint,
             (hint_x, line_y + pad),
@@ -1182,7 +1187,11 @@ fn draw_sidebar(
     let top = footer + ui.px(24) - lines.len() * ui.line_h / 2;
     for (i, line) in lines.into_iter().enumerate() {
         let at = (panel.x + pad, top + i * ui.line_h);
-        draw_ui_text(pixels, width, font, ui, line, at, text_w, color);
+        if color == dim {
+            draw_ui_hint(pixels, width, ui, line, at, text_w, color);
+        } else {
+            draw_ui_text(pixels, width, font, ui, line, at, text_w, color);
+        }
     }
 }
 
@@ -1300,22 +1309,18 @@ fn draw_card(
     // in red, why what's typed can't be kept.
     let n = card.fields().len();
     let note = card.fields()[card.focus()].note;
-    let (hint, color) = match &card.error {
-        Some(error) => (error.clone(), theme.failed),
-        None => (format!("{note}   Enter   Esc"), dim),
-    };
     let y = card::hint_y(rect, layout.scale, n) + ui.px(6);
     let w = rect.w.saturating_sub(2 * pad);
-    draw_ui_text(
-        pixels,
-        width,
-        font,
-        ui,
-        &hint,
-        (rect.x + 2 * pad, y),
-        w,
-        color,
-    );
+    let at = (rect.x + 2 * pad, y);
+    match &card.error {
+        Some(error) => {
+            draw_ui_text(pixels, width, font, ui, error, at, w, theme.failed);
+        }
+        None => {
+            let hint = format!("{note}   Enter   Esc");
+            draw_ui_hint(pixels, width, ui, &hint, at, w, dim);
+        }
+    };
 }
 
 /// A row of projects, in the sidebar or on the start screen.
@@ -1493,18 +1498,18 @@ fn draw_start(
         let r = start::row_rect(col, layout.scale, 0);
         let at = (left, r.y + r.h.saturating_sub(ui.line_h) / 2);
         let text = "none yet: Ctrl+Shift+P, \"Save the tabs as project\"";
-        draw_ui_text(pixels, width, font, ui, text, at, col.w, dim);
+        draw_ui_hint(pixels, width, ui, text, at, col.w, dim);
     }
     let hint_y = start::hint_y(col, layout.scale, projects.len());
     if hint_y + ui.line_h <= layout.text.y + layout.text.h {
         let text = "Type to start   ↑↓ Enter opens a project   Esc";
-        draw_ui_text(pixels, width, font, ui, text, (left, hint_y), col.w, dim);
+        draw_ui_hint(pixels, width, ui, text, (left, hint_y), col.w, dim);
     }
     // Where the rest is: all the keys, the settings.
     let help_y = hint_y + ui.line_h;
     if help_y + ui.line_h <= layout.text.y + layout.text.h {
         let text = "Ctrl+Shift+/ all the keys and settings";
-        draw_ui_text(pixels, width, font, ui, text, (left, help_y), col.w, dim);
+        draw_ui_hint(pixels, width, ui, text, (left, help_y), col.w, dim);
     }
 }
 
@@ -1675,7 +1680,7 @@ fn draw_help(
         (true, false) => "↑↓ PgUp PgDn scroll   Esc",
         (false, false) => "Esc",
     };
-    draw_ui_text(pixels, width, font, ui, more, (text_x, hint_y), text_w, dim);
+    draw_ui_hint(pixels, width, ui, more, (text_x, hint_y), text_w, dim);
 }
 
 /// The start screen's backdrop (see `backdrop`) over `area`, a cell a letter of
@@ -1902,6 +1907,34 @@ fn draw_ui_text(
         drawn += ui.advance;
     }
     drawn
+}
+
+/// A hint, what to press or what a thing does, in italics: it reads as a
+/// side note, apart from the names and commands around it. Cut off at `max_w`
+/// like `draw_ui_text`; the italic has the same widths, so they line up.
+fn draw_ui_hint(
+    pixels: &mut [u32],
+    width: usize,
+    ui: &mut Ui,
+    text: &str,
+    (x, y): (usize, usize),
+    max_w: usize,
+    color: u32,
+) {
+    let size = ui.font_size();
+    let mut drawn = 0;
+    for ch in text.chars() {
+        if drawn + ui.advance > max_w {
+            break;
+        }
+        let italic = &ui.italic;
+        let glyph = ui
+            .italic_glyphs
+            .entry(ch)
+            .or_insert_with(|| italic.rasterize(ch, size));
+        draw_glyph(pixels, width, glyph, ui.ascent, color, x + drawn, y);
+        drawn += ui.advance;
+    }
 }
 
 /// A rectangle's outline, `t` pixels thick.
