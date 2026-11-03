@@ -193,7 +193,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] Sidebar shows what's open and alive: bright dots for the projects open in the window,
       the busy ring where a command runs, the dot where there's new output. Del there (or
       `Close project` in the palette) ends a project's shells: each idle PowerShell is
-      ~58 MB (measured). Home's last tab closed closes Kel
+      ~58 MB (measured). Home's last tab closed: the project you were in last comes on
+      screen (home comes back new); with no project open, Kel closes
 - [x] Home as a start screen (like Visual Studio's): the recent projects (by when their file
       was written), ↑↓ Enter or a click opens one; typing puts it away and goes to the shell,
       which starts behind it

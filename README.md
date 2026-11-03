@@ -205,9 +205,10 @@ click, open one; typing puts the screen away and goes to the shell, which has be
 starting behind it; Esc only puts it away.
 
 Leaving a project saves its file. Its last tab closed (`exit`): back home. Home's
-last tab closed: Kel closes, saving the projects, unless a command runs in one of
-them, which comes on screen instead. Closing the window saves every open project,
-and asks first if a command runs in any of them.
+last tab closed: the project you were in last comes on screen (closing a tab doesn't
+end the other projects' shells; home comes back, a new one, when you go there).
+Nothing else open: Kel closes. Closing the window saves every open project, and asks
+first if a command runs in any of them.
 
 To make one, open the tabs you want, go to the project's folder in one of them, and
 type a new name in the palette: `Save the tabs as project: myapp`. The project's

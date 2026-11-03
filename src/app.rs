@@ -150,7 +150,8 @@ pub struct App {
     // Created in `resumed`, so they are `None` until the window exists.
     window: Option<Rc<Window>>,
     renderer: Option<Renderer>,
-    /// Never empty: closing the last tab closes Kel.
+    /// Never empty: the last tab closed, another workspace comes, or Kel closes
+    /// (see `leave_empty`).
     tabs: Vec<Tab>,
     /// The tab on screen: its place in `tabs`.
     active: usize,
@@ -453,7 +454,7 @@ impl App {
     }
 
     /// The shell of tab `id` ended (`exit`, or Ctrl+Shift+W): the tab goes away.
-    /// The last one closes Kel.
+    /// The last one on screen: see `leave_empty`.
     fn remove_tab(&mut self, id: TabId, event_loop: &ActiveEventLoop) {
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
             self.remove_parked_tab(id);
@@ -496,9 +497,10 @@ impl App {
     /// The last tab on screen ended. A project's: back home, the home that was
     /// left or a new one; its file isn't written, it stays as it was, not a
     /// project of no tabs (see `save_project`).
-    /// Home's: Kel closes, as with the window's ×, saving the projects out of
-    /// sight. But not over a command running in one of them (an unsaved nvim):
-    /// that project comes on screen instead and says so.
+    /// Home's: the project you were in last comes on screen. A tab closed is a
+    /// small thing: it doesn't end the other projects' shells. Home comes back,
+    /// a new one, when you go there. Nothing else open: Kel closes, as a
+    /// terminal does with its last tab.
     /// Returns `false` when Kel should close.
     fn leave_empty(&mut self) -> bool {
         if self.project.is_some() {
@@ -508,21 +510,11 @@ impl App {
             self.enter(home);
             return true;
         }
-        let running = |w: &Workspace| w.tabs.iter().any(|tab| tab.command.running());
-        let (next, status) = match self.parked.iter().position(running) {
-            Some(index) => (
-                index,
-                "a command runs here: close the window to quit".to_string(),
-            ),
-            None => match self.save_parked() {
-                Ok(()) => return false,
-                // Can't be saved: stay, in the last project, and say why.
-                Err(e) => (self.parked.len() - 1, format!("{e:#}")),
-            },
+        // In home, only projects are out of sight; the last one left is last.
+        let Some(workspace) = self.parked.pop() else {
+            return false;
         };
-        let workspace = self.parked.remove(next);
         self.enter(workspace);
-        self.set_status(Some(status));
         true
     }
 
