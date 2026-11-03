@@ -995,6 +995,13 @@ impl App {
                     self.config.ui_scale = new.ui_scale;
                     self.cell_size_changed(); // not the cell, but the room for cells
                 }
+                if new.pixel_name != self.config.pixel_name
+                    && let Some(renderer) = &mut self.renderer
+                {
+                    renderer.set_pixel_name(new.pixel_name);
+                    self.on_resize(); // the name's width: the tabs move
+                    self.request_redraw();
+                }
                 if new.colors != self.config.colors
                     && let Some(renderer) = &mut self.renderer
                 {
@@ -1691,8 +1698,9 @@ impl ApplicationHandler<UserEvent> for App {
         let text_scale = window.scale_factor() as f32;
         let font_size = self.config.font_size;
         let glass = self.config.glass.clone();
-        let renderer =
+        let mut renderer =
             Renderer::new(window.clone(), fonts, font_size, text_scale, theme, glass).unwrap();
+        renderer.set_pixel_name(self.config.pixel_name);
         let (cell_w, cell_h) = renderer.cell_size();
         self.window = Some(window.clone());
         let ui_scale = self.ui_scale();

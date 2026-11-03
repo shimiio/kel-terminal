@@ -128,6 +128,9 @@ struct Ui {
     ascent: i32,
     glyphs: HashMap<char, Glyph>,
     icons: Icons,
+    /// The project's name in the pixel font (`pixel_name` in the config), or
+    /// in this font.
+    pixel_name: bool,
 }
 
 impl Ui {
@@ -140,6 +143,7 @@ impl Ui {
             ascent: 0,
             glyphs: HashMap::new(),
             icons: Icons::load(),
+            pixel_name: true,
         };
         ui.set_font(font)?;
         Ok(ui)
@@ -290,6 +294,12 @@ impl Renderer {
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = self.glass.theme(&theme);
         self.plain_theme = theme;
+    }
+
+    /// The project's name in pixels or not. Its width changes: call
+    /// `App::on_resize` after this, for the tabs to move.
+    pub fn set_pixel_name(&mut self, on: bool) {
+        self.ui.pixel_name = on;
     }
 
     pub fn set_glass(&mut self, glass: Glass) {
@@ -607,7 +617,7 @@ fn draw_tab_bar(
             layout.sidebar_button.x + layout.sidebar_button.w + ui.px(PROJECT_NAME_LEFT),
             bar.y + bar.h.saturating_sub(ui.line_h) / 2,
         );
-        match logo::word(&shown) {
+        match project_name_pixels(&shown, ui) {
             // In pixels, like the logo: its 7 rows down to the line in the bar's
             // middle, g's tail below.
             Some((lit, _)) => {
@@ -1534,10 +1544,16 @@ fn project_name_px(ui: &Ui) -> usize {
     ui.px(2).max(1)
 }
 
+/// The project's name in the pixel font: its pixels and width (see `logo::word`).
+/// None if it's off in the config, or a letter isn't in the font.
+fn project_name_pixels(shown: &str, ui: &Ui) -> Option<(Vec<(usize, usize)>, usize)> {
+    ui.pixel_name.then(|| logo::word(shown)).flatten()
+}
+
 /// How wide the project's name is in the tab bar: in pixels if the pixel font
 /// has its letters, else in the UI's font.
 fn project_name_width(shown: &str, ui: &Ui) -> usize {
-    match logo::word(shown) {
+    match project_name_pixels(shown, ui) {
         Some((_, w)) => w * project_name_px(ui),
         None => shown.chars().count() * ui.advance,
     }

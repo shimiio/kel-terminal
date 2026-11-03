@@ -89,6 +89,7 @@ Kel creates it on the first start, with a comment for every setting.
 | `font_size` | `18` | Font size in pixels |
 | `shell` | `"powershell.exe"` | The program Kel starts. Applies after a restart |
 | `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
+| `pixel_name` | `true` | The project's name before the tabs in pixels, like the logo; `false`: in the font |
 | `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |
 | `[glass]` | `effect = "none"`, `opacity = 0.85`, `grain = 0.5` | Kel see-through: `"acrylic"` blurs what's behind the window, `"mica"` takes a faint tint of the wallpaper (`effect` applies after a restart). `opacity`: how much of the theme's colors cover the glass; `grain`: a fine grain on it, like frosted glass |
 | `[colors]` | dark gray theme | Text, background, cursor, selection, frame, border, `accent` (home's color, none by default: gray) and the 16 basic colors |
