@@ -69,8 +69,8 @@ others don't round theirs to the 256-color table), and `LANG` from Windows'
 language (`en_US.UTF-8`) unless you set it: nvim and git read their language from it.
 
 Kel knows a tab's folder, and when a command starts and ends, because the shell
-tells it before each prompt (`src/shell_integration.rs`). PowerShell does all of it,
-cmd only the folder; other shells nothing yet.
+tells it before each prompt (`src/shell_integration.rs`). PowerShell and bash (on
+Linux and macOS) do all of it, cmd only the folder; other shells nothing yet.
 
 ## Sending a change
 

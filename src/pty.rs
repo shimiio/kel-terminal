@@ -27,9 +27,8 @@ pub fn spawn_shell(
     })?;
     let (program, args) = crate::shell::split(shell);
     let mut cmd = CommandBuilder::new(program);
-    cmd.args(args);
     introduce_kel(&mut cmd);
-    shell_integration::add(&mut cmd, shell);
+    shell_integration::add(&mut cmd, shell, &args);
     // A deleted folder would make the start fail.
     if let Some(cwd) = cwd.filter(|cwd| cwd.is_dir()) {
         cmd.cwd(cwd);
