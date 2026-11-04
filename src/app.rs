@@ -1102,16 +1102,18 @@ impl App {
     }
 
     /// The tab on screen wants a solid background (see `Chrome::solid`): a
-    /// full-screen program runs in it, or Claude Code, which draws in the normal
-    /// screen (known by its icon, while a command runs: not a tab only called
-    /// "claude").
+    /// full-screen program runs in it, any; or one of `solid_for` (Claude
+    /// Code), which draw in the normal screen. Those only while a command runs:
+    /// not a tab only called "claude".
     fn solid_under(&self) -> bool {
-        if !self.config.glass.solid_under_apps {
+        let glass = &self.config.glass;
+        if !glass.solid_under_apps {
             return false;
         }
         let tab = self.tab();
         let full_screen = tab.terminal.lock().unwrap().grid.alternate();
-        full_screen || tab.command.running() && tab.icon() == "claude"
+        full_screen
+            || tab.command.running() && glass.wants_solid(tab.command.line.as_deref(), &tab.title)
     }
 
     /// The window's own title, seen in the taskbar and in Alt+Tab: the tab on screen.

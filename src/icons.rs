@@ -204,14 +204,19 @@ pub fn pick(title: &str, command: Option<&str>, name: Option<&str>) -> &'static 
 /// of its words: `npm run dev` runs something. The program wins: in
 /// `git commit -m "nvim fix"` it's git.
 fn from_command(command: &str) -> Option<&'static str> {
+    program(command).and_then(find).or_else(|| find(command))
+}
+
+/// The program a command runs: its first word, as a file's name (`claude
+/// --resume` → claude, `& 'C:\tools\lazygit.exe'` → lazygit).
+pub fn program(command: &str) -> Option<&str> {
     let rest = command.trim_start().trim_start_matches('&').trim_start();
     let first = match rest.chars().next() {
         // Quoted: up to the closing quote.
         Some(q @ ('\'' | '"')) => rest[1..].split(q).next().unwrap_or(""),
         _ => rest.split_whitespace().next().unwrap_or(""),
     };
-    let program = Path::new(first).file_stem().and_then(|stem| stem.to_str());
-    program.and_then(find).or_else(|| find(command))
+    Path::new(first).file_stem().and_then(|stem| stem.to_str())
 }
 
 /// The icon a text's words pick, if any. Words are compared whole, in any case:

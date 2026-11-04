@@ -39,6 +39,9 @@ pub struct Glass {
     /// Under a full-screen program (lazygit) and Claude Code the terminal's
     /// background is solid, the frame still glass (see `App::solid_under`).
     pub solid_under_apps: bool,
+    /// The programs that draw in the normal screen, not full-screen, and get
+    /// it too (AI helpers, like Claude Code): see `wants_solid`.
+    pub solid_for: Vec<String>,
     /// The color of that solid background. None (the default): the theme's.
     #[serde(deserialize_with = "crate::theme::optional_hex")]
     pub solid_color: Option<u32>,
@@ -52,8 +55,26 @@ impl Default for Glass {
             opacity: 0.85,
             grain: 0.1,
             solid_under_apps: true,
+            solid_for: SOLID_FOR.iter().map(|name| name.to_string()).collect(),
             solid_color: None,
         }
+    }
+}
+
+/// `solid_for` by default: AI helpers in the terminal. Their answers are long,
+/// in many colors, with frames: they read better solid.
+const SOLID_FOR: [&str; 7] = [
+    "claude", "codex", "gemini", "aider", "opencode", "copilot", "crush",
+];
+
+impl Glass {
+    /// Whether the program running now is one of `solid_for`: by its name in
+    /// the `command` that runs (`claude --resume`), or by a word of the
+    /// `title` it gave the tab ("✳ Claude Code"). In any case.
+    pub fn wants_solid(&self, command: Option<&str>, title: &str) -> bool {
+        let listed = |word: &str| self.solid_for.iter().any(|n| n.eq_ignore_ascii_case(word));
+        command.and_then(crate::icons::program).is_some_and(listed)
+            || title.split(|c: char| !c.is_alphanumeric()).any(listed)
     }
 }
 
@@ -168,6 +189,24 @@ pub fn apply(window: &winit::window::Window, effect: Effect, background: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn solid_for_the_listed_programs() {
+        let glass = Glass::default();
+        assert!(glass.wants_solid(Some("claude --resume"), "powershell"));
+        assert!(glass.wants_solid(None, "\u{2733} Claude Code"));
+        assert!(glass.wants_solid(Some("& 'C:\\tools\\Codex.exe'"), ""));
+        assert!(!glass.wants_solid(Some("cargo build"), "powershell"));
+        // Its program, not any word: a commit's message isn't a program.
+        assert!(!glass.wants_solid(Some("git commit -m \"codex fix\""), "powershell"));
+        // Your own, from the config.
+        let mine = Glass {
+            solid_for: vec!["btop".into()],
+            ..Glass::default()
+        };
+        assert!(mine.wants_solid(Some("btop"), ""));
+        assert!(!mine.wants_solid(Some("claude"), ""));
+    }
 
     #[test]
     fn a_see_through_color() {

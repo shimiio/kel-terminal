@@ -293,7 +293,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
   - [x] `start_screen` on / off
   - After the release: `[keys]` (your own shortcuts; Cmd on macOS), themes as files
     (`theme = "tokyo-night"`), the window remembering its size
-- [ ] More places that read better solid (as under lazygit): the user keeps a list
+- [x] More places that read better solid (as under lazygit): every full-screen program
+      already; of the normal screen's, `solid_for` in `[glass]`, AI helpers by default
+      (claude, codex, gemini, aider, opencode, copilot, crush), more added as they come
 - [ ] Linux and macOS, last: CI builds them, so testers need no Rust (a Linux VM, a clean
       Windows laptop, a friend's Mac). See below
 - [ ] License, a release on GitHub

@@ -249,6 +249,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             &glass.solid_under_apps.to_string(),
             "lazygit, Claude Code",
         ),
+        row(
+            "solid_for",
+            &glass.solid_for.join(" "),
+            "and full-screen ones",
+        ),
         match glass.solid_color {
             Some(c) => color("solid_color", c, "under them"),
             None => row("solid_color", "none", "the background's"),

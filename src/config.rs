@@ -96,6 +96,9 @@ effect = "acrylic"
 opacity = 0.85   # how much of the theme's colors cover the glass: 1 solid, 0 all glass
 grain = 0.1      # a fine grain on the glass, like frosted glass: 0 none, 1 strong
 solid_under_apps = true   # a solid background under lazygit, htop, Claude Code: they read better
+# Full-screen programs get it all. These draw in the normal screen and get it too,
+# by the program's name or a word of the title it gives the tab. Add your own.
+solid_for = ["claude", "codex", "gemini", "aider", "opencode", "copilot", "crush"]
 # solid_color = "#000000" # its color; without it, the theme's background
 
 # Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
