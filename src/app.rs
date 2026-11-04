@@ -1459,11 +1459,18 @@ impl App {
                 return;
             }
         };
+        let exe = match std::env::current_exe() {
+            Ok(exe) => exe,
+            Err(e) => {
+                self.set_status(Some(format!("can't tell where kel.exe is: {e}")));
+                return;
+            }
+        };
         let tabs = self.tabs.len();
         self.new_tab();
         if self.tabs.len() > tabs {
             let tab = self.tabs.last_mut().unwrap();
-            tab.type_when_ready(&setup::command(&path));
+            tab.type_when_ready(&setup::command(script, &path, &exe));
         }
     }
 

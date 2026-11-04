@@ -14,19 +14,44 @@ use std::path::{Path, PathBuf};
 pub struct Script {
     /// What it installs, e.g. "lazygit". Also its file's name.
     pub name: &'static str,
-    /// Its line in the command palette.
+    /// Its line in the command palette, and what's at that line's right.
     pub label: &'static str,
+    pub hint: &'static str,
     /// The script itself.
     pub text: &'static str,
+    /// What it's told, after `-File`: for Kel's own, which kel.exe (see `command`).
+    pub args: &'static [&'static str],
 }
+
+/// In a script's `args`: the kel.exe that runs now, as `-From "<path>"`.
+pub const THIS_EXE: &str = "-From <this kel.exe>";
 
 /// PowerShell scripts: Windows only. Linux and macOS will get `.sh` ones.
 #[cfg(windows)]
-pub const SCRIPTS: &[Script] = &[Script {
-    name: "lazygit",
-    label: "Install lazygit: git in the terminal",
-    text: include_str!("../setup/lazygit.ps1"),
-}];
+pub const SCRIPTS: &[Script] = &[
+    // Kel itself, from the kel.exe you downloaded: like any program.
+    Script {
+        name: "kel",
+        label: "Install Kel on this computer",
+        hint: "Start menu, PATH, Explorer",
+        text: include_str!("../setup/kel.ps1"),
+        args: &[THIS_EXE],
+    },
+    Script {
+        name: "kel-uninstall",
+        label: "Uninstall Kel from this computer",
+        hint: "your config stays",
+        text: include_str!("../setup/kel.ps1"),
+        args: &["-Uninstall"],
+    },
+    Script {
+        name: "lazygit",
+        label: "Install lazygit: git in the terminal",
+        hint: "setup script",
+        text: include_str!("../setup/lazygit.ps1"),
+        args: &[],
+    },
+];
 
 #[cfg(not(windows))]
 pub const SCRIPTS: &[Script] = &[];
@@ -41,7 +66,7 @@ pub fn palette_items() -> Vec<Item> {
         .iter()
         .map(|script| Item {
             label: script.label.into(),
-            hint: "setup script".into(),
+            hint: script.hint.into(),
             action: Action::Install(script.name),
         })
         .collect()
@@ -57,17 +82,25 @@ pub fn write_to_temp(script: &Script) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
-/// The command that runs the script at `path`, typed into a new tab. It works in
-/// PowerShell, pwsh and cmd alike.
+/// The command that runs `script`, written at `path`, typed into a new tab. It
+/// works in PowerShell, pwsh and cmd alike.
 /// - `-NoProfile`: without your profile, so it starts fast and the same everywhere.
 /// - `-ExecutionPolicy Bypass`: Windows doesn't run `.ps1` files at all by default
 ///   (the `Restricted` policy). Bypass is for this one run, nothing else changes.
-/// - The path in quotes: a user name can have a space in it.
-pub fn command(path: &Path) -> String {
-    format!(
+/// - Paths in quotes: a user name can have a space in it.
+/// - Its `args`; `THIS_EXE` is `exe`, the kel.exe that runs.
+pub fn command(script: &Script, path: &Path, exe: &Path) -> String {
+    let mut command = format!(
         "powershell -NoProfile -ExecutionPolicy Bypass -File \"{}\"",
         path.display()
-    )
+    );
+    for arg in script.args {
+        match *arg {
+            THIS_EXE => command += &format!(" -From \"{}\"", exe.display()),
+            arg => command += &format!(" {arg}"),
+        }
+    }
+    command
 }
 
 #[cfg(test)]
@@ -99,10 +132,33 @@ mod tests {
 
     #[test]
     fn the_command_quotes_the_path() {
+        let script = Script {
+            name: "lazygit",
+            label: "",
+            hint: "",
+            text: "",
+            args: &[],
+        };
         let path = Path::new(r"C:\Users\Jo Ann\AppData\Local\Temp\kel\lazygit.ps1");
         assert_eq!(
-            command(path),
+            command(&script, path, Path::new("kel.exe")),
             r#"powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\Jo Ann\AppData\Local\Temp\kel\lazygit.ps1""#
+        );
+    }
+
+    #[test]
+    fn kel_s_own_is_told_which_exe() {
+        let script = Script {
+            name: "kel",
+            label: "",
+            hint: "",
+            text: "",
+            args: &[THIS_EXE, "-NoMenu"],
+        };
+        let exe = Path::new(r"C:\Users\Jo Ann\Downloads\kel.exe");
+        assert_eq!(
+            command(&script, Path::new("kel.ps1"), exe),
+            r#"powershell -NoProfile -ExecutionPolicy Bypass -File "kel.ps1" -From "C:\Users\Jo Ann\Downloads\kel.exe" -NoMenu"#
         );
     }
 
