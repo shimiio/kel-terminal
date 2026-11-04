@@ -147,6 +147,9 @@ struct Ui {
     line_h: usize,
     ascent: i32,
     glyphs: HashMap<char, Glyph>,
+    /// For what the UI's font doesn't have: a program's title can hold anything,
+    /// e.g. Claude Code's spinning `✳ ✶ ✻` (see `ui_glyph`).
+    fallbacks: Fallbacks,
     /// The hints' font: the built-in italic (see `draw_ui_hint`), and its letters.
     italic: Font,
     italic_glyphs: HashMap<char, Glyph>,
@@ -165,6 +168,7 @@ impl Ui {
             line_h: 0,
             ascent: 0,
             glyphs: HashMap::new(),
+            fallbacks: Fallbacks::default(),
             italic,
             italic_glyphs: HashMap::new(),
             icons: Icons::load(),
@@ -825,18 +829,7 @@ fn draw_tab_bar(
         // The name, in the middle from top to bottom, cut off where the tab ends.
         let x = icon_x + icon_w + gap;
         let y = tab.y + tab.h.saturating_sub(ui.line_h) / 2;
-        let size = ui.font_size();
-        for (n, ch) in label.title.chars().enumerate() {
-            let left = x + n * ui.advance;
-            if left + ui.advance > x + max_w {
-                break;
-            }
-            let glyph = ui
-                .glyphs
-                .entry(ch)
-                .or_insert_with(|| font.rasterize(ch, size));
-            draw_glyph(pixels, width, glyph, ui.ascent, color, left, y);
-        }
+        draw_ui_text(pixels, width, font, ui, label.title, (x, y), max_w, color);
     }
 }
 
@@ -992,22 +985,7 @@ fn draw_status(
     let back = x.saturating_sub(ui.px(TAB_TEXT_PADDING));
     fill_rect(pixels, width, back, bar.y, end - back, bar.h, theme.frame);
     let y = bar.y + bar.h.saturating_sub(ui.line_h) / 2;
-    let size = ui.font_size();
-    for (n, ch) in shown.chars().enumerate() {
-        let glyph = ui
-            .glyphs
-            .entry(ch)
-            .or_insert_with(|| font.rasterize(ch, size));
-        draw_glyph(
-            pixels,
-            width,
-            glyph,
-            ui.ascent,
-            color,
-            x + n * ui.advance,
-            y,
-        );
-    }
+    draw_ui_text(pixels, width, font, ui, &shown, (x, y), text_w, color);
 }
 
 /// The command palette, at the top of the terminal panel, in the middle:
@@ -1957,17 +1935,42 @@ fn draw_ui_text(
     let size = ui.font_size();
     let mut drawn = 0;
     for ch in text.chars() {
-        if drawn + ui.advance > max_w {
+        // A wide one (emoji, Chinese) takes two letters' room.
+        let room = char_width(ch).max(1) * ui.advance;
+        if drawn + room > max_w {
             break;
         }
-        let glyph = ui
-            .glyphs
+        let Ui {
+            glyphs,
+            fallbacks,
+            ascent,
+            ..
+        } = &mut *ui;
+        let glyph = glyphs
             .entry(ch)
-            .or_insert_with(|| font.rasterize(ch, size));
-        draw_glyph(pixels, width, glyph, ui.ascent, color, x + drawn, y);
-        drawn += ui.advance;
+            .or_insert_with(|| ui_glyph(font, fallbacks, ch, size, room));
+        draw_glyph(pixels, width, glyph, *ascent, color, x + drawn, y);
+        drawn += room;
     }
     drawn
+}
+
+/// The UI font's letter `ch`; one it doesn't have from a fallback font (see
+/// `fallback`), made smaller if it's wider than its `room`. Without one: the
+/// font's empty box.
+fn ui_glyph(font: &Font, fallbacks: &mut Fallbacks, ch: char, size: f32, room: usize) -> Glyph {
+    if font.has_glyph(ch) {
+        return font.rasterize(ch, size);
+    }
+    let Some(fallback) = fallbacks.font_for(ch) else {
+        return font.rasterize(ch, size);
+    };
+    let advance = fallback.advance(ch, size);
+    let size = match advance > room as f32 {
+        true => size * room as f32 / advance,
+        false => size,
+    };
+    fallback.rasterize(ch, size)
 }
 
 /// A hint, what to press or what a thing does, in italics: it reads as a

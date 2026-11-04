@@ -34,6 +34,8 @@ struct Installed {
 
 struct Fallback {
     id: ID,
+    /// Segoe UI Emoji: see `font_for`.
+    emoji: bool,
     /// Loaded the first time a character needs it.
     font: Option<Font>,
 }
@@ -50,7 +52,15 @@ impl Fallbacks {
             return self.symbols.as_ref();
         }
         let Installed { db, fonts } = self.installed.get_or_insert_with(Installed::find);
-        let fallback = fonts.iter_mut().find(|fallback| has(db, fallback.id, c))?;
+        // A symbol older than emoji (`✳ ❤ ☀`, below U+1F000) is text first: the
+        // emoji font has it too, but drawn for color, and without the color it's
+        // e.g. a star in a box. Another font's plain one, if there is one.
+        let text = (c as u32) < 0x1F000;
+        let i = fonts
+            .iter()
+            .position(|f| !(text && f.emoji) && has(db, f.id, c))
+            .or_else(|| fonts.iter().position(|f| has(db, f.id, c)))?;
+        let fallback = &mut fonts[i];
         if fallback.font.is_none() {
             fallback.font = db.with_face_data(fallback.id, load).flatten();
         }
@@ -70,7 +80,11 @@ impl Installed {
                     families: &[Family::Name(family)],
                     ..Default::default()
                 };
-                db.query(&query).map(|id| Fallback { id, font: None })
+                db.query(&query).map(|id| Fallback {
+                    id,
+                    emoji: *family == "Segoe UI Emoji",
+                    font: None,
+                })
             })
             .collect();
         Installed { db, fonts }
