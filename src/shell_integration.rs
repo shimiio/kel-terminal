@@ -76,26 +76,53 @@ if (Test-Path Function:\PSConsoleHostReadLine) {
 ///   prompt: "the command ended" (from `$?`, did the last one work), and the
 ///   folder. First, so `$?` is still the command's; and it gives `$?` back, for
 ///   a prompt that shows it.
-/// - `__kel_preexec`, the `DEBUG` trap, which bash runs before every command:
-///   the first one after a prompt is the line you typed (`$BASH_COMMAND`, its
-///   first command: `cargo run` of `cargo run | tee log`), so its text, then
-///   "the command starts". An empty line runs nothing but `PROMPT_COMMAND`,
-///   whose first command is `__kel_prompt`: then nothing starts. Not if you
-///   have a `DEBUG` trap of your own (bash-preexec, atuin): yours stays, and
-///   only the ends and the folder come.
+/// - `__kel_arm`, last in `PROMPT_COMMAND`, after what's yours there (starship,
+///   direnv, Ubuntu's own `__systemd_osc_context_precmdline`): from now on the
+///   next command is one you typed. It gives `$?` back too.
+/// - `__kel_preexec`, the `DEBUG` trap, which bash runs before every command,
+///   `PROMPT_COMMAND`'s too: the first one after `__kel_arm` is the line you
+///   typed (`$BASH_COMMAND`, its first command: `cargo run` of `cargo run | tee
+///   log`), so its text, then "the command starts". An empty line runs nothing
+///   but `PROMPT_COMMAND`, whose first command is `__kel_prompt`: then nothing
+///   starts. Not if you have a `DEBUG` trap of your own (bash-preexec, atuin):
+///   yours stays, and only the ends and the folder come.
+///
+/// `PROMPT_COMMAND` is a list (an array) in a newer bash, or a line; lines
+/// joined with a line break, not `;` (one ending in `;` would make `;;`).
 ///
 /// Not `PS0` for the text: it comes before bash adds the line to its history,
 /// so `history 1` there is the line before. The `'\'` and `"$bs"` in quotes:
 /// unquoted, bash takes a `\` in them as an escape.
+///
+/// A login shell (`bash -l`, macOS' way) reads its profile, not `~/.bashrc`, and
+/// doesn't read `--rcfile` at all. So Kel starts it without `-l`, and with
+/// `KEL_BASH_LOGIN` this file reads the profile as a login bash would: the first
+/// of `~/.bash_profile`, `~/.bash_login`, `~/.profile` (which mostly reads
+/// `~/.bashrc` in turn).
 const BASH: &str = r#"# Kel's shell integration for bash. Kel writes this file at each start: a change
-# here doesn't stay. bash reads it instead of ~/.bashrc, so ~/.bashrc first.
-if [ -f ~/.bashrc ]; then . ~/.bashrc; fi
+# here doesn't stay. bash reads it instead of ~/.bashrc, so yours first; for a
+# login shell (KEL_BASH_LOGIN), the files a login bash reads.
+if [ -n "${KEL_BASH_LOGIN-}" ]; then
+  unset KEL_BASH_LOGIN
+  if [ -f /etc/profile ]; then . /etc/profile; fi
+  if [ -f ~/.bash_profile ]; then . ~/.bash_profile
+  elif [ -f ~/.bash_login ]; then . ~/.bash_login
+  elif [ -f ~/.profile ]; then . ~/.profile
+  fi
+elif [ -f ~/.bashrc ]; then . ~/.bashrc
+fi
 
 __kel_prompt() {
   local status=$?
   printf '\e]133;D;%s\e\\\e]9;9;%s\e\\' "$(( status != 0 ))" "$PWD"
-  __kel_ready=1
+  __kel_ready=
+  __kel_status=$status
   return $status
+}
+
+__kel_arm() {
+  __kel_ready=1
+  return "${__kel_status-0}"
 }
 
 __kel_preexec() {
@@ -111,7 +138,13 @@ __kel_preexec() {
   printf '\e]633;E;%s\e\\\e]133;C\e\\' "$text"
 }
 
-PROMPT_COMMAND="__kel_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
+  PROMPT_COMMAND=(__kel_prompt "${PROMPT_COMMAND[@]}" __kel_arm)
+else
+  PROMPT_COMMAND="__kel_prompt${PROMPT_COMMAND:+
+$PROMPT_COMMAND}
+__kel_arm"
+fi
 [ -n "$(trap -p DEBUG)" ] || trap '__kel_preexec' DEBUG
 "#;
 
@@ -172,13 +205,21 @@ pub fn add(cmd: &mut CommandBuilder, shell: &str, args: &[String]) {
         }
         // Before yours: bash wants its long options (`--rcfile`) before the
         // short ones (`-l`). Without the file (it can't be written): plain bash.
-        Some("bash") if cfg!(unix) => {
-            if let Some(file) = written("kel.bash", BASH) {
+        Some("bash") if cfg!(unix) => match written("kel.bash", BASH) {
+            Some(file) => {
                 cmd.arg("--rcfile");
                 cmd.arg(file);
+                // A login shell: the file reads the profile instead (see `BASH`).
+                let login = |arg: &String| arg == "-l" || arg == "--login";
+                if args.iter().any(login) {
+                    cmd.env("KEL_BASH_LOGIN", "1");
+                } else {
+                    cmd.env_remove("KEL_BASH_LOGIN");
+                }
+                cmd.args(args.iter().filter(|arg| !login(arg)));
             }
-            cmd.args(args);
-        }
+            None => cmd.args(args),
+        },
         Some("zsh") if cfg!(unix) => {
             if let Some(dir) = written("zsh/.zshenv", ZSH)
                 .as_deref()
@@ -326,7 +367,10 @@ mod tests {
     #[test]
     fn bash_reports_folders_and_commands() {
         let home = test_home("bash");
-        std::fs::write(home.join(".bashrc"), "export FROM_BASHRC=yes\n").unwrap();
+        // A PROMPT_COMMAND of yours, ending in `;`: it runs, it isn't a command
+        // you typed.
+        let bashrc = "export FROM_BASHRC=yes\nPROMPT_COMMAND='history -a;'\n";
+        std::fs::write(home.join(".bashrc"), bashrc).unwrap();
         let file = home.join("kel.bash");
         std::fs::write(&file, BASH).unwrap();
         let mut cmd = CommandBuilder::new("bash");
@@ -340,6 +384,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
         check_reports(&out);
         assert!(out.contains("yes-from"), "{out:?}");
+    }
+
+    /// A login bash (`bash -l`, as on macOS): the profile, not `~/.bashrc`,
+    /// and the hooks all the same.
+    #[cfg(unix)]
+    #[test]
+    fn a_login_bash_reads_its_profile() {
+        let home = test_home("bash-login");
+        std::fs::write(home.join(".bashrc"), "export FROM_BASHRC=yes\n").unwrap();
+        std::fs::write(home.join(".bash_profile"), "export FROM_PROFILE=yes\n").unwrap();
+        let file = home.join("kel.bash");
+        std::fs::write(&file, BASH).unwrap();
+        let mut cmd = CommandBuilder::new("bash");
+        cmd.arg("--rcfile");
+        cmd.arg(&file);
+        cmd.arg("-i");
+        cmd.env("HOME", &home);
+        cmd.env("KEL_BASH_LOGIN", "1");
+        cmd.cwd(&home);
+        let input = [b"echo ${FROM_PROFILE-no}-${FROM_BASHRC-no}-from\n", INPUT].concat();
+        let out = run_in_pty(cmd, &input);
+        let _ = std::fs::remove_dir_all(&home);
+        check_reports(&out);
+        assert!(out.contains("yes-no-from"), "{out:?}");
     }
 
     /// The hooks in a real zsh, if there is one (macOS has it, Ubuntu not
