@@ -200,6 +200,28 @@ pub struct Grid {
     /// While the alternate screen is shown (vim, less...): the normal screen and
     /// its cursor (row, col), put aside. `None` = we are on the normal screen.
     saved_screen: Option<(Vec<Line>, usize, usize)>,
+    /// The scroll region, its first and last row (`ESC[top;bottomr`): a new
+    /// line at `bottom` moves only these rows up, and `ESC[M` / `ESC[L` move
+    /// only them. nvim keeps its status line out of it, and scrolls the text
+    /// above by sending only the new rows. The whole screen by default.
+    top: usize,
+    bottom: usize,
+    /// The cursor and the pen, as `ESC 7` saved them for `ESC 8`.
+    saved_cursor: Option<SavedCursor>,
+}
+
+/// What `ESC 7` saves: where the cursor is, and the pen it writes with.
+#[derive(Clone, Copy)]
+struct SavedCursor {
+    row: usize,
+    col: usize,
+    fg: Color,
+    bg: Color,
+    bold: bool,
+    italic: bool,
+    underline: Underline,
+    underline_color: Color,
+    inverse: bool,
 }
 
 /// How the cursor looks. Apps choose it with `ESC[n q`; `cursor` in the config
@@ -240,6 +262,9 @@ impl Grid {
             cursor_visible: true,
             cursor_shape: None,
             saved_screen: None,
+            top: 0,
+            bottom: rows.saturating_sub(1),
+            saved_cursor: None,
         }
     }
 
@@ -263,6 +288,10 @@ impl Grid {
         }
         self.rows = rows;
         self.cols = cols;
+        // A new size, the whole screen again: the program sets its region anew
+        // (nvim does, as it draws itself again), as in xterm.
+        self.top = 0;
+        self.bottom = rows.saturating_sub(1);
     }
 
     /// Cuts or fills up each row to `cols` and the screen to `rows`, keeping the
@@ -438,18 +467,147 @@ impl Grid {
         (self.cursor_row, self.cursor_col.min(self.cols - 1))
     }
 
-    /// Moves the cursor one line down. On the last line, the screen scrolls instead:
-    /// the top line goes into the scrollback and a blank line appears at the bottom.
+    /// Moves the cursor one line down. On the scroll region's last row (the
+    /// screen's, mostly), the region scrolls instead: its top row goes (into
+    /// the scrollback, if it's the screen's top) and a blank row comes at its
+    /// bottom. Below the region, on the screen's last row: nothing moves.
     pub fn newline(&mut self) {
-        if self.cursor_row + 1 >= self.rows {
-            let line = self.lines.remove(0);
-            if self.saved_screen.is_none() {
-                self.keep(line);
-            }
-            self.lines.push(Line::blank(self.cols, self.blank()));
-        } else {
+        if self.cursor_row == self.bottom {
+            self.scroll_up(1);
+        } else if self.cursor_row + 1 < self.rows {
             self.cursor_row += 1;
         }
+    }
+
+    /// `ESC M`, the other way: the cursor one line up; on the region's top row,
+    /// the region scrolls down: a blank row at its top, its last row goes.
+    /// less pages back so, a row at a time.
+    pub fn reverse_newline(&mut self) {
+        if self.cursor_row == self.top {
+            self.scroll_down(1);
+        } else {
+            self.cursor_row = self.cursor_row.saturating_sub(1);
+        }
+    }
+
+    /// `ESC[nS`, and a new line at the region's bottom: the region's rows move
+    /// up `n`, blank rows come at its bottom. Rows leaving the screen's top on
+    /// the normal screen go into the scrollback, where you can scroll back to
+    /// them; out of a smaller region (nvim's text) or the alternate screen, they
+    /// are gone.
+    pub fn scroll_up(&mut self, n: usize) {
+        let n = n.min(self.bottom + 1 - self.top);
+        let to_scrollback = self.top == 0 && self.saved_screen.is_none();
+        for _ in 0..n {
+            let line = self.lines.remove(self.top);
+            if to_scrollback {
+                self.keep(line);
+            }
+            self.lines
+                .insert(self.bottom, Line::blank(self.cols, self.blank()));
+        }
+    }
+
+    /// `ESC[nT`: the region's rows move down `n`, blank rows come at its top,
+    /// its last rows go.
+    pub fn scroll_down(&mut self, n: usize) {
+        let n = n.min(self.bottom + 1 - self.top);
+        for _ in 0..n {
+            self.lines.remove(self.bottom);
+            self.lines
+                .insert(self.top, Line::blank(self.cols, self.blank()));
+        }
+    }
+
+    /// `ESC[top;bottomr`, 1-based: the scroll region. Without numbers (`ESC[r`),
+    /// or with ones that make no region (`ESC[5;3r`), the whole screen. The
+    /// cursor goes to the top left, as in xterm.
+    pub fn set_scroll_region(&mut self, top: usize, bottom: usize) {
+        let top = top.max(1) - 1;
+        let bottom = if bottom == 0 {
+            self.rows
+        } else {
+            bottom.min(self.rows)
+        } - 1;
+        if top < bottom {
+            (self.top, self.bottom) = (top, bottom);
+        } else {
+            (self.top, self.bottom) = (0, self.rows - 1);
+        }
+        self.cursor_row = 0;
+        self.cursor_col = 0;
+    }
+
+    /// `ESC[nL`: `n` blank rows at the cursor's, the rows below it in the region
+    /// move down, the region's last ones go. nvim opens a line so (`o`), or
+    /// scrolls back up (Ctrl+U). Outside the region: nothing.
+    pub fn insert_lines(&mut self, n: usize) {
+        if !(self.top..=self.bottom).contains(&self.cursor_row) {
+            return;
+        }
+        let n = n.min(self.bottom + 1 - self.cursor_row);
+        for _ in 0..n {
+            self.lines.remove(self.bottom);
+            self.lines
+                .insert(self.cursor_row, Line::blank(self.cols, self.blank()));
+        }
+        self.cursor_col = 0;
+    }
+
+    /// `ESC[nM`: the cursor's row and `n - 1` below it go, the rows under them
+    /// in the region move up, blank rows come at its bottom. nvim deletes a line
+    /// so (`dd`), or scrolls down (Ctrl+D).
+    pub fn delete_lines(&mut self, n: usize) {
+        if !(self.top..=self.bottom).contains(&self.cursor_row) {
+            return;
+        }
+        let n = n.min(self.bottom + 1 - self.cursor_row);
+        for _ in 0..n {
+            self.lines.remove(self.cursor_row);
+            self.lines
+                .insert(self.bottom, Line::blank(self.cols, self.blank()));
+        }
+        self.cursor_col = 0;
+    }
+
+    /// `ESC 7`: remembers the cursor and the pen, for `ESC 8`.
+    pub fn save_cursor(&mut self) {
+        self.saved_cursor = Some(SavedCursor {
+            row: self.cursor_row,
+            col: self.cursor_col,
+            fg: self.fg,
+            bg: self.bg,
+            bold: self.bold,
+            italic: self.italic,
+            underline: self.underline,
+            underline_color: self.underline_color,
+            inverse: self.inverse,
+        });
+    }
+
+    /// `ESC 8`: back to where `ESC 7` was, with its pen. Never saved: the top
+    /// left, the default pen.
+    pub fn restore_cursor(&mut self) {
+        let saved = self.saved_cursor.unwrap_or(SavedCursor {
+            row: 0,
+            col: 0,
+            fg: Color::Default,
+            bg: Color::Default,
+            bold: false,
+            italic: false,
+            underline: Underline::None,
+            underline_color: Color::Default,
+            inverse: false,
+        });
+        self.cursor_row = saved.row.min(self.rows - 1);
+        self.cursor_col = saved.col.min(self.cols);
+        self.fg = saved.fg;
+        self.bg = saved.bg;
+        self.bold = saved.bold;
+        self.italic = saved.italic;
+        self.underline = saved.underline;
+        self.underline_color = saved.underline_color;
+        self.inverse = saved.inverse;
     }
 
     /// Puts `line` into the scrollback, the oldest one goes past the limit.
@@ -867,12 +1025,24 @@ impl Grid {
         self.cursor_col = col.saturating_sub(1).min(self.cols - 1);
     }
 
+    /// `ESC[nA`. In the scroll region, it stops at its top row.
     pub fn move_up(&mut self, n: usize) {
-        self.cursor_row = self.cursor_row.saturating_sub(n);
+        let floor = if self.cursor_row >= self.top {
+            self.top
+        } else {
+            0
+        };
+        self.cursor_row = self.cursor_row.saturating_sub(n).max(floor);
     }
 
+    /// `ESC[nB`. In the scroll region, it stops at its last row.
     pub fn move_down(&mut self, n: usize) {
-        self.cursor_row = (self.cursor_row + n).min(self.rows - 1);
+        let last = if self.cursor_row <= self.bottom {
+            self.bottom
+        } else {
+            self.rows - 1
+        };
+        self.cursor_row = (self.cursor_row + n).min(last);
     }
 
     pub fn move_forward(&mut self, n: usize) {

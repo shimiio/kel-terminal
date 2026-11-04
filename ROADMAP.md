@@ -344,9 +344,13 @@ What is Windows-only today:
 - [x] Shell integration (the tab's folder, a command's start and end) for bash
 - [ ] The same for zsh (macOS' shell) and fish
 - [ ] Install on Linux (`~/.local/bin`, a `.desktop` file) and macOS (`Kel.app`)
-- [ ] Without ConPTY, programs send everything straight to Kel: scroll regions `ESC[r`,
-      `ESC[L` / `ESC[M` / `ESC[S` / `ESC[T`, save/restore cursor `ESC 7` / `ESC 8`,
-      application cursor keys `ESC[?1h`, device attributes `ESC[c`
+- [x] Without ConPTY, programs send everything straight to Kel: scroll regions `ESC[r`,
+      `ESC[L` / `ESC[M` / `ESC[S` / `ESC[T`, `ESC M`, save/restore cursor `ESC 7` / `ESC 8`,
+      application cursor keys `ESC[?1h`, device attributes `ESC[c`; `TERM=xterm-256color`
+      (measured: what nvim, htop and less send on Linux)
+- [ ] Glass on Linux and macOS: see-through at least (does softbuffer give the window
+      alpha there?); macOS can blur (NSVisualEffectView), KDE too. WSLg's windows can't
+      show it: try on a real Linux and the friend's Mac
 - [ ] macOS shortcuts with Cmd instead of Ctrl+Shift
 - [ ] macOS Option+letter types `ø`, `å`: Kel now sends Alt+letter by the key's place
       for a non-Latin letter (Alt+М is Alt+V), which would make Option+O `ESC o`.

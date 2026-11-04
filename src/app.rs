@@ -2404,10 +2404,19 @@ impl App {
             return;
         }
         // Any other key: jump back to the bottom, then translate it to bytes for the shell
-        self.tab().terminal.lock().unwrap().grid.scroll_to_bottom();
+        let app_cursor = {
+            let mut terminal = self.tab().terminal.lock().unwrap();
+            terminal.grid.scroll_to_bottom();
+            terminal.app_cursor
+        };
         let text = event.text.as_deref();
         let key = (&event.logical_key, event.physical_key);
         if let Some(bytes) = keys::key_to_bytes(key, text, self.modifiers) {
+            let bytes = if app_cursor {
+                keys::app_cursor(bytes)
+            } else {
+                bytes
+            };
             self.send_to_shell(&bytes);
         }
     }

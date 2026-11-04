@@ -323,6 +323,23 @@ fn control_char(key: &Key, physical: PhysicalKey) -> Option<u8> {
     }
 }
 
+/// The arrows, Home and End the way a program asked for them with `ESC[?1h`
+/// ("application cursor keys"): `ESC O A`, not `ESC [ A`. Only without Ctrl,
+/// Shift or Alt: with them it's `ESC[1;5A` either way. less, htop and other
+/// programs that look the keys up in terminfo know them only so.
+pub fn app_cursor(bytes: Vec<u8>) -> Vec<u8> {
+    match bytes.as_slice() {
+        [
+            0x1b,
+            b'[',
+            letter @ (b'A' | b'B' | b'C' | b'D' | b'H' | b'F'),
+        ] => {
+            vec![0x1b, b'O', *letter]
+        }
+        _ => bytes,
+    }
+}
+
 /// For a letter that isn't Latin (`м` on a Russian layout), the Latin one on its
 /// key (`v`), in the same case (`М`: `V`). `None` for anything else: a Latin
 /// letter is itself, and German `ü` (on US `[`) has no letter's place.
@@ -631,6 +648,19 @@ mod tests {
         assert_eq!(type_key("z", KeyCode::KeyY, alt), b"\x1bz");
         // German Ü is where US keyboards have `[`: no letter there, Ü it is.
         assert_eq!(type_key("ü", KeyCode::BracketLeft, alt), "\x1bü".as_bytes());
+    }
+
+    #[test]
+    fn application_cursor_keys() {
+        let up = send(NamedKey::ArrowUp, ModifiersState::empty());
+        assert_eq!(app_cursor(up.into_bytes()), b"\x1bOA");
+        let home = send(NamedKey::Home, ModifiersState::empty());
+        assert_eq!(app_cursor(home.into_bytes()), b"\x1bOH");
+        // With Ctrl: as it was.
+        let ctrl_up = send(NamedKey::ArrowUp, CTRL);
+        assert_eq!(app_cursor(ctrl_up.into_bytes()), b"\x1b[1;5A");
+        // Not an arrow: as it was.
+        assert_eq!(app_cursor(b"\x1b[3~".to_vec()), b"\x1b[3~");
     }
 
     #[test]

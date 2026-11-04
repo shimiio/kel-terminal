@@ -51,8 +51,15 @@ pub fn spawn_shell(
 /// - `COLORTERM=truecolor`: Kel draws any color, not only 256. Without it, delta
 ///   (git's diffs, in lazygit too) rounds its colors to the 256-color table: its
 ///   dark red behind a removed line (#3f0001) became a loud one (#5f0000).
-///   Not `TERM`: nvim talks to ConPTY, not to Kel, and knows ConPTY without it.
+///   Not `TERM` on Windows: nvim talks to ConPTY, not to Kel, and knows ConPTY
+///   without it.
+/// - `TERM=xterm-256color` on Linux and macOS: programs look up the codes a
+///   terminal knows in terminfo, by this name, and Kel knows xterm's. Started
+///   from a terminal, Kel would pass on that one's `TERM`; from the menu, none.
 fn introduce_kel(cmd: &mut CommandBuilder) {
+    if cfg!(unix) {
+        cmd.env("TERM", "xterm-256color");
+    }
     cmd.env("TERM_PROGRAM", "kel");
     cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
     cmd.env("COLORTERM", "truecolor");

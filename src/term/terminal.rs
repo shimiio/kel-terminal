@@ -6,10 +6,15 @@
 //! - `print`: a normal character to show
 //! - `execute`: a control byte like `\r` or `\n`
 //! - `csi_dispatch`: an `ESC[...` sequence, with its numbers (params) and final letter (action)
+//! - `esc_dispatch`: an `ESC` and one letter, e.g. `ESC 7` (save the cursor)
 //! - `osc_dispatch`: an `ESC]...` sequence, text for the terminal itself (the window
 //!   title, the shell's folder, where its commands start and end)
 //!
 //! Each method only decides which `Grid` function to call.
+//!
+//! On Windows, ConPTY sits between the program and Kel and sends its own, plainer
+//! codes: it never scrolled a region, it drew the rows again. On Linux and macOS
+//! nvim, htop and less talk to Kel straight, and use all of these.
 
 use super::Grid;
 use super::grid::{CursorShape, Underline};
@@ -50,6 +55,10 @@ pub struct Terminal {
     /// The program rang the bell (BEL, `\x07`) since the tab last looked: it's
     /// done, or it wants you (see `bell` in the config).
     pub bell: bool,
+    /// The program asked for the arrows as `ESC O A`, not `ESC [ A`
+    /// (`ESC[?1h`, "application cursor keys"; see `keys::app_cursor`). less
+    /// and htop read the keys by the terminfo's names, which are these.
+    pub app_cursor: bool,
 }
 
 impl Terminal {
@@ -65,6 +74,7 @@ impl Terminal {
             cwd: None,
             marks: Vec::new(),
             bell: false,
+            app_cursor: false,
         }
     }
 
@@ -199,6 +209,28 @@ impl Perform for Terminal {
         }
     }
 
+    /// `ESC` and a letter. `intermediates` are what came between: `ESC ( B`
+    /// (the letters' set, plain ASCII) has `(`, and isn't one of these.
+    fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
+        if !intermediates.is_empty() {
+            return;
+        }
+        match byte {
+            b'7' => self.grid.save_cursor(),
+            b'8' => self.grid.restore_cursor(),
+            // Down a row (scrolling at the region's bottom), as `\n`.
+            b'D' => self.grid.newline(),
+            // Next line: the same, at the row's start.
+            b'E' => {
+                self.grid.carriage_return();
+                self.grid.newline();
+            }
+            // Up a row, scrolling at the region's top: less pages back so.
+            b'M' => self.grid.reverse_newline(),
+            _ => {}
+        }
+    }
+
     fn csi_dispatch(
         &mut self,
         params: &vte::Params,
@@ -218,6 +250,7 @@ impl Perform for Terminal {
             };
             for mode in params.iter().filter_map(|param| param.first()) {
                 match mode {
+                    1 => self.app_cursor = on,
                     25 => self.grid.cursor_visible = on,
                     1049 if on => self.grid.enter_alt_screen(),
                     1049 => self.grid.leave_alt_screen(),
@@ -264,7 +297,23 @@ impl Perform for Terminal {
             'X' => self.grid.erase_chars(n),
             'P' => self.grid.delete_chars(n),
             '@' => self.grid.insert_blanks(n),
+            // Rows: insert, delete, and the scroll region, its rows moved.
+            'L' => self.grid.insert_lines(n),
+            'M' => self.grid.delete_lines(n),
+            'S' => self.grid.scroll_up(n),
+            'T' => self.grid.scroll_down(n),
+            // 0 for "not given": the screen's own top and bottom.
+            'r' => self
+                .grid
+                .set_scroll_region(param(params, 0, 1) as usize, param(params, 1, 0) as usize),
+            // The same as `ESC 7` / `ESC 8`, the way some programs write it.
+            's' => self.grid.save_cursor(),
+            'u' => self.grid.restore_cursor(),
             'm' => self.set_colors(params),
+            // "What terminal are you?" (`ESC[c`, Device Attributes): one like
+            // xterm, a VT220 (62) with colors (22). nvim asks at start and
+            // waits a moment for the answer.
+            'c' if param(params, 0, 0) == 0 => self.replies.extend_from_slice(b"\x1b[?62;22c"),
             // Questions, `ESC[5n` "are you OK?" and `ESC[6n` "where is the cursor?".
             // The answer goes back like typed text: `ESC[0n` "OK", `ESC[{row};{col}R`.
             'n' => match param(params, 0, 0) {
@@ -795,5 +844,89 @@ mod tests {
         let t = feed("\x1b[48;2;20;22;27m\r\n\x1b[12X");
         assert_eq!(t.grid.cell(1, 0).bg, Color::Rgb(0x14161b));
         assert_eq!(t.grid.cell(1, 9).bg, Color::Rgb(0x14161b)); // last column (the test grid is 10 wide)
+    }
+
+    /// Five rows, `a` to `e`, the cursor at the end of `e`.
+    const ROWS: &str = "a\r\nb\r\nc\r\nd\r\ne";
+
+    #[test]
+    fn a_new_line_scrolls_only_the_region() {
+        // Rows 1-4 scroll, the 5th (nvim's status line) stays.
+        let t = feed(&format!("{ROWS}\x1b[1;4r\x1b[4;1H\nX"));
+        assert_eq!(t.grid.render(), "b\nc\nd\nX\ne");
+        // Out of a region not at the top, nothing goes into the scrollback.
+        let t = feed(&format!("{ROWS}\x1b[2;4r\x1b[4;1H\n"));
+        assert_eq!(t.grid.render(), "a\nc\nd\n\ne");
+        assert!(t.grid.scrollback().is_empty());
+        // `ESC[r`: the whole screen again; the top row goes into the scrollback.
+        let t = feed(&format!("{ROWS}\x1b[2;4r\x1b[r\x1b[5;1H\n"));
+        assert_eq!(t.grid.render(), "b\nc\nd\ne");
+        assert_eq!(t.grid.scrollback().len(), 1);
+    }
+
+    #[test]
+    fn nvim_scrolls_down_and_up() {
+        // Ctrl+D: rows 1-4 its text, 2 rows off the top, the status line stays.
+        let t = feed(&format!("{ROWS}\x1b[1;4r\x1b[1;1H\x1b[2M"));
+        assert_eq!(t.grid.render(), "c\nd\n\n\ne");
+        // Ctrl+U: 2 blank rows at the top, the region's last 2 go.
+        let t = feed(&format!("{ROWS}\x1b[1;4r\x1b[1;1H\x1b[2L"));
+        assert_eq!(t.grid.render(), "\n\na\nb\ne");
+        // `o` on row 2: a blank row under it.
+        let t = feed(&format!("{ROWS}\x1b[1;4r\x1b[3;1H\x1b[L"));
+        assert_eq!(t.grid.render(), "a\nb\n\nc\ne");
+        // Outside the region: nothing moves.
+        let t = feed(&format!("{ROWS}\x1b[1;3r\x1b[5;1H\x1b[M"));
+        assert_eq!(t.grid.render(), "a\nb\nc\nd\ne");
+    }
+
+    #[test]
+    fn scroll_up_and_down_by_number() {
+        let t = feed(&format!("{ROWS}\x1b[2;4r\x1b[2S"));
+        assert_eq!(t.grid.render(), "a\nd\n\n\ne");
+        let t = feed(&format!("{ROWS}\x1b[2;4r\x1b[T"));
+        assert_eq!(t.grid.render(), "a\n\nb\nc\ne");
+    }
+
+    #[test]
+    fn less_pages_back_a_row_at_a_time() {
+        // `ESC M` on the top row: everything moves down, a blank row on top.
+        let t = feed(&format!("{ROWS}\x1b[1;1H\x1bMX"));
+        assert_eq!(t.grid.render(), "X\na\nb\nc\nd");
+        // Not on the top row: only the cursor goes up.
+        let t = feed(&format!("{ROWS}\x1b[3;1H\x1bMX"));
+        assert_eq!(t.grid.render(), "a\nX\nc\nd\ne");
+    }
+
+    #[test]
+    fn the_cursor_stays_in_the_region() {
+        // Up stops at row 2, the region's top; down at row 4, its bottom (and
+        // the column after X).
+        let t = feed("\x1b[2;4r\x1b[3;1H\x1b[9AX\x1b[9BY");
+        assert_eq!(t.grid.render(), "\nX\n\n Y");
+    }
+
+    #[test]
+    fn saves_and_restores_the_cursor() {
+        let t = feed("ab\x1b7\x1b[31m\x1b[3;5Hx\x1b8c");
+        assert_eq!(t.grid.render(), "abc\n\n    x");
+        // The pen came back too: `c` isn't red.
+        assert_eq!(t.grid.cell(0, 2).fg, Color::Default);
+        let t = feed("ab\x1b[s\x1b[3;5Hx\x1b[uc");
+        assert_eq!(t.grid.render(), "abc\n\n    x");
+    }
+
+    #[test]
+    fn says_what_terminal_it_is() {
+        assert_eq!(feed("\x1b[c").replies, b"\x1b[?62;22c");
+        assert_eq!(feed("\x1b[0c").replies, b"\x1b[?62;22c");
+        assert!(feed("\x1b[>c").replies.is_empty()); // another question
+    }
+
+    #[test]
+    fn application_cursor_keys_on_and_off() {
+        assert!(feed("\x1b[?1h").app_cursor);
+        assert!(!feed("\x1b[?1h\x1b[?1l").app_cursor);
+        assert!(!feed("").app_cursor);
     }
 }
