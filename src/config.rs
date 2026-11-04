@@ -1,4 +1,4 @@
-//! The config file: `%APPDATA%\kel\config.toml`.
+//! The config file: `config.toml` in Kel's folder (see `dir`).
 //!
 //! On the first start Kel writes the default file, with a comment for every setting.
 //! A setting missing from the file keeps its default value.
@@ -11,6 +11,7 @@ use crate::theme::Theme;
 use anyhow::Context;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -203,13 +204,33 @@ impl Config {
     }
 }
 
-/// Kel's folder, e.g. `C:\Users\you\AppData\Roaming\kel`.
+/// Kel's folder, with the config and the projects:
+/// - Windows: `%APPDATA%\kel`, e.g. `C:\Users\you\AppData\Roaming\kel`;
+/// - Linux and macOS: `~/.config/kel`, or `$XDG_CONFIG_HOME/kel` if it's set.
+///   macOS has `~/Library/Application Support` for programs' settings, but
+///   terminals (kitty, Alacritty, WezTerm, Ghostty) and the tools in them (nvim,
+///   git) keep theirs in `~/.config`, where your dotfiles are.
 pub fn dir() -> anyhow::Result<PathBuf> {
-    let appdata = std::env::var_os("APPDATA").context("APPDATA is not set")?;
-    Ok(PathBuf::from(appdata).join("kel"))
+    kel_dir(|name| std::env::var_os(name).filter(|value| !value.is_empty()))
 }
 
-/// Where the config file lives, e.g. `C:\Users\you\AppData\Roaming\kel\config.toml`.
+/// `dir`, with `var` reading the environment.
+fn kel_dir(var: impl Fn(&str) -> Option<OsString>) -> anyhow::Result<PathBuf> {
+    if cfg!(windows) {
+        let appdata = var("APPDATA").context("APPDATA is not set")?;
+        return Ok(PathBuf::from(appdata).join("kel"));
+    }
+    // Only a full path: the standard says to ignore a relative one.
+    let xdg = var("XDG_CONFIG_HOME").map(PathBuf::from);
+    if let Some(xdg) = xdg.filter(|path| path.is_absolute()) {
+        return Ok(xdg.join("kel"));
+    }
+    let home = var("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home).join(".config").join("kel"))
+}
+
+/// Where the config file lives, e.g. `C:\Users\you\AppData\Roaming\kel\config.toml`
+/// or `/home/you/.config/kel/config.toml`.
 pub fn path() -> anyhow::Result<PathBuf> {
     Ok(dir()?.join("config.toml"))
 }
@@ -251,6 +272,45 @@ fn line_at(text: &str, offset: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The environment `kel_dir` sees: these variables, no others.
+    fn env(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
+        let vars: Vec<(String, String)> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |name| {
+            vars.iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| OsString::from(v))
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn kel_dir_on_windows() {
+        let appdata = env(&[("APPDATA", r"C:\Users\you\AppData\Roaming")]);
+        let dir = kel_dir(appdata).unwrap();
+        assert_eq!(dir, PathBuf::from(r"C:\Users\you\AppData\Roaming\kel"));
+        assert!(kel_dir(env(&[])).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn kel_dir_on_linux_and_macos() {
+        let home = env(&[("HOME", "/home/you")]);
+        assert_eq!(
+            kel_dir(home).unwrap(),
+            PathBuf::from("/home/you/.config/kel")
+        );
+        let xdg = env(&[("HOME", "/home/you"), ("XDG_CONFIG_HOME", "/data/config")]);
+        assert_eq!(kel_dir(xdg).unwrap(), PathBuf::from("/data/config/kel"));
+        // A relative XDG_CONFIG_HOME doesn't count.
+        let relative = env(&[("HOME", "/home/you"), ("XDG_CONFIG_HOME", "config")]);
+        let dir = kel_dir(relative).unwrap();
+        assert_eq!(dir, PathBuf::from("/home/you/.config/kel"));
+        assert!(kel_dir(env(&[])).is_err());
+    }
 
     #[test]
     fn default_file_matches_defaults() {

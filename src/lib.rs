@@ -11,7 +11,7 @@
 //!
 //! - `app`: the window and all events. Owns everything else.
 //! - `keys`: Kel's shortcuts, and the bytes other keys send to the shell.
-//! - `config`: the settings file, `%APPDATA%\kel\config.toml`.
+//! - `config`: the settings file, `%APPDATA%\kel\config.toml` (Linux, macOS: `~/.config/kel`).
 //! - `fallback`: fonts for the letters the terminal's font lacks (emoji, Chinese).
 //! - `font`: finds a font, and turns its letters into pixels.
 //! - `icons`: the tab icons, 8 x 8 pixel grids in code, like the logo.

@@ -334,11 +334,15 @@ Settled:
 
 The base is already cross-platform: winit, softbuffer, ab_glyph, fontdb, portable-pty, arboard.
 What is Windows-only today:
-- [ ] Config path `%APPDATA%\kel` (Linux `~/.config/kel`, macOS `~/Library/Application Support/kel`)
+- [x] Config path: `%APPDATA%\kel`; Linux and macOS `~/.config/kel` (or `$XDG_CONFIG_HOME/kel`),
+      where terminals and nvim keep theirs, not macOS' `~/Library/Application Support`
 - [x] Ctrl+, and links open with the system's program (`src/open.rs`: Linux `xdg-open`, macOS `open`)
 - [x] Kel compiles on Linux and macOS; CI builds and tests all three
-- [ ] Default shell `powershell.exe` (Linux/macOS: `$SHELL`)
-- [ ] Default font Consolas (solved by a built-in font, see Fonts)
+- [x] Default shell `powershell.exe` (Linux/macOS: `$SHELL`)
+- [x] Default font Consolas (solved by the built-in JetBrains Mono)
+- [ ] The config's comments speak of Windows (Settings > Fonts, `pwsh.exe` examples)
+- [ ] Shell integration (the tab's folder, a command's start and end) for bash, zsh, fish
+- [ ] Install on Linux (`~/.local/bin`, a `.desktop` file) and macOS (`Kel.app`)
 - [ ] Without ConPTY, programs send everything straight to Kel: scroll regions `ESC[r`,
       `ESC[L` / `ESC[M` / `ESC[S` / `ESC[T`, save/restore cursor `ESC 7` / `ESC 8`,
       application cursor keys `ESC[?1h`, device attributes `ESC[c`

@@ -1,4 +1,4 @@
-//! Projects: `%APPDATA%\kel\projects\<name>.toml`, a recipe for a set of tabs.
+//! Projects: `projects/<name>.toml` in Kel's folder (`config::dir`), a recipe for a set of tabs.
 //!
 //! `kel <name>` opens one: each tab starts in its folder and types its command, as
 //! if you did. The file holds no running programs (those can't be saved): Kel
