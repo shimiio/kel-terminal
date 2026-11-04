@@ -65,7 +65,7 @@ the new program.
 | Ctrl+click | Opens the `https://` link under the mouse in the browser (also in nvim). Hold Ctrl and the link is underlined. A link cut at the window's edge is one link; a `.` or `,` after it isn't part of it. Text a program marked as a link (OSC 8: `ls --hyperlink`, delta) too: its address shows in the tab bar while Ctrl is held over it. A web link opens in the browser, a file on this computer is shown in Explorer (never run); other links aren't opened |
 | Ctrl+C | Stop the running command |
 | Mouse drag | Select text |
-| Double-click / triple-click | Select the word / the whole line. A word is a path or an address whole (`C:\codepp.rs:12`, `https://...`); a line too long for the window, all its rows. Held after the last click and dragged: word by word, line by line |
+| Double-click / triple-click | Select the word / the whole line. A word is a path or an address whole (`C:\code\app.rs:12`, `https://...`); a line too long for the window, all its rows. Held after the last click and dragged: word by word, line by line |
 | Mouse wheel | Scroll back through earlier output |
 | Shift + mouse | In a program that takes the mouse (nvim, htop, lazygit), the mouse is the program's; with Shift it's Kel's: select text, scroll back |
 | `+` after the tabs | New tab |
