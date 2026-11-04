@@ -342,7 +342,8 @@ What is Windows-only today:
 - [x] Default font Consolas (solved by the built-in JetBrains Mono)
 - [ ] The config's comments speak of Windows (Settings > Fonts, `pwsh.exe` examples)
 - [x] Shell integration (the tab's folder, a command's start and end) for bash
-- [ ] The same for zsh (macOS' shell) and fish
+- [x] The same for zsh (macOS' shell), by its `ZDOTDIR`
+- [ ] The same for fish
 - [ ] Install on Linux (`~/.local/bin`, a `.desktop` file) and macOS (`Kel.app`)
 - [x] Without ConPTY, programs send everything straight to Kel: scroll regions `ESC[r`,
       `ESC[L` / `ESC[M` / `ESC[S` / `ESC[T`, `ESC M`, save/restore cursor `ESC 7` / `ESC 8`,

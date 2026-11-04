@@ -27,11 +27,14 @@
 //!   `bash --rcfile <it>`. bash reads that file instead of your `~/.bashrc`, so it
 //!   reads `~/.bashrc` first, then adds two hooks (see `BASH`). Not Git Bash on
 //!   Windows: its folders are `/c/Users/...`, which Windows' Kel can't open.
+//! - **zsh** (macOS' shell, Linux): zsh has no `--rcfile`, but it looks for its
+//!   files (`.zshenv`, `.zshrc`) in the folder `ZDOTDIR` names. Kel names its own,
+//!   with a `.zshenv` (`ZSH`) that puts `ZDOTDIR` back, reads yours, and adds the
+//!   hooks; zsh reads the rest of your files from your folder, as always.
 //! - Other shells: nothing; Kel just doesn't know their folder.
 
 use portable_pty::CommandBuilder;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 /// The new `prompt`: "the command ended" (from `$?`, did the last one work), then
 /// the folder, then the old prompt's text. Only a real folder: in `HKLM:` (the
@@ -112,6 +115,49 @@ PROMPT_COMMAND="__kel_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 [ -n "$(trap -p DEBUG)" ] || trap '__kel_preexec' DEBUG
 "#;
 
+/// zsh's `.zshenv` in Kel's `ZDOTDIR`, the first file zsh reads:
+///
+/// - `ZDOTDIR` back to what it was (`KEL_ZDOTDIR`, set by Kel if it had one),
+///   or none: your home. zsh looks it up before each file, so your `.zprofile`
+///   and `.zshrc` come from there. Then your `.zshenv`.
+/// - `__kel_precmd`, before each prompt: "the command ended", and the folder.
+///   Added before your `.zshrc` adds its own (oh-my-zsh, powerlevel10k): the
+///   first, `$?` still the command's.
+/// - `__kel_preexec`, on Enter: zsh gives it the line as typed, its text then
+///   "the command starts". zsh doesn't call it for an empty line.
+///
+/// `'\'` in quotes for the same reason as in `BASH`; `code`, not `status`,
+/// which zsh keeps for itself.
+const ZSH: &str = r#"# Kel's shell integration for zsh. Kel writes this file at each start: a change
+# here doesn't stay. Kel started zsh with ZDOTDIR here, so zsh read this first:
+# ZDOTDIR back to yours (none: your home), and your .zshenv.
+if [[ -n "${KEL_ZDOTDIR+x}" ]]; then ZDOTDIR=$KEL_ZDOTDIR; else unset ZDOTDIR; fi
+unset KEL_ZDOTDIR
+if [[ -f "${ZDOTDIR:-$HOME}/.zshenv" ]]; then source "${ZDOTDIR:-$HOME}/.zshenv"; fi
+
+if [[ -o interactive ]]; then
+  __kel_precmd() {
+    local code=$?
+    printf '\e]133;D;%s\e\\\e]9;9;%s\e\\' "$(( code != 0 ))" "$PWD"
+  }
+
+  __kel_preexec() {
+    local text=$1 bs='\x5c' sc='\x3b' nl='\x0a' tab='\x09' esc='\x1b' bel='\x07'
+    text=${text//'\'/"$bs"}
+    text=${text//;/"$sc"}
+    text=${text//$'\n'/"$nl"}
+    text=${text//$'\t'/"$tab"}
+    text=${text//$'\e'/"$esc"}
+    text=${text//$'\a'/"$bel"}
+    printf '\e]633;E;%s\e\\\e]133;C\e\\' "$text"
+  }
+
+  autoload -Uz add-zsh-hook
+  add-zsh-hook precmd __kel_precmd
+  add-zsh-hook preexec __kel_preexec
+fi
+"#;
+
 /// cmd's code for the folder, before its prompt.
 const CMD_PROMPT: &str = "$e]9;9;$P$e\\";
 
@@ -127,9 +173,22 @@ pub fn add(cmd: &mut CommandBuilder, shell: &str, args: &[String]) {
         // Before yours: bash wants its long options (`--rcfile`) before the
         // short ones (`-l`). Without the file (it can't be written): plain bash.
         Some("bash") if cfg!(unix) => {
-            if let Some(file) = bash_file() {
+            if let Some(file) = written("kel.bash", BASH) {
                 cmd.arg("--rcfile");
                 cmd.arg(file);
+            }
+            cmd.args(args);
+        }
+        Some("zsh") if cfg!(unix) => {
+            if let Some(dir) = written("zsh/.zshenv", ZSH)
+                .as_deref()
+                .and_then(Path::parent)
+            {
+                match std::env::var_os("ZDOTDIR") {
+                    Some(yours) => cmd.env("KEL_ZDOTDIR", yours),
+                    None => cmd.env_remove("KEL_ZDOTDIR"),
+                }
+                cmd.env("ZDOTDIR", dir);
             }
             cmd.args(args);
         }
@@ -138,27 +197,24 @@ pub fn add(cmd: &mut CommandBuilder, shell: &str, args: &[String]) {
     cmd.env("PROMPT", cmd_prompt(std::env::var("PROMPT").ok()));
 }
 
-/// The file with `BASH`, in Kel's folder: `~/.config/kel/shell/kel.bash`.
-/// Written once a Kel runs, if it's not as `BASH` says (a newer Kel's).
-fn bash_file() -> Option<&'static Path> {
-    static FILE: OnceLock<Option<PathBuf>> = OnceLock::new();
-    FILE.get_or_init(|| {
-        let file = crate::config::dir().ok()?.join("shell").join("kel.bash");
-        if std::fs::read_to_string(&file).ok().as_deref() != Some(BASH) {
-            std::fs::create_dir_all(file.parent()?).ok()?;
-            std::fs::write(&file, BASH).ok()?;
-        }
-        Some(file)
-    })
-    .as_deref()
+/// The file `name` in Kel's folder's `shell`, e.g. `~/.config/kel/shell/kel.bash`,
+/// with `text` in it: written if it isn't so (the first time, or a newer Kel's
+/// text). `None` if it can't be: the shell starts without integration.
+fn written(name: &str, text: &str) -> Option<PathBuf> {
+    let file = crate::config::dir().ok()?.join("shell").join(name);
+    if std::fs::read_to_string(&file).ok().as_deref() != Some(text) {
+        std::fs::create_dir_all(file.parent()?).ok()?;
+        std::fs::write(&file, text).ok()?;
+    }
+    Some(file)
 }
 
 /// Whether `shell` reports its folder at each prompt, so Kel can tell when it's
 /// ready for typing (see `Tab::type_at_start`).
 pub fn reports_folder(shell: &str) -> bool {
     let name = name(shell);
-    let bash = cfg!(unix) && name.as_deref() == Some("bash");
-    bash || matches!(name.as_deref(), Some("powershell" | "pwsh" | "cmd"))
+    let unix = cfg!(unix) && matches!(name.as_deref(), Some("bash" | "zsh"));
+    unix || matches!(name.as_deref(), Some("powershell" | "pwsh" | "cmd"))
 }
 
 /// The shell's name in lowercase: `C:\...\PowerShell.exe` → `powershell`,
@@ -204,20 +260,14 @@ mod tests {
         assert!(!reports_folder("nu.exe"));
     }
 
-    /// The hooks in a real bash, in a pseudo-terminal as in a tab: `cd /`,
-    /// `false`, a `;` to escape, an empty line, and out. Its own `HOME`, so not
-    /// the machine's `~/.bashrc`.
+    /// Runs `cmd` (a shell) in a pseudo-terminal, as a tab does, types
+    /// `input`, and gives back all it wrote until it ended.
     #[cfg(unix)]
-    #[test]
-    fn bash_reports_folders_and_commands() {
+    fn run_in_pty(cmd: CommandBuilder, input: &[u8]) -> String {
         use portable_pty::{PtySize, native_pty_system};
         use std::io::{Read, Write};
         use std::time::Duration;
 
-        let home = std::env::temp_dir().join(format!("kel-bash-{}", std::process::id()));
-        std::fs::create_dir_all(&home).unwrap();
-        let file = home.join("kel.bash");
-        std::fs::write(&file, BASH).unwrap();
         let size = PtySize {
             rows: 24,
             cols: 80,
@@ -225,20 +275,11 @@ mod tests {
             pixel_height: 0,
         };
         let pair = native_pty_system().openpty(size).unwrap();
-        let mut cmd = CommandBuilder::new("bash");
-        cmd.arg("--rcfile");
-        cmd.arg(&file);
-        cmd.arg("-i");
-        cmd.env("HOME", &home);
-        cmd.cwd(&home);
         let mut child = pair.slave.spawn_command(cmd).unwrap();
         drop(pair.slave);
-
         let mut reader = pair.master.try_clone_reader().unwrap();
         let mut writer = pair.master.take_writer().unwrap();
-        writer
-            .write_all(b"cd /\nfalse\necho 'a;b'\n\nexit\n")
-            .unwrap();
+        writer.write_all(input).unwrap();
         // All it writes, until it ends (the read fails then, which is fine).
         let (send, receive) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -246,13 +287,24 @@ mod tests {
             let _ = reader.read_to_end(&mut out);
             let _ = send.send(out);
         });
-        let out = receive
-            .recv_timeout(Duration::from_secs(20))
-            .expect("bash didn't end");
-        let _ = child.wait();
-        let _ = std::fs::remove_dir_all(&home);
-        let out = String::from_utf8_lossy(&out);
+        let out = receive.recv_timeout(Duration::from_secs(20));
+        let _ = child.kill();
+        String::from_utf8_lossy(&out.expect("the shell didn't end")).into_owned()
+    }
 
+    /// A new empty folder for a test, as its `HOME`: not the machine's files.
+    #[cfg(unix)]
+    fn test_home(name: &str) -> PathBuf {
+        let home = std::env::temp_dir().join(format!("kel-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        home
+    }
+
+    /// What both shells must have said for a first `echo` (each test's own),
+    /// `cd /`, `false`, `echo 'a;b'`, an empty line and `exit`.
+    #[cfg(unix)]
+    fn check_reports(out: &str) {
         let start = |text: &str| format!("\x1b]633;E;{text}\x1b\\\x1b]133;C\x1b\\");
         assert!(out.contains(&start("cd /")), "{out:?}");
         assert!(
@@ -262,8 +314,68 @@ mod tests {
         assert!(out.contains(&start("false")), "{out:?}");
         assert!(out.contains("\x1b]133;D;1\x1b\\"), "{out:?}");
         assert!(out.contains(&start("echo 'a\\x3bb'")), "{out:?}");
-        // The empty line started nothing: four commands, `exit` the last.
-        assert_eq!(out.matches("\x1b]133;C").count(), 4, "{out:?}");
+        // The empty line started nothing: five commands, `exit` the last.
+        assert_eq!(out.matches("\x1b]133;C").count(), 5, "{out:?}");
+    }
+
+    #[cfg(unix)]
+    const INPUT: &[u8] = b"cd /\nfalse\necho 'a;b'\n\nexit\n";
+
+    /// The hooks in a real bash: what it says, and your `~/.bashrc` still read.
+    #[cfg(unix)]
+    #[test]
+    fn bash_reports_folders_and_commands() {
+        let home = test_home("bash");
+        std::fs::write(home.join(".bashrc"), "export FROM_BASHRC=yes\n").unwrap();
+        let file = home.join("kel.bash");
+        std::fs::write(&file, BASH).unwrap();
+        let mut cmd = CommandBuilder::new("bash");
+        cmd.arg("--rcfile");
+        cmd.arg(&file);
+        cmd.arg("-i");
+        cmd.env("HOME", &home);
+        cmd.cwd(&home);
+        let input = [b"echo $FROM_BASHRC-from\n", INPUT].concat();
+        let out = run_in_pty(cmd, &input);
+        let _ = std::fs::remove_dir_all(&home);
+        check_reports(&out);
+        assert!(out.contains("yes-from"), "{out:?}");
+    }
+
+    /// The hooks in a real zsh, if there is one (macOS has it, Ubuntu not
+    /// always): what it says, your `.zshenv` and `.zshrc` still read, and
+    /// `ZDOTDIR` yours again.
+    #[cfg(unix)]
+    #[test]
+    fn zsh_reports_folders_and_commands() {
+        if std::process::Command::new("zsh")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let home = test_home("zsh");
+        std::fs::write(home.join(".zshenv"), "export FROM_ZSHENV=yes\n").unwrap();
+        std::fs::write(home.join(".zshrc"), "export FROM_ZSHRC=yes\n").unwrap();
+        let kel = home.join("kel");
+        std::fs::create_dir_all(&kel).unwrap();
+        std::fs::write(kel.join(".zshenv"), ZSH).unwrap();
+        let mut cmd = CommandBuilder::new("zsh");
+        cmd.arg("-i");
+        cmd.env("HOME", &home);
+        cmd.env("ZDOTDIR", &kel);
+        cmd.env_remove("KEL_ZDOTDIR");
+        cmd.cwd(&home);
+        let input = [
+            b"echo $FROM_ZSHENV-$FROM_ZSHRC-${ZDOTDIR-none}-from\n",
+            INPUT,
+        ]
+        .concat();
+        let out = run_in_pty(cmd, &input);
+        let _ = std::fs::remove_dir_all(&home);
+        check_reports(&out);
+        assert!(out.contains("yes-yes-none-from"), "{out:?}");
     }
 
     #[test]
