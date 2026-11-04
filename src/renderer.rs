@@ -176,7 +176,8 @@ impl Ui {
 
     /// Measures the text for another font. The letters of the old one go.
     fn set_font(&mut self, font: &Font) -> anyhow::Result<()> {
-        (self.advance, self.line_h, self.ascent) = measure_cell(font, self.font_size())?;
+        let m = measure_cell(font, self.font_size(), 1.0)?;
+        (self.advance, self.line_h, self.ascent) = (m.w, m.h, m.ascent);
         self.glyphs.clear();
         self.italic_glyphs.clear();
         Ok(())
@@ -220,6 +221,10 @@ pub struct Renderer {
     cell_h: usize,
     /// Pixels from the top of a cell down to the baseline, the line letters sit on.
     ascent: i32,
+    /// The cell this many times the font's line tall (`line_height` in the config).
+    line_height: f32,
+    /// The cell as measured, with the font's own line (see `Measured`).
+    measured: Measured,
     /// Glyph cache: letters already rasterized, keyed by (letter, font index).
     /// Rasterizing is the slow part of drawing a letter, and for the same letter
     /// and size the result never changes, so each one is rasterized only once.
@@ -258,7 +263,7 @@ impl Renderer {
 
         // All 4 styles share the same sizes, so measuring the regular one is enough.
         let font_size = font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
-        let (cell_w, cell_h, ascent) = measure_cell(&fonts[0], font_size * text_scale)?;
+        let measured = measure_cell(&fonts[0], font_size * text_scale, 1.0)?;
         let [ui_font, _, italic, _] = font::built_in();
         let ui = Ui::new(&ui_font, italic)?;
 
@@ -269,9 +274,11 @@ impl Renderer {
             ui_font,
             font_size,
             text_scale,
-            cell_w,
-            cell_h,
-            ascent,
+            cell_w: measured.w,
+            cell_h: measured.h,
+            ascent: measured.ascent,
+            line_height: 1.0,
+            measured,
             glyphs: HashMap::new(),
             fallbacks: Fallbacks::default(),
             theme: glass.theme(&theme),
@@ -296,14 +303,22 @@ impl Renderer {
     pub fn set_font_size(&mut self, size: f32) {
         let size = size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         // Can only fail for a font without line metrics, and `new` already checked that.
-        if let Ok((cell_w, cell_h, ascent)) = measure_cell(&self.fonts[0], size * self.text_scale) {
+        let font = &self.fonts[0];
+        if let Ok(m) = measure_cell(font, size * self.text_scale, self.line_height) {
             self.font_size = size;
-            self.cell_w = cell_w;
-            self.cell_h = cell_h;
-            self.ascent = ascent;
+            (self.cell_w, self.cell_h, self.ascent) = (m.w, m.h, m.ascent);
+            self.measured = m;
             // The cached letters have the old size.
             self.glyphs.clear();
         }
+    }
+
+    /// The cell `height` times the font's line tall (`line_height` in the
+    /// config), kept between 0.8 and 2. Like a size change: call
+    /// `App::on_resize` after this.
+    pub fn set_line_height(&mut self, height: f32) {
+        self.line_height = height.clamp(0.8, 2.0);
+        self.set_font_size(self.font_size);
     }
 
     /// A new display scale (the window moved to another display, or Windows'
@@ -530,7 +545,12 @@ impl Renderer {
                             }
                             _ => x,
                         };
-                        draw_glyph(&mut buffer, width, glyph, self.ascent, fg, x, y);
+                        if fills_cell(cell.ch) {
+                            let at = (x, y, cell_h);
+                            draw_stretched(&mut buffer, width, glyph, self.measured, fg, at);
+                        } else {
+                            draw_glyph(&mut buffer, width, glyph, self.ascent, fg, x, y);
+                        }
                     }
 
                     // The link under the mouse: a plain line under it, in the
@@ -2186,6 +2206,19 @@ fn fill_circle(pixels: &mut [u32], width: usize, cx: f32, cy: f32, r: f32, hole:
     }
 }
 
+/// One cell's size, measured (see `measure_cell`).
+#[derive(Clone, Copy)]
+struct Measured {
+    w: usize,
+    h: usize,
+    /// Pixels from the cell's top down to the baseline.
+    ascent: i32,
+    /// The font's own line, without `line_height`: what a letter is drawn for.
+    /// A line or a block (`│`, `█`) is stretched from it to `h` (see `fills_cell`).
+    font_h: usize,
+    font_ascent: i32,
+}
+
 /// Measures one cell for a font size: (width, height, ascent) in pixels.
 /// - width: how far the pen moves after a letter. In a monospaced font it's
 ///   the same for every letter, so any letter works.
@@ -2193,17 +2226,37 @@ fn fill_circle(pixels: &mut [u32], width: usize, cx: f32, cy: f32, r: f32, hole:
 ///
 /// e.g. Consolas 18: advance 9.90 → 10 wide, line 21.08 → 21 tall,
 /// ascent 13.37 + half the gap 1.54 → 15.
-fn measure_cell(font: &Font, size: f32) -> anyhow::Result<(usize, usize, i32)> {
+/// `line_height`: the cell that many times the font's line tall, the letters
+/// in its middle (1: as the font says).
+fn measure_cell(font: &Font, size: f32, line_height: f32) -> anyhow::Result<Measured> {
     let line = font.line_metrics(size);
     let cell_w = font.advance('M', size).round() as usize;
-    let cell_h = line.new_line_size.round() as usize;
-    if cell_w == 0 || cell_h == 0 {
+    let font_h = line.new_line_size.round() as usize;
+    if cell_w == 0 || font_h == 0 {
         anyhow::bail!("the font has no size (no 'M', or no line height)");
     }
     // The gap is extra space between lines. Half of it goes above the letters,
     // half below, so the text sits in the middle of the cell.
-    let ascent = (line.ascent + line.line_gap / 2.0).round() as i32;
-    Ok((cell_w, cell_h, ascent))
+    let font_ascent = (line.ascent + line.line_gap / 2.0).round() as i32;
+    // So does `line_height`'s room: half above, half below.
+    let cell_h = (line.new_line_size * line_height).round().max(1.0) as usize;
+    let room = cell_h as i32 - font_h as i32;
+    Ok(Measured {
+        w: cell_w,
+        h: cell_h,
+        ascent: font_ascent + room / 2,
+        font_h,
+        font_ascent,
+    })
+}
+
+/// Letters that fill their cell to its edges, so the next row's go on from
+/// them: box lines (`│ ─ ┌`, lazygit's frames), blocks (`█ ▀ ▄`), powerline's
+/// arrows (nvim's status lines). Drawn by `draw_stretched`: the font's edges are
+/// soft (a thin dark seam between two `█`), and with `line_height` above 1 it
+/// draws them shorter than the cell (a frame with gaps).
+fn fills_cell(ch: char) -> bool {
+    matches!(ch, '\u{2500}'..='\u{259F}' | '\u{E0B0}'..='\u{E0BF}')
 }
 
 /// Mixes one color channel: `a` = 0 gives `bg`, 255 gives `fg`.
@@ -2221,6 +2274,47 @@ fn blend(bg: u32, fg: u32, a: u32) -> u32 {
     let g = mix((bg >> 8) & 0xff, (fg >> 8) & 0xff, a);
     let b = mix(bg & 0xff, fg & 0xff, a);
     (clear << 24) | (r << 16) | (g << 8) | b
+}
+
+/// Draws a letter that fills its cell (see `fills_cell`) to the cell's edges.
+/// Its middle as the font draws it (a `─` stays thin), its edge rows, half
+/// covered, are their neighbors inside instead (no seam); and a cell taller than
+/// the font's line (`line_height`) repeats them up and down, so `│` goes on.
+fn draw_stretched(
+    pixels: &mut [u32],
+    width: usize,
+    glyph: &Glyph,
+    m: Measured,
+    color: u32,
+    (x, y, cell_h): (usize, usize, usize),
+) {
+    let (metrics, coverage) = glyph;
+    // Where the letter is in the font's line: its top row there.
+    let top = m.font_ascent - (metrics.height as i32 + metrics.ymin);
+    let left = x as i32 + metrics.xmin;
+    // The font's line sits in the middle of the cell (see `measure_cell`).
+    let above = (cell_h as i32 - m.font_h as i32) / 2;
+    let last = (m.font_h as i32 - 2).max(1);
+    for dy in 0..cell_h {
+        // The row of the font's line this one shows: past an edge, the edge;
+        // an edge row, the one inside it.
+        let fy = (dy as i32 - above).clamp(1, last);
+        let gy = fy - top;
+        if gy < 0 || gy >= metrics.height as i32 {
+            continue;
+        }
+        let row = &coverage[gy as usize * metrics.width..][..metrics.width];
+        for (gx, &value) in row.iter().enumerate() {
+            let window_x = left + gx as i32;
+            if value == 0 || window_x < 0 || window_x as usize >= width {
+                continue;
+            }
+            let i = (y + dy) * width + window_x as usize;
+            if let Some(px) = pixels.get_mut(i) {
+                *px = blend(*px, color, value as u32);
+            }
+        }
+    }
 }
 
 /// Draws a rasterized letter in the cell whose top-left corner is at (x, y).
@@ -2265,6 +2359,27 @@ fn draw_glyph(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_taller_line_keeps_the_letters_in_its_middle() {
+        let [font, ..] = font::built_in();
+        let plain = measure_cell(&font, 20.0, 1.0).unwrap();
+        let tall = measure_cell(&font, 20.0, 1.5).unwrap();
+        assert_eq!(plain.h, plain.font_h);
+        assert_eq!(tall.w, plain.w); // only taller
+        assert_eq!(tall.font_h, plain.font_h);
+        // About half again: each is rounded from the font's line (26.4 → 26, 39.6 → 40).
+        assert!(
+            (tall.h as f32 / plain.h as f32 - 1.5).abs() < 0.1,
+            "{}",
+            tall.h
+        );
+        // Half the room above the letters: the baseline moves down by it.
+        assert_eq!(tall.ascent, plain.ascent + (tall.h - plain.h) as i32 / 2);
+        // Frames and blocks stretch; letters don't.
+        assert!(fills_cell('│') && fills_cell('█') && fills_cell('\u{E0B0}'));
+        assert!(!fills_cell('a') && !fills_cell('|'));
+    }
 
     #[test]
     fn a_long_address_loses_its_middle() {

@@ -31,6 +31,9 @@ font = "JetBrains Mono"
 # Font size in pixels. Ctrl+= / Ctrl+- change it until Kel closes, Ctrl+0 comes back to this.
 font_size = 18
 
+# The space between lines: 1 as the font has it, 1.2 a fifth more (0.8 to 2).
+line_height = 1
+
 # The program Kel starts in a tab, with its arguments, as you'd type it:
 # "pwsh.exe -NoLogo" (PowerShell 7), "cmd.exe", "wsl.exe -d Ubuntu".
 # A path with spaces goes in "": '"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo'
@@ -146,6 +149,7 @@ impl Bell {
 pub struct Config {
     pub font: String,
     pub font_size: f32,
+    pub line_height: f32,
     /// `None`: the system's (see `shell()`).
     pub shell: Option<String>,
     pub ui_scale: f32,
@@ -166,6 +170,7 @@ impl Default for Config {
         Config {
             font: crate::font::BUILT_IN.to_string(),
             font_size: 18.0,
+            line_height: 1.0,
             shell: None,
             ui_scale: 1.0,
             pixel_name: true,
@@ -305,6 +310,13 @@ project_colors = [\"#112233\", \"blue\"]";
             toml::from_str("[glass]\nsolid_under_apps = false\nsolid_color = \"#000000\"").unwrap();
         assert!(!config.glass.solid_under_apps);
         assert_eq!(config.glass.solid_color, Some(0));
+    }
+
+    #[test]
+    fn line_height() {
+        assert_eq!(Config::default().line_height, 1.0);
+        let config: Config = toml::from_str("line_height = 1.2").unwrap();
+        assert_eq!(config.line_height, 1.2);
     }
 
     #[test]

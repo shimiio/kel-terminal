@@ -1173,6 +1173,12 @@ impl App {
                 if new.font_size != self.config.font_size {
                     self.set_font_size(new.font_size);
                 }
+                if new.line_height != self.config.line_height
+                    && let Some(renderer) = &mut self.renderer
+                {
+                    renderer.set_line_height(new.line_height);
+                    self.cell_size_changed();
+                }
                 if new.layout != self.config.layout || new.ui_scale != self.config.ui_scale {
                     self.config.layout = new.layout.clone();
                     self.config.ui_scale = new.ui_scale;
@@ -1973,6 +1979,7 @@ impl ApplicationHandler<UserEvent> for App {
             Renderer::new(window.clone(), fonts, font_size, text_scale, theme, glass).unwrap();
         renderer.set_pixel_name(self.config.pixel_name);
         renderer.set_cursor(self.config.cursor);
+        renderer.set_line_height(self.config.line_height);
         let (cell_w, cell_h) = renderer.cell_size();
         self.window = Some(window.clone());
         let ui_scale = self.ui_scale();

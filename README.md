@@ -89,6 +89,7 @@ Kel creates it on the first start, with a comment for every setting.
 |---|---|---|
 | `font` | `"JetBrains Mono"` | The terminal's font: `"JetBrains Mono"` is built in, or any installed font by the name Windows shows in Settings > Fonts. Kel's UI is always JetBrains Mono |
 | `font_size` | `18` | Font size in pixels |
+| `line_height` | `1` | The space between lines: `1` as the font has it, `1.2` a fifth more (0.8 to 2). Frames and blocks (`│ ─ █`, lazygit's, btop's) stretch with it, no gaps |
 | `shell` | the system's | The program Kel starts in a tab, with its arguments: `"pwsh.exe -NoLogo"`, `"wsl.exe -d Ubuntu"`; a path with spaces in `""`. Without it: PowerShell on Windows, your `$SHELL` on Linux and macOS. Applies to new tabs |
 | `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
 | `pixel_name` | `true` | The project's name before the tabs in pixels, like the logo; `false`: in the font |

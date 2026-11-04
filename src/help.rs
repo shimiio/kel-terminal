@@ -184,6 +184,7 @@ fn settings_lines(config: &Config) -> Vec<Line> {
         Line::Gap,
         row("font", &text(&config.font), "the terminal's"),
         row("font_size", &n(config.font_size), "Ctrl+= Ctrl+- for now"),
+        row("line_height", &n(config.line_height), "1.2: a fifth more"),
         row(
             "shell",
             &text(&config.shell()),
