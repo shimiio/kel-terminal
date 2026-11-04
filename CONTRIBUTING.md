@@ -57,7 +57,9 @@ one doesn't.
 | `src/fallback.rs` | Fonts for the letters the terminal's font lacks (emoji, Chinese), loaded when first needed |
 | `examples/` | Small tools that print the raw bytes a program sends: `cargo run --example probe_nvim` |
 | `setup/` | Scripts that install Kel itself (`kel.ps1`) and tools (`lazygit.ps1`, with winget). They run from any shell too: `.\setup\lazygit.ps1 -DryRun` only says what it would do |
-| `.github/workflows/` | GitHub builds and tests every push, on Windows, Linux and macOS; a tag `v*` makes a draft release with `kel.exe` |
+| `.github/workflows/` | GitHub builds and tests every push, on Windows, Linux and macOS; a tag `v*` makes a draft release: `kel.exe`, Linux's `.tar.gz`, macOS' `.dmg` |
+| `packaging/` | What the release puts round Kel: `Info.plist` for Kel.app, Linux's menu entry and `install.sh` |
+| `examples/icon.rs` | Kel's icon as a PNG, for Kel.app and Linux (the release runs it) |
 
 Each file starts with a comment that explains it in more detail.
 

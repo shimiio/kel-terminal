@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Kel
+GenericName=Terminal
+Comment=A terminal with tabs and projects
+Exec=kel
+Icon=kel
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=terminal;shell;tabs;projects;
+StartupWMClass=kel

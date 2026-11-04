@@ -344,7 +344,11 @@ What is Windows-only today:
 - [x] Shell integration (the tab's folder, a command's start and end) for bash
 - [x] The same for zsh (macOS' shell), by its `ZDOTDIR`
 - [ ] The same for fish
-- [ ] Install on Linux (`~/.local/bin`, a `.desktop` file) and macOS (`Kel.app`)
+- [x] Install on Linux (`kel-linux-x86_64.tar.gz` with `install.sh`: `~/.local/bin`, a
+      `.desktop` file, the icon) and macOS (`Kel-macos.dmg`: Kel.app, both chips, signed
+      ad hoc; the first start needs Open Anyway). The release builds all three
+- [ ] Glass on macOS: softbuffer draws opaque there (`NoneSkipFirst`), so it needs its
+      own way to the screen (a CALayer with alpha), not just NSVisualEffectView
 - [x] Without ConPTY, programs send everything straight to Kel: scroll regions `ESC[r`,
       `ESC[L` / `ESC[M` / `ESC[S` / `ESC[T`, `ESC M`, save/restore cursor `ESC 7` / `ESC 8`,
       application cursor keys `ESC[?1h`, device attributes `ESC[c`; `TERM=xterm-256color`

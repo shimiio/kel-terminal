@@ -19,6 +19,14 @@ fn main() -> anyhow::Result<()> {
         builder.with_default_menu(false);
     }
     let event_loop = builder.build()?;
+    // Kel.app from the Dock or Finder (and some Linux menus) starts in `/`: the
+    // first tab opens at home instead, as in Terminal.
+    #[cfg(unix)]
+    if std::env::current_dir().is_ok_and(|dir| dir == std::path::Path::new("/"))
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        let _ = std::env::set_current_dir(home);
+    }
     // `kel <name>` opens the project <name>; `kel <folder>` (Explorer's "Open
     // in Kel") a tab there, or the project of that folder (see `project::launch`).
     let launch = project::launch(std::env::args().nth(1));

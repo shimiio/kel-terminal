@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Kel.app's description, for macOS. The release workflow puts in the
+     version (@VERSION@) and builds the app around it (.github/workflows/release.yml). -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>Kel</string>
+  <key>CFBundleDisplayName</key>
+  <string>Kel</string>
+  <key>CFBundleIdentifier</key>
+  <string>io.github.shimiio.kel</string>
+  <key>CFBundleExecutable</key>
+  <string>kel</string>
+  <key>CFBundleIconFile</key>
+  <string>kel</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@VERSION@</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.developer-tools</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>

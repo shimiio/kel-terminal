@@ -2059,6 +2059,13 @@ impl ApplicationHandler<UserEvent> for App {
                 .with_undecorated_shadow(true)
                 .with_corner_preference(CornerPreference::Round)
         };
+        // On Linux, the name a dock finds `kel.desktop` by (its StartupWMClass,
+        // Wayland's app id): Kel's icon and name there, not a blank one.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let attrs = {
+            use winit::platform::x11::WindowAttributesExtX11;
+            attrs.with_name("kel", "kel")
+        };
         #[cfg(target_os = "macos")]
         let attrs = {
             use winit::platform::macos::WindowAttributesExtMacOS;

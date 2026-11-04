@@ -1,8 +1,9 @@
-# A tag like v0.1.0, pushed: GitHub builds kel.exe and makes a draft release
-# with it. The draft waits for you: write what's new, then Publish.
+# A tag like v0.2.0, pushed: GitHub builds Kel for Windows, Linux and macOS and
+# makes one draft release with all three. The draft waits for you: write
+# what's new, then Publish (or download from it first, to try a build).
 #
-#   git tag v0.1.0
-#   git push origin v0.1.0
+#   git tag v0.2.0
+#   git push origin v0.2.0
 name: Release
 
 on:
@@ -21,13 +22,93 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
       - run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: target/release/kel.exe
+
+  # kel-linux-x86_64.tar.gz: kel, its menu entry and icon, install.sh.
+  linux:
+    # The older Ubuntu: its glibc is older, so Kel runs on more systems.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test
+      - run: cargo build --release
+      - name: Pack
+        run: |
+          dir=kel-linux-x86_64
+          mkdir "$dir"
+          cp target/release/kel packaging/linux/kel.desktop packaging/linux/install.sh "$dir/"
+          chmod +x "$dir/kel" "$dir/install.sh"
+          cargo run -q --release --example icon -- "$dir/kel.png" 256
+          tar czf "$dir.tar.gz" "$dir"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: kel-linux-x86_64.tar.gz
+
+  # Kel-macos.dmg: Kel.app, for Apple's chips and Intel's both (one file with
+  # two programs in it, `lipo`), next to a link to Applications to drag it on.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - run: cargo test
+      - run: cargo build --release --target aarch64-apple-darwin
+      - run: cargo build --release --target x86_64-apple-darwin
+      - name: Kel.app
+        run: |
+          app=Kel.app
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          lipo -create -output "$app/Contents/MacOS/kel" \
+            target/aarch64-apple-darwin/release/kel \
+            target/x86_64-apple-darwin/release/kel
+          sed "s/@VERSION@/${GITHUB_REF_NAME#v}/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          # The icon at every size macOS asks for, each drawn at its size
+          # (pixel art: not scaled).
+          mkdir kel.iconset
+          for size in 16 32 128 256 512; do
+            cargo run -q --release --example icon -- "kel.iconset/icon_${size}x${size}.png" $size mac
+            cargo run -q --release --example icon -- "kel.iconset/icon_${size}x${size}@2x.png" $((size * 2)) mac
+          done
+          iconutil -c icns kel.iconset -o "$app/Contents/Resources/kel.icns"
+          # Signed by no one ("ad hoc"): Apple's chips run nothing unsigned.
+          # Not Apple's notarization: the first start needs a step (README).
+          codesign --force --deep --sign - "$app"
+          mkdir dmg
+          cp -R "$app" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname Kel -srcfolder dmg -ov -format UDZO Kel-macos.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: Kel-macos.dmg
+
+  # One draft with all three, made once all are built: three jobs making it
+  # each could make three drafts.
+  release:
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       # The licenses come along: Kel's own two, and the built-in fonts' (they
-      # are inside kel.exe).
+      # are inside kel).
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
           files: |
-            target/release/kel.exe
+            dist/kel.exe
+            dist/kel-linux-x86_64.tar.gz
+            dist/Kel-macos.dmg
             LICENSE-MIT
             LICENSE-APACHE
             assets/fonts/JetBrainsMono-OFL.txt

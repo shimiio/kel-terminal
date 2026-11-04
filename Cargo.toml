@@ -32,6 +32,10 @@ ab_glyph = "0.2.32"
 winresource = "0.1"
 png = "0.18.1"
 
+[dev-dependencies]
+# For `examples/icon.rs`: Kel's icon as PNG files, for Kel.app and Linux.
+png = "0.18.1"
+
 # Debug builds: optimize the libraries (rasterizing letters is ~35x slower without it),
 # keep our own code lightly optimized so it still compiles fast.
 [profile.dev]

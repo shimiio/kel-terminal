@@ -34,6 +34,8 @@ Kel runs on Windows 10 and 11. Linux and macOS are coming. See
 
 ## Install
 
+### Windows
+
 1. Download `kel.exe` from the [latest release](https://github.com/shimiio/kel-terminal/releases/latest).
 2. Run it. Windows may say **"Windows protected your PC"**: Kel isn't signed (a
    signature costs money every year, so most small open-source programs have none).
@@ -52,6 +54,37 @@ stay in `%APPDATA%\kel`.
 
 The palette installs tools too: type `install` and choose one (lazygit for now). A
 tab opens and runs its script, with winget; what's already there is skipped.
+
+### Linux (preview)
+
+Download `kel-linux-x86_64.tar.gz` from the release, then:
+
+```sh
+tar xzf kel-linux-x86_64.tar.gz
+cd kel-linux-x86_64
+./install.sh
+```
+
+That puts `kel` in `~/.local/bin` and Kel in your apps menu, for you only (no sudo).
+To update, the same with the new one; to remove, `./install.sh --uninstall`. Your
+config and projects stay in `~/.config/kel`.
+
+### macOS (preview)
+
+1. Download `Kel-macos.dmg` from the release (one app for Apple's chips and Intel's),
+   open it and drag Kel to Applications.
+2. The first start: Kel isn't signed by Apple (that's a yearly fee), so macOS stops
+   it with **"Apple could not verify Kel"** or **"Kel is damaged"**. It isn't damaged.
+   Close the message, then **System Settings → Privacy & Security**, scroll down to
+   Kel and click **Open Anyway**. If there's no button there, in Terminal:
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/Kel.app
+   ```
+   After that it starts like any app.
+
+On a Mac Kel uses Cmd: the keys below with Cmd instead of Ctrl+Shift (Cmd+T, Cmd+W,
+Cmd+C, Cmd+V, Cmd+1 … 9, Cmd+Shift+] for the next tab), Ctrl stays the shell's.
+Option types its letters, as on any Mac; `option_as_alt = true` makes it Alt.
 
 ## The keys to start with
 

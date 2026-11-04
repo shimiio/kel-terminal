@@ -23,9 +23,11 @@ pub fn system() -> String {
 /// `system` on Linux and macOS, from `$SHELL`. On macOS a login shell (`-l`),
 /// as Terminal and iTerm start it: only a login shell reads `~/.zprofile`,
 /// where Homebrew puts its folder on the PATH, so without it `nvim` and `git`
-/// from Homebrew aren't found. Linux terminals start a plain one.
+/// from Homebrew aren't found. Linux terminals start a plain one. Without
+/// `$SHELL` (Kel.app from the Dock can start so): zsh on macOS, every Mac's.
 fn unix_shell(shell: Option<String>, macos: bool) -> String {
-    let shell = shell.unwrap_or_else(|| "/bin/sh".to_string());
+    let fallback = if macos { "/bin/zsh" } else { "/bin/sh" };
+    let shell = shell.unwrap_or_else(|| fallback.to_string());
     // A path with a space is one word in `""` (see `split`).
     let shell = if shell.contains(' ') {
         format!("\"{shell}\"")
@@ -152,6 +154,7 @@ mod tests {
         assert_eq!(unix_shell(zsh.clone(), false), "/bin/zsh");
         assert_eq!(unix_shell(zsh, true), "/bin/zsh -l");
         assert_eq!(unix_shell(None, false), "/bin/sh");
+        assert_eq!(unix_shell(None, true), "/bin/zsh -l");
         // A space in the path: one word still.
         let spaced = unix_shell(Some("/opt/my apps/fish".to_string()), true);
         assert_eq!(
