@@ -1,0 +1,34 @@
+# A tag like v0.1.0, pushed: GitHub builds kel.exe and makes a draft release
+# with it. The draft waits for you: write what's new, then Publish.
+#
+#   git tag v0.1.0
+#   git push origin v0.1.0
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# To make the release.
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test
+      - run: cargo build --release
+      # The licenses come along: Kel's own two, and the built-in fonts' (they
+      # are inside kel.exe).
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            target/release/kel.exe
+            LICENSE-MIT
+            LICENSE-APACHE
+            assets/fonts/JetBrainsMono-OFL.txt
+            assets/fonts/SymbolsNerdFont-LICENSE.txt
