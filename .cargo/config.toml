@@ -1,0 +1,5 @@
+# The C runtime (VCRUNTIME140.dll) built into kel.exe, not taken from Windows: a
+# clean Windows hasn't got it (Visual Studio and many programs install it), and
+# Kel wouldn't start there. ~100 KB more.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]
