@@ -15,6 +15,7 @@ use crate::layout::{Layout, Rect, TitleHit, WindowButton};
 use crate::links;
 use crate::logo;
 use crate::mouse::{self, Tracking};
+use crate::open;
 use crate::palette::{Item, Palette};
 use crate::project::{self, Project, TabRecipe};
 use crate::renderer::{Chrome, Renderer, TabLabel};
@@ -1298,8 +1299,7 @@ impl App {
             Action::ZoomReset => self.set_font_size(self.config.font_size),
             Action::OpenConfig => {
                 if let Ok(path) = config::path() {
-                    // Explorer opens a file the same way as a double-click on it.
-                    let _ = std::process::Command::new("explorer.exe").arg(path).spawn();
+                    let _ = open::text_file(&path);
                 }
             }
             Action::Find => {
@@ -2663,26 +2663,14 @@ impl App {
     }
 
     /// Opens a link (see `links::target`): a web page in the default browser,
-    /// as clicking it in another program would; a file shown in Explorer, its
-    /// folder open and the file chosen (a folder: opened). Nothing is run.
-    /// `rundll32` and not `explorer` for a page: explorer cuts its argument at
-    /// commas, and links have them.
+    /// as clicking it in another program would; a file shown in the file
+    /// manager, its folder open and the file chosen (a folder: opened). Nothing
+    /// is run (see `open`).
     fn open_link(&mut self, url: &str) {
-        use std::process::Command;
         let opened = match links::target(url) {
-            Some(links::Target::Web) => Command::new("rundll32")
-                .args(["url.dll,FileProtocolHandler", url])
-                .spawn(),
-            Some(links::Target::File(path)) if path.is_dir() => {
-                Command::new("explorer").arg(&path).spawn()
-            }
-            Some(links::Target::File(path)) if path.exists() => {
-                // `/select,"C:\a, b.txt"`: in quotes, so a comma in the name stays.
-                #[cfg(windows)]
-                use std::os::windows::process::CommandExt;
-                let select = format!("/select,\"{}\"", path.display());
-                Command::new("explorer").raw_arg(select).spawn()
-            }
+            Some(links::Target::Web) => open::page(url),
+            Some(links::Target::File(path)) if path.is_dir() => open::folder(&path),
+            Some(links::Target::File(path)) if path.exists() => open::reveal(&path),
             Some(links::Target::File(path)) => {
                 self.set_status(Some(format!("no such file: {}", path.display())));
                 return;

@@ -37,6 +37,7 @@ one doesn't.
 | `src/start.rs` | Home's start screen: the recent projects, which one is chosen, where each one is |
 | `src/sidebar.rs` | The sidebar of projects: its rows, which one is chosen, where each one is |
 | `src/links.rs` | `https://...` in the output: where a link starts and ends |
+| `src/open.rs` | Opens a web page, the config or a folder the way the system does: `explorer`, `open`, `xdg-open` |
 | `src/palette.rs` | The command palette's state: what's typed, which lines match, which one is chosen |
 | `src/setup.rs` | The install scripts from `setup/`, built into the exe, and how a tab runs one |
 | `src/layout.rs` | Where the terminal panel goes in the window |
@@ -56,7 +57,7 @@ one doesn't.
 | `src/fallback.rs` | Fonts for the letters the terminal's font lacks (emoji, Chinese), loaded when first needed |
 | `examples/` | Small tools that print the raw bytes a program sends: `cargo run --example probe_nvim` |
 | `setup/` | Scripts that install Kel itself (`kel.ps1`) and tools (`lazygit.ps1`, with winget). They run from any shell too: `.\setup\lazygit.ps1 -DryRun` only says what it would do |
-| `.github/workflows/` | GitHub builds and tests every push; a tag `v*` makes a draft release with `kel.exe` |
+| `.github/workflows/` | GitHub builds and tests every push, on Windows, Linux and macOS; a tag `v*` makes a draft release with `kel.exe` |
 
 Each file starts with a comment that explains it in more detail.
 

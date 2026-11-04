@@ -17,6 +17,7 @@
 //! - `icons`: the tab icons, 8 x 8 pixel grids in code, like the logo.
 //! - `layout`: where the terminal panel goes in the window.
 //! - `mouse`: the bytes that tell a program (nvim) what the mouse does, if it asked.
+//! - `open`: opens a page, a file or a folder the way the system does.
 //! - `palette`: the command palette's state: what's typed, what's shown and chosen.
 //! - `project`: a project file, the recipe for a set of tabs.
 //! - `pty`: starts the shell inside a pseudo-terminal.
@@ -50,6 +51,7 @@ pub mod layout;
 pub mod links;
 pub mod logo;
 pub mod mouse;
+pub mod open;
 pub mod palette;
 pub mod project;
 pub mod pty;

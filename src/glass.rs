@@ -182,8 +182,9 @@ pub fn apply(window: &winit::window::Window, effect: Effect, background: u32) {
             Effect::Mica => window_vibrancy::apply_mica(window, Some(dark)),
         };
     }
+    // Linux and macOS: no blur yet, the see-through parts show what's behind as it is.
     #[cfg(not(target_os = "windows"))]
-    let _ = background;
+    let _ = (window, effect, background);
 }
 
 #[cfg(test)]

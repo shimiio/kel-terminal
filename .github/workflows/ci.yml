@@ -1,5 +1,6 @@
 # On every push and pull request: Kel builds, its tests pass, clippy has
-# nothing to say. Windows only for now (Linux and macOS come later).
+# nothing to say. On Windows, Linux and macOS, each on its own machine:
+# code for one system can break another one's build (a Windows-only call).
 name: CI
 
 on:
@@ -9,7 +10,12 @@ on:
 
 jobs:
   check:
-    runs-on: windows-latest
+    strategy:
+      # One system failing doesn't stop the others: we see all that's wrong at once.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
