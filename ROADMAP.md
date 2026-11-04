@@ -251,6 +251,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       a drag past an end); `home` and "Save" stay put; a thin bar shows where you are
 - [x] A click doesn't select its one cell: only a drag selects (back on the first cell
       after a drag: that one cell, on purpose)
+- [x] Double-click selects the word (a path or an address whole, without a sentence's
+      dot after it), triple-click the line (all its rows); dragged after: by words, by lines
 - [x] OSC 8 links: text a program marks as a link (`ls --hyperlink`, delta, compilers),
       its address not on the screen, so the tab bar shows it (its middle cut). Ctrl+click:
       a web page in the browser; a file here shown in Explorer, never run; a file on

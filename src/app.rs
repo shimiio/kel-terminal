@@ -48,7 +48,7 @@ const BLINK_INTERVAL: Duration = Duration::from_millis(500);
 const PEEK_DELAY: Duration = Duration::from_millis(400);
 
 /// The selected area, from where the mouse was pressed to where it is now. (row, col)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Selection {
     pub start: (usize, usize),
     pub end: (usize, usize),
@@ -70,6 +70,33 @@ impl Selection {
             (self.end, self.start)
         }
     }
+
+    /// From the first cell of the two to the last: the word clicked twice and
+    /// the one the mouse is on now, with all between them.
+    fn joined(self, (start, end): ((usize, usize), (usize, usize))) -> Selection {
+        let (first, last) = self.ordered();
+        Selection {
+            start: first.min(start),
+            end: last.max(end),
+        }
+    }
+}
+
+/// The left button, held in the terminal (see `on_left_button`).
+#[derive(Clone, Copy)]
+struct Selecting {
+    /// The cell it was pressed on.
+    from: (usize, usize),
+    by: By,
+}
+
+/// What a drag selects: letters after one click, whole words after two (from
+/// the word clicked to the one under the mouse), whole lines after three.
+#[derive(Clone, Copy)]
+enum By {
+    Cell,
+    Word(Selection),
+    Line(Selection),
 }
 
 /// Custom events sent from the tabs' threads to wake up the event loop.
@@ -185,9 +212,13 @@ pub struct App {
     mouse_cell: (usize, usize),
     /// The mouse selection, if any. Screen positions, so it doesn't follow scrolling.
     selection: Option<Selection>,
-    /// While the left button is held: the cell it was pressed on. A selection
-    /// starts only once the mouse leaves that cell: a click selects nothing.
-    selecting: Option<(usize, usize)>,
+    /// While the left button is held: the cell it was pressed on. After one
+    /// click, a selection starts only once the mouse leaves that cell: a click
+    /// selects nothing. Two select the word, three the line.
+    selecting: Option<Selecting>,
+    /// The terminal's last click: when, where and which one in a row it was
+    /// (1, 2 or 3: a double click, a triple one).
+    text_click: Option<(Instant, (usize, usize), u8)>,
     /// The button whose press went to the program (see `on_mouse_button`): its
     /// moves and its release go there too.
     mouse_button: Option<mouse::Button>,
@@ -407,6 +438,7 @@ impl App {
             mouse_cell: (0, 0),
             selection: None,
             selecting: None,
+            text_click: None,
             mouse_button: None,
             focused: false,
             focused_tab: None,
@@ -2535,18 +2567,35 @@ impl App {
             return;
         }
 
-        if let Some(from) = self.selecting {
-            // Off the pressed cell: the selection starts. Back on it later: it
-            // stays, one cell, chosen on purpose.
-            match &mut self.selection {
-                Some(selection) => selection.end = (row, col),
-                None if (row, col) != from => {
-                    self.selection = Some(Selection {
-                        start: from,
-                        end: (row, col),
-                    });
+        if let Some(Selecting { from, by }) = self.selecting {
+            match by {
+                // Off the pressed cell: the selection starts. Back on it later:
+                // it stays, one cell, chosen on purpose.
+                By::Cell => match &mut self.selection {
+                    Some(selection) => selection.end = (row, col),
+                    None if (row, col) != from => {
+                        self.selection = Some(Selection {
+                            start: from,
+                            end: (row, col),
+                        });
+                    }
+                    None => return,
+                },
+                // Word by word, line by line.
+                By::Word(clicked) | By::Line(clicked) => {
+                    let here = {
+                        let grid = &self.tab().terminal.lock().unwrap().grid;
+                        match by {
+                            By::Word(_) => grid.word_at(row, col),
+                            _ => grid.line_at(row),
+                        }
+                    };
+                    let selection = Some(clicked.joined(here));
+                    if selection == self.selection {
+                        return;
+                    }
+                    self.selection = selection;
                 }
-                None => return,
             }
             self.request_redraw();
         } else if moved
@@ -2937,11 +2986,35 @@ impl App {
                 self.on_title_bar_click()
             }
             // The old selection goes; a new one starts when the mouse moves on.
+            // Clicked again, on the same cell: the word, then the line.
             ElementState::Pressed => {
-                if self.selection.take().is_some() {
-                    self.request_redraw();
-                }
-                self.selecting = Some(self.mouse_cell);
+                let cell = self.mouse_cell;
+                let now = Instant::now();
+                let clicks = match self.text_click {
+                    Some((at, on, n)) if on == cell && now - at < DOUBLE_CLICK => n % 3 + 1,
+                    _ => 1,
+                };
+                self.text_click = Some((now, cell, clicks));
+                let by = if clicks == 1 {
+                    By::Cell
+                } else {
+                    let grid = &self.tab().terminal.lock().unwrap().grid;
+                    let (start, end) = match clicks {
+                        2 => grid.word_at(cell.0, cell.1),
+                        _ => grid.line_at(cell.0),
+                    };
+                    let clicked = Selection { start, end };
+                    match clicks {
+                        2 => By::Word(clicked),
+                        _ => By::Line(clicked),
+                    }
+                };
+                self.selection = match by {
+                    By::Cell => None,
+                    By::Word(clicked) | By::Line(clicked) => Some(clicked),
+                };
+                self.selecting = Some(Selecting { from: cell, by });
+                self.request_redraw();
             }
             // A selection made with this press: copied now, with `copy_on_select`.
             ElementState::Released => {

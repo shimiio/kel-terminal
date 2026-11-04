@@ -611,6 +611,71 @@ impl Grid {
         text
     }
 
+    /// The word around the cell (row, col) of the view, as a double click
+    /// selects it: its first and last cells. A word is letters, digits and what
+    /// paths and addresses are made of, so `C:\code\app.rs:12` or
+    /// `https://a.com/?q=1` is one; it goes on across a row cut at the window's
+    /// edge. A dot or colon at its end ends a sentence, not the word. On a
+    /// space: the spaces around it. Anything else (`(`, `"`): itself.
+    pub fn word_at(&self, row: usize, col: usize) -> ((usize, usize), (usize, usize)) {
+        let (row, col) = (row.min(self.rows - 1), col.min(self.cols - 1));
+        let (first, last) = self.line_rows(row);
+        // The line's cells in reading order; a wide letter's second cell is
+        // the letter's too.
+        let mut cells: Vec<(usize, usize, char, Kind)> = Vec::new();
+        for r in first..=last {
+            for c in 0..self.cols {
+                let cell = self.visible_cell(r, c);
+                let kind = match cell.width {
+                    Width::Spacer => cells.last().map_or(Kind::Space, |cell| cell.3),
+                    _ => Kind::of(cell.ch),
+                };
+                cells.push((r, c, cell.ch, kind));
+            }
+        }
+        let at = (row - first) * self.cols + col;
+        let kind = cells[at].3;
+        if kind == Kind::Other {
+            return ((row, col), (row, col));
+        }
+        let same = |i: &usize| cells[*i].3 == kind;
+        let start = (0..at).rev().take_while(same).last().unwrap_or(at);
+        let mut end = (at + 1..cells.len()).take_while(same).last().unwrap_or(at);
+        while kind == Kind::Word && end > at && matches!(cells[end].2, '.' | ':' | '?') {
+            end -= 1;
+        }
+        (
+            (cells[start].0, cells[start].1),
+            (cells[end].0, cells[end].1),
+        )
+    }
+
+    /// The line around the row of the view, as a triple click selects it: from
+    /// its first cell to its last letter, all its rows if it's longer than the
+    /// window is wide.
+    pub fn line_at(&self, row: usize) -> ((usize, usize), (usize, usize)) {
+        let (first, last) = self.line_rows(row.min(self.rows - 1));
+        let end = (0..self.cols)
+            .rev()
+            .find(|&c| self.visible_cell(last, c).ch != ' ')
+            .unwrap_or(0);
+        ((first, 0), (last, end))
+    }
+
+    /// The first and last row of the view that the line at `row` is on: it
+    /// goes on while a row is `wrapped`.
+    fn line_rows(&self, row: usize) -> (usize, usize) {
+        let mut first = row;
+        while first > 0 && self.visible_line(first - 1).wrapped {
+            first -= 1;
+        }
+        let mut last = row;
+        while last + 1 < self.rows && self.visible_line(last).wrapped {
+            last += 1;
+        }
+        (first, last)
+    }
+
     /// Used by tests.
     pub fn scrollback(&self) -> &VecDeque<Line> {
         &self.scrollback
@@ -1107,6 +1172,27 @@ fn mend_wide(line: &mut [Cell]) {
     }
 }
 
+/// What a letter is to a double click (see `Grid::word_at`).
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Word,
+    Space,
+    Other,
+}
+
+impl Kind {
+    fn of(ch: char) -> Kind {
+        match ch {
+            ' ' | '\0' => Kind::Space,
+            _ if ch.is_alphanumeric() => Kind::Word,
+            '_' | '-' | '.' | '/' | '\\' | ':' | '~' | '@' | '?' | '&' | '=' | '%' | '+' | '#' => {
+                Kind::Word
+            }
+            _ => Kind::Other,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1416,6 +1502,48 @@ mod tests {
         }
         assert_eq!(g.first_visible_row(), top);
         assert_eq!(g.visible_cell(0, 0), shown);
+    }
+
+    #[test]
+    fn a_double_click_takes_the_word() {
+        let g = grid(3, 40, r"see C:\code\app.rs:12. (now)");
+        let word = |col| {
+            let (start, end) = g.word_at(0, col);
+            g.text_between(start, end)
+        };
+        assert_eq!(word(0), "see");
+        assert_eq!(word(2), "see");
+        assert_eq!(word(9), r"C:\code\app.rs:12"); // the sentence's dot not in it
+        assert_eq!(word(25), "now");
+        assert_eq!(word(23), "("); // a bracket alone
+        assert_eq!(g.word_at(0, 3), ((0, 3), (0, 3))); // the space
+        // Past the text: the spaces after it.
+        assert_eq!(g.word_at(0, 35), ((0, 28), (0, 39)));
+    }
+
+    #[test]
+    fn a_word_goes_on_in_the_next_row() {
+        let g = grid(3, 10, "a https://x.com/a/b ok");
+        let (start, end) = g.word_at(1, 2);
+        assert_eq!((start, end), ((0, 2), (1, 8)));
+        assert_eq!(g.text_between(start, end), "https://x.com/a/b");
+    }
+
+    #[test]
+    fn a_wide_letter_is_one_word_with_its_neighbors() {
+        let g = grid(3, 20, "ab \u{4E2D}\u{6587}c d");
+        // 中 is cells 3-4, 文 5-6: its second cell is in the word too.
+        assert_eq!(g.word_at(0, 4), ((0, 3), (0, 7)));
+    }
+
+    #[test]
+    fn a_triple_click_takes_the_line() {
+        let g = grid(4, 10, "first\n0123456789abc\nlast");
+        assert_eq!(g.line_at(0), ((0, 0), (0, 4)));
+        // Both its rows, from either.
+        assert_eq!(g.line_at(2), ((1, 0), (2, 2)));
+        assert_eq!(g.line_at(1), ((1, 0), (2, 2)));
+        assert_eq!(g.line_at(3), ((3, 0), (3, 3)));
     }
 
     #[test]

@@ -143,6 +143,8 @@ fn keys_lines() -> Vec<Line> {
         row("Middle click tab", "Close it", ""),
         row("Drag a tab", "Move it", ""),
         row("Ctrl+click link", "Open it", ""),
+        row("Double-click text", "The word: a path whole", ""),
+        row("Triple-click text", "The line", ""),
         row("Drag a project", "Move it, in the sidebar", ""),
         row("Rest on ◫", "The sidebar, till you leave it", ""),
         Line::Gap,
