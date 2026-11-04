@@ -51,6 +51,9 @@ pixel_name = true
 cursor = "block"
 cursor_blink = true   # false: it stands still (the logo's and the sidebar's too)
 
+# true: what you select with the mouse is copied as you let go, no Ctrl+Shift+C.
+copy_on_select = false
+
 # The bell, a program's "done" or "come here" (Claude Code can ring it):
 # "taskbar": Kel's button in the taskbar blinks while you're in another window,
 # until you come back; "flash": that, and the terminal flashes when you're here;
@@ -145,6 +148,7 @@ pub struct Config {
     pub pixel_name: bool,
     pub cursor: CursorShape,
     pub cursor_blink: bool,
+    pub copy_on_select: bool,
     pub bell: Bell,
     pub backdrop: backdrop::Choice,
     pub layout: Spacing,
@@ -162,6 +166,7 @@ impl Default for Config {
             pixel_name: true,
             cursor: CursorShape::Block,
             cursor_blink: true,
+            copy_on_select: false,
             bell: Bell::Taskbar,
             backdrop: backdrop::Choice::Auto,
             layout: Spacing::default(),
@@ -301,6 +306,13 @@ project_colors = [\"#112233\", \"blue\"]";
         assert!(Config::default().cursor_blink);
         let config: Config = toml::from_str("cursor_blink = false").unwrap();
         assert!(!config.cursor_blink);
+    }
+
+    #[test]
+    fn copy_on_select() {
+        assert!(!Config::default().copy_on_select);
+        let config: Config = toml::from_str("copy_on_select = true").unwrap();
+        assert!(config.copy_on_select);
     }
 
     #[test]

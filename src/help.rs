@@ -204,6 +204,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             &config.cursor_blink.to_string(),
             "false: it stands still",
         ),
+        row(
+            "copy_on_select",
+            &config.copy_on_select.to_string(),
+            "copied as you let go",
+        ),
         row("bell", &text(config.bell.name()), "a program's \"done\""),
         row(
             "backdrop",

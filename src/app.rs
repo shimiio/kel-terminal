@@ -1842,9 +1842,20 @@ impl App {
     /// Copies the mouse selection. Without one, it's a Ctrl+C for the shell,
     /// and PowerShell then copies its own keyboard selection.
     fn copy(&mut self) {
-        let Some(selection) = self.selection else {
+        if !self.copy_selection() {
             self.send_to_shell(&[0x03]);
             return;
+        }
+        self.selection = None;
+        self.request_redraw();
+    }
+
+    /// Puts the mouse selection's text in the clipboard, if there is one. It
+    /// stays selected: `copy` takes it away, a selection copied as the mouse
+    /// lets go (`copy_on_select`) stays to be seen.
+    fn copy_selection(&mut self) -> bool {
+        let Some(selection) = self.selection else {
+            return false;
         };
         let (start, end) = selection.ordered();
         let text = self
@@ -1857,8 +1868,7 @@ impl App {
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             let _ = clipboard.set_text(text);
         }
-        self.selection = None;
-        self.request_redraw();
+        true
     }
 
     /// Font one pixel bigger (`step` = 1) or smaller (-1).
@@ -2898,9 +2908,13 @@ impl App {
                 }
                 self.selecting = Some(self.mouse_cell);
             }
+            // A selection made with this press: copied now, with `copy_on_select`.
             ElementState::Released => {
                 self.tab_drag = None;
-                self.selecting = None;
+                let selected = self.selecting.take().is_some() && self.selection.is_some();
+                if selected && self.config.copy_on_select {
+                    self.copy_selection();
+                }
             }
         }
     }
