@@ -386,9 +386,12 @@ impl App {
         // No window yet: the real layout comes with the first `on_resize`.
         let layout = config.layout.layout(0, 0, 1.0);
         // Home: the start screen. Not over the problems, they're to be read;
-        // nor when Kel was opened on a folder, to work there.
-        let start = (project_name.is_none() && home_folder.is_none() && problems.is_empty())
-            .then(|| Start::new(project::recent_entries(start::RECENT), config.backdrop));
+        // nor when Kel was opened on a folder, to work there; nor turned off.
+        let start = (config.start_screen
+            && project_name.is_none()
+            && home_folder.is_none()
+            && problems.is_empty())
+        .then(|| Start::new(project::recent_entries(start::RECENT), config.backdrop));
 
         Ok(App {
             window: None,
@@ -977,10 +980,11 @@ impl App {
     /// before: the projects used last, as they are now. Home is position 0, a
     /// calm place to start from. `None` in a project, and while a command runs
     /// in the tab on screen: you came back to watch it. Under the screen, the
-    /// terminal stays as it was (a key puts the screen away).
+    /// terminal stays as it was (a key puts the screen away). Never with
+    /// `start_screen = false`: home is a plain terminal then.
     fn start_screen(&self) -> Option<Start> {
         let idle = !self.tab().command.running();
-        (self.project.is_none() && idle)
+        (self.config.start_screen && self.project.is_none() && idle)
             .then(|| Start::new(project::recent_entries(start::RECENT), self.config.backdrop))
     }
 
@@ -1221,9 +1225,11 @@ impl App {
                     self.request_redraw();
                 }
                 // Another picture: shown at once, if the start screen is up.
+                // Turned off: it goes now.
                 let backdrop = new.backdrop != self.config.backdrop;
+                let start = new.start_screen != self.config.start_screen;
                 self.config = new;
-                if backdrop && self.start.is_some() {
+                if (backdrop || start) && self.start.is_some() {
                     self.start = self.start_screen();
                     self.request_redraw();
                 }

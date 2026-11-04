@@ -67,6 +67,10 @@ scrollback = 10000
 # "none": nothing.
 bell = "taskbar"
 
+# Home's start screen: the logo and the projects used last, when you come home.
+# false: home is a plain terminal.
+start_screen = true
+
 # The start screen's picture behind the logo, new each time it shows:
 # "auto" (a terrain by day, stars at night), "terrain", "contours", "mountains",
 # "sea", "wind", "stars", or "none". Mountains and the sea have stars at night.
@@ -159,6 +163,7 @@ pub struct Config {
     pub copy_on_select: bool,
     pub scrollback: usize,
     pub bell: Bell,
+    pub start_screen: bool,
     pub backdrop: backdrop::Choice,
     pub layout: Spacing,
     pub glass: Glass,
@@ -179,6 +184,7 @@ impl Default for Config {
             copy_on_select: false,
             scrollback: crate::term::SCROLLBACK_LIMIT,
             bell: Bell::Taskbar,
+            start_screen: true,
             backdrop: backdrop::Choice::Auto,
             layout: Spacing::default(),
             glass: Glass::default(),
@@ -348,6 +354,13 @@ project_colors = [\"#112233\", \"blue\"]";
         assert_eq!(config.bell, Bell::Flash);
         assert_eq!(config.bell.name(), "flash");
         assert!(toml::from_str::<Config>("bell = \"loud\"").is_err());
+    }
+
+    #[test]
+    fn start_screen() {
+        assert!(Config::default().start_screen);
+        let config: Config = toml::from_str("start_screen = false").unwrap();
+        assert!(!config.start_screen);
     }
 
     #[test]

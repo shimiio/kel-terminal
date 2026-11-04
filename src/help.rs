@@ -217,6 +217,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
         ),
         row("bell", &text(config.bell.name()), "a program's \"done\""),
         row(
+            "start_screen",
+            &config.start_screen.to_string(),
+            "false: home is plain",
+        ),
+        row(
             "backdrop",
             &text(config.backdrop.name()),
             "the start screen's",

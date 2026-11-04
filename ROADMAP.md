@@ -288,7 +288,7 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
   - [x] `scrollback` (10 000 lines by default)
   - [x] `line_height`: frames and blocks reach the taller cell's edges, no gaps; and
         no more thin dark seam between two `█` (the font's soft edge), at any height
-  - [ ] `start_screen` on / off
+  - [x] `start_screen` on / off
   - After the release: `[keys]` (your own shortcuts; Cmd on macOS), themes as files
     (`theme = "tokyo-night"`), the window remembering its size
 - [ ] More places that read better solid (as under lazygit): the user keeps a list
