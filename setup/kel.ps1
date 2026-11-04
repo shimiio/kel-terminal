@@ -58,17 +58,46 @@ function Set-UserPath([scriptblock]$change) {
 }
 
 if ($Uninstall) {
+    # Each part, if it's there; what was found is said.
+    $gone = @()
     # A running exe can't be deleted (this Kel may be it), but it can be moved:
     # to the temp folder, which Windows empties now and then.
     if (Test-Path $exe) {
         $away = Join-Path $env:TEMP ('kel-{0:yyyyMMdd-HHmmss}.old' -f (Get-Date))
         Move-Item $exe $away -ErrorAction Stop
+        $gone += "kel.exe"
     }
-    Remove-Item $dir -Recurse -ErrorAction SilentlyContinue
-    Remove-Item $shortcut -ErrorAction SilentlyContinue
-    Set-UserPath { param($entries) $entries | Where-Object { $_ -ne $dir } } | Out-Null
-    Set-ExplorerMenu $exe -Remove
-    Write-Host "[ok] Kel is uninstalled: its folder, the Start menu, PATH and Explorer's menu."
+    if (Test-Path $dir) {
+        Remove-Item $dir -Recurse -ErrorAction SilentlyContinue
+        if (Test-Path $dir) {
+            Write-Host "[!]  $dir is still there: a program has it open. Delete it once Kel is closed."
+        }
+    }
+    if (Test-Path $shortcut) {
+        Remove-Item $shortcut -ErrorAction SilentlyContinue
+        $gone += "the Start menu's Kel"
+    }
+    if (Set-UserPath { param($entries) $entries | Where-Object { $_ -ne $dir } }) {
+        $gone += "PATH's entry"
+    }
+    # Explorer's menu only if it opens this Kel: one built from the repository
+    # (install.ps1 used to put it in ~\.cargo\bin) keeps its own.
+    $menu = Get-Item 'HKCU:\Software\Classes\Directory\shell\kel\command' -ErrorAction SilentlyContinue
+    $opens = if ($menu) { $menu.GetValue('') }
+    if ($opens -and $opens.Contains($exe)) {
+        Set-ExplorerMenu $exe -Remove
+        $gone += "Explorer's 'Open in Kel'"
+    }
+    if ($gone) {
+        Write-Host "[ok] Kel is uninstalled. Taken away: $($gone -join ', ')"
+    } else {
+        Write-Host "[ok] Kel isn't installed here ($dir): nothing to take away."
+    }
+    if ($From -and (Test-Path $From) -and (Resolve-Path $From).Path -ne $exe) {
+        Write-Host "     The Kel open now runs from $From, not installed: that file stays."
+    } elseif ($gone) {
+        Write-Host "     This Kel stays open until you close it; then it's gone."
+    }
     Write-Host "     Your config and projects stay: $env:APPDATA\kel"
     exit 0
 }

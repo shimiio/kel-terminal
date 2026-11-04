@@ -42,7 +42,7 @@ pub const SCRIPTS: &[Script] = &[
         label: "Uninstall Kel from this computer",
         hint: "your config stays",
         text: include_str!("../setup/kel.ps1"),
-        args: &["-Uninstall"],
+        args: &[THIS_EXE, "-Uninstall"],
     },
     Script {
         name: "lazygit",
