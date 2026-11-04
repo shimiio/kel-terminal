@@ -1,12 +1,36 @@
 # Kel
 
-A terminal emulator written in Rust, built to be a daily work tool.
+A terminal for Windows, written in Rust, built to be a daily work tool: tabs, and
+**projects**, saved sets of tabs that open a whole workspace in one go.
 
-The goal: tabs, and **projects**, saved sets of tabs that remember their name, folder
-and startup command (say `nvim .` in one tab and `cargo run` in another), so a whole
-workspace opens in one go. See [ROADMAP.md](ROADMAP.md) for what's done and what's next.
+![A project in Kel: nvim, cargo run, Claude Code and git, each in its tab](assets/screenshots/project.png)
 
-Kel runs on Windows 10 and 11 for now. Linux and macOS are planned.
+Kel runs on Windows 10 and 11. Linux and macOS are coming. See
+[ROADMAP.md](ROADMAP.md) for what's done and what's next.
+
+## What it does
+
+- **Projects.** A project remembers its tabs: each one's name, folder and startup
+  command (`nvim .` in one, `cargo run` in another). Open it and it's all there;
+  close the window and it's saved as you left it. Several stay open at once, out of
+  sight but running, and Ctrl+Alt+→ goes through them.
+- **The sidebar** lists the projects, each in its color: which are open, where a
+  command runs, where there's output you haven't seen.
+- **Tabs that say what runs in them**: an icon for nvim, git, Claude Code, docker,
+  ssh, a database; a ring while a command runs, a green or red dot when it ended
+  while you were in another tab.
+- **Home**: Kel without a project. Its start screen has the projects used last, over
+  an ASCII landscape by day and stars at night.
+- **Glass**: Windows' blur behind the window, with a fine grain. Under lazygit or
+  Claude Code the background goes solid, so they read well.
+- **Made for nvim and Claude Code**: any color, the mouse, pasting that doesn't run
+  lines by itself, Nerd Font icons built in for any font, and the taskbar button
+  blinking when Claude Code rings.
+- **One file**, about 6 MB, with its font in it. No installer, no admin rights.
+
+![The sidebar of projects, over nvim](assets/screenshots/sidebar.png)
+
+![Home's start screen: the projects used last](assets/screenshots/home.png)
 
 ## Install
 
@@ -18,263 +42,51 @@ Kel runs on Windows 10 and 11 for now. Linux and macOS are planned.
    **Install Kel on this computer**.
 
 That puts Kel in `%LOCALAPPDATA%\Programs\Kel`, in the Start menu, on your PATH (`kel`
-and `kel <project>` in any new shell), and "Open in Kel" in Explorer's menu on a
-folder. For you only, no admin rights. The `kel.exe` you downloaded can go then.
+and `kel <project>` in any shell), and "Open in Kel" in Explorer's menu on a folder
+(on Windows 11 under "Show more options"). For you only, no admin rights. The
+`kel.exe` you downloaded can go then.
 
 To update: download the new `kel.exe`, run it, and choose Install again. To remove
 Kel: **Uninstall Kel from this computer** in the palette; your config and projects
 stay in `%APPDATA%\kel`.
 
-## Build and run
+The palette installs tools too: type `install` and choose one (lazygit for now). A
+tab opens and runs its script, with winget; what's already there is skipped.
 
-Needs Rust 1.88 or newer ([rustup.rs](https://rustup.rs)).
-
-```sh
-cargo run            # start Kel
-cargo run -- kel     # open the project "kel" (see Projects)
-cargo test           # run the tests
-cargo build --release   # a fast build: target/release/kel.exe
-.\install.ps1        # build it and install it, as "Install Kel on this computer" does
-```
-
-## Install tools
-
-In the command palette (Ctrl+Shift+P), type `install`: Enter on a line opens a new tab
-that runs that tool's script. The scripts are built into `kel.exe`, so this works
-without the repository.
-
-The scripts are in `setup/`, one per tool, and install with winget. They run from any
-shell too:
-
-```powershell
-.\setup\lazygit.ps1          # lazygit: git in the terminal
-.\setup\lazygit.ps1 -DryRun  # only say what it would do
-```
-
-Whatever is already there (installed any way: winget, choco, by hand) is skipped, so a
-script can run again any time. Afterwards open a new tab: the ones open before don't see
-the new program.
-
-## Shortcuts
+## The keys to start with
 
 | Keys | What it does |
 |---|---|
-| Ctrl+Shift+T | New tab, in the current tab's folder |
-| Ctrl+Shift+W | Close the tab (typing `exit` does the same). If a command runs in it (nvim, `cargo run`), press again to close |
-| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
-| Ctrl+1 … Ctrl+8 | Tab 1 … 8 |
-| Ctrl+9 | The last tab |
-| Ctrl+Shift+PageUp / PageDown | Move the tab one place left / right. Or drag it with the mouse |
-| Ctrl+= / Ctrl+- | Bigger / smaller font |
-| Ctrl+0 | Font size back to the one in the config |
-| Ctrl+, | Open the config file |
-| Ctrl+Shift+/ | Help: all the keys (the sidebar's, the card's, the mouse's too) and every setting with its value now; ↑↓ PgUp PgDn scroll, Esc closes |
-| Ctrl+Shift+P | Command palette: type a few letters (`ntb` finds "New tab"), Up/Down, Enter; Esc or a click closes it |
-| Ctrl+Shift+C | Copy the mouse selection (without a selection, the shell gets Ctrl+C). A line too long for the window comes out as one line, not cut where it wrapped |
-| Ctrl+Shift+V | Paste. Several lines would run one by one, so Kel asks first ("Paste 2 lines?", press again within 3 seconds): a site can show one command and copy two. One line goes in without its line break, waiting for your Enter. Files copied in Explorer go in as their paths (Claude Code attaches a picture so; a screenshot it takes itself, on Alt+V) |
-| Alt+↑ / Alt+↓ in the sidebar | Moves the chosen project up or down; or drag it with the mouse. The order is kept in `projects\order.txt` (new projects go last, by name) |
-| F2 in the sidebar | The project's card (or a right click on it, or `Edit project` in the palette): its name, which renames its file, and its color: ←→ through the theme's, or a `#hex` typed, a dot showing it as it's typed |
-| Double-click a tab | Its card (or a right click): the tab's name (empty: the program's title) and, in a project, its command, which runs when the project opens. Enter or a click outside keeps it, in the project's file at once; Esc doesn't. Also `Edit tab` in the palette |
-| Ctrl+Shift+H | Home, its start screen: position 0, a calm place to start from. In home too: the start screen comes back (unless a command runs there) |
-| Ctrl+Alt+→ / ← | The next / previous open project, as Zen's workspaces: in the sidebar's order (not the order you opened them), home first; after the last one, home again |
-| Ctrl+Shift+B | The sidebar of projects (or the panel button at the tab bar's start: a click, or the mouse resting on it a moment, which opens it until the mouse leaves it; a click or a key in it keeps it). First `home`: Kel without a project. Then the projects, each with its color; Enter or a click goes to one, Del closes an open one, Shift+Del deletes one, the last line saves the tabs as a new one. More projects than fit: the list scrolls (the wheel, or ↑↓ past an end), a thin bar at its right. Esc or a click outside closes the sidebar |
-| Ctrl+Shift+F | Find in the output (not the typed commands: that's PowerShell's Ctrl+R). Type: every match is marked, the newest one chosen. Enter or Up: the one before, Shift+Enter or Down: the next one. Any case: `error` finds `ERROR`, also cut at the window's edge. Esc closes |
-| Ctrl+click | Opens the `https://` link under the mouse in the browser (also in nvim). Hold Ctrl and the link is underlined. A link cut at the window's edge is one link; a `.` or `,` after it isn't part of it. Text a program marked as a link (OSC 8: `ls --hyperlink`, delta) too: its address shows in the tab bar while Ctrl is held over it. A web link opens in the browser, a file on this computer is shown in Explorer (never run); other links aren't opened |
-| Ctrl+C | Stop the running command |
-| Mouse drag | Select text |
-| Double-click / triple-click | Select the word / the whole line. A word is a path or an address whole (`C:\code\app.rs:12`, `https://...`); a line too long for the window, all its rows. Held after the last click and dragged: word by word, line by line |
-| Mouse wheel | Scroll back through earlier output |
-| Shift + mouse | In a program that takes the mouse (nvim, htop, lazygit), the mouse is the program's; with Shift it's Kel's: select text, scroll back |
-| `+` after the tabs | New tab |
-| `⌄` after the tabs | Command palette, which also lists the shortcuts |
-| `×` on a tab under the mouse, or a middle click on a tab | Close that tab (asks first if a command runs in it) |
-| Drag the empty top bar | Move the window |
-| Double-click the empty top bar | Maximize / restore |
-| Drag the window's edge or corner | Resize the window. Long lines wrap again at the new width, the earlier output too |
+| Ctrl+Shift+T / Ctrl+Shift+W | New tab / close the tab |
+| Ctrl+Tab, Ctrl+1 … Ctrl+9 | Go to a tab |
+| Ctrl+Shift+B | The sidebar of projects |
+| Ctrl+Alt+→ / ← | The next / previous open project |
+| Ctrl+Shift+H | Home |
+| Ctrl+Shift+P | The command palette: all Kel does, found by a few letters (`ntb`: New tab) |
+| Ctrl+Shift+C / Ctrl+Shift+V | Copy / paste. Ctrl+C and Ctrl+V go to the program, as nvim wants them |
+| Ctrl+Shift+F | Find in the output |
+| Ctrl+, | The config file |
+| **Ctrl+Shift+/** | **Help: all the keys, and every setting with its value now** |
 
-All other keys go to the program: Ctrl+V and Ctrl+W without Shift too (nvim's block
-selection and window commands), and Ctrl with any letter, also on a Russian layout
-(Ctrl+В is Ctrl+D).
-
-## Config
-
-The config file is `%APPDATA%\kel\config.toml`
-(e.g. `C:\Users\you\AppData\Roaming\kel\config.toml`).
-Kel creates it on the first start, with a comment for every setting.
-**Ctrl+,** opens it. Saved changes apply right away, unless the setting says otherwise.
-
-| Setting | Default | What it does |
-|---|---|---|
-| `font` | `"JetBrains Mono"` | The terminal's font: `"JetBrains Mono"` is built in, or any installed font by the name Windows shows in Settings > Fonts. Kel's UI is always JetBrains Mono |
-| `font_size` | `18` | Font size in pixels |
-| `line_height` | `1` | The space between lines: `1` as the font has it, `1.2` a fifth more (0.8 to 2). Frames and blocks (`│ ─ █`, lazygit's, btop's) stretch with it, no gaps |
-| `shell` | the system's | The program Kel starts in a tab, with its arguments: `"pwsh.exe -NoLogo"`, `"wsl.exe -d Ubuntu"`; a path with spaces in `""`. Without it: PowerShell on Windows, your `$SHELL` on Linux and macOS. Applies to new tabs |
-| `ui_scale` | `1` | Size of Kel's own UI (tabs, buttons, spaces), on top of Windows' display scale. `1.25` = a quarter bigger |
-| `pixel_name` | `true` | The project's name before the tabs in pixels, like the logo; `false`: in the font |
-| `cursor` | `"block"` | The cursor: `"block"` (the whole cell), `"underline"` or `"bar"`. Programs can pick their own (nvim does). While the keys go elsewhere (the sidebar, the palette, another window) it's a hollow box, not blinking |
-| `cursor_blink` | `true` | `false`: the cursor stands still (the logo's and the sidebar's too) |
-| `copy_on_select` | `false` | `true`: what you select with the mouse is copied as you let go of the button, no Ctrl+Shift+C. It stays selected |
-| `scrollback` | `10000` | How many lines of output each tab keeps to scroll back to; older ones go. 10 000 lines take a few MB per tab. A smaller number applies at once |
-| `bell` | `"taskbar"` | The bell, a program's "done" or "come here" (Claude Code can ring it): `"taskbar"` blinks Kel's taskbar button while you're in another window, until you come back; `"flash"` does that and flashes the terminal while you're in Kel; `"none"` |
-| `start_screen` | `true` | Home's start screen, the logo and the projects used last; `false`: home is a plain terminal (Ctrl+Shift+H just goes home) |
-| `backdrop` | `"auto"` | The start screen's ASCII picture, new each time it shows: `"auto"` (a terrain by day, stars at night), `"terrain"`, `"contours"`, `"mountains"`, `"sea"`, `"wind"`, `"stars"` or `"none"`. Mountains and the sea have stars in their sky at night |
-| `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |
-| `[glass]` | `effect = "acrylic"`, `opacity = 0.85`, `grain = 0.1` | Kel see-through: `"acrylic"` blurs what's behind the window, `"mica"` takes a faint tint of the wallpaper, `"none"` is solid (`effect` applies after a restart). Under a full-screen program (lazygit, htop) and Claude Code the terminal's background is solid anyway, the frame around it glass: their many colors and lines read better so (nvim paints its own background). `solid_under_apps = false` turns it off, `solid_color = "#000000"` picks its color. Full-screen programs get it all; of those drawing in the normal screen, the ones in `solid_for` (`["claude", "codex", "gemini", "aider", "opencode", "copilot", "crush"]`, by the program's name or a word of the tab's title; add your own) (the theme's background without it). `opacity`: how much of the theme's colors cover the glass; `grain`: a fine grain on it, like frosted glass |
-| `[colors]` | dark gray, soft colors | Text, background, cursor, selection, frame, border, `accent` (home's color, none by default: gray), Kel's own soft colors (`project_colors` to pick a project's from, `done` and `failed` for a command's dot and errors) and the terminal's 16 basic colors |
-
-A setting missing from the file keeps its default, so deleting a line resets it.
-To get the original file back with all its comments, delete it and restart Kel.
-
-### Use another font
-
-1. Install the font in Windows (open the `.ttf` file, click **Install**).
-2. Press **Ctrl+,** and set its name:
-   ```toml
-   font = "JetBrainsMono Nerd Font"
-   ```
-3. Save. The font changes at once.
-
-Kel has JetBrains Mono built in, so nothing needs installing; the steps are for
-another font. Only the terminal changes: Kel's own tabs and menus stay JetBrains Mono.
-
-The icons that nvim plugins show (file types, git) are built in as well, from
-[Nerd Fonts](https://www.nerdfonts.com), and work with any font. In kickstart.nvim,
-set `vim.g.have_nerd_font = true` in `init.lua`.
-
-The built-in fonts and their licenses are in `assets/fonts`: JetBrains Mono (SIL Open
-Font License 1.1) and Symbols Nerd Font (MIT).
-
-### Use another shell
-
-```toml
-shell = "pwsh.exe -NoLogo"    # PowerShell 7, without its banner
-shell = "cmd.exe"
-shell = "wsl.exe -d Ubuntu"   # Linux, in WSL
-shell = '"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo'   # a path with spaces: in ""
-```
-
-One line, as you'd type it. New tabs start it.
-
-Kel knows each tab's folder because the shell tells it before each prompt (shell
-integration, see `src/shell_integration.rs`). PowerShell and cmd do it on their
-own; other shells don't, so their new tabs start in Kel's folder.
-
-PowerShell also tells Kel when a command starts and ends. A tab with a running
-command (longer than half a second) has a ring at its right end; one whose command
-ended while you were in another tab, a green dot (it worked) or a red one (it failed).
-cmd can't say this, so its tabs never show them.
-
-Closing a tab with a running command, or the window while one runs in any tab,
-asks first in the tab bar: do it again within 3 seconds to close.
-
-Programs in a tab can tell they run in Kel: it sets `TERM_PROGRAM=kel` (and
-`TERM_PROGRAM_VERSION`). It also sets `LANG` from Windows' language, e.g.
-`en_US.UTF-8`, unless you set it yourself; programs from Linux (nvim, git) read
-their language from it, and nvim's `:checkhealth` asks for it. And `COLORTERM=truecolor`:
-Kel draws any color, so programs like delta (git's diffs, lazygit's too) don't round
-their colors to the 256-color table, where they come out loud.
-
-### Change the spaces around the terminal
-
-The terminal is a panel inside the window. Three numbers, in pixels, set the spaces:
-
-```toml
-[layout]
-margin = 8    # window edge → panel
-border = 1    # the panel's line
-padding = 6   # panel's line → text
-tab_height = 32   # the tab bar above the panel
-tab_width = 180   # narrower when there are many tabs
-```
-
-All three at `0`: the text fills the window, like a plain terminal.
-The colors of the window around the panel and of the line are `frame` and `border`
-in `[colors]`.
-
-### Change the colors
-
-Colors are written as `"#rrggbb"`. Set only the ones you want to change, the rest keep
-their defaults. For example, the colors of the Tokyo Night theme:
-
-```toml
-[colors]
-foreground = "#c0caf5"
-background = "#1a1b26"
-cursor = "#c0caf5"
-selection = "#33467c"
-palette = [
-    "#15161e", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6",
-    "#414868", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#c0caf5",
-]
-```
-
-The `palette` holds 16 colors: black, red, green, yellow, blue, magenta, cyan, white,
-then the bright versions of the same 8. Programs ask for these by number ("red" is 1);
-the theme decides how they look. Programs that pick exact colors themselves, like nvim
-color schemes, don't use them.
-
-### When something is wrong
-
-- **At start:** Kel uses the default settings and shows the error in red at the top
-  of the window, e.g. a missing font or shell, or a typo in the file.
-- **After saving:** Kel keeps the settings it had and shows the error in red at the
-  right end of the tab bar, with the line and the reason, e.g.
-  `config.toml, line 3: invalid type: string "big", expected f32`.
-  Fix the file and save again: the message goes away.
+The mouse: drag to select, double-click for a word (a path or a link whole), Ctrl+click
+opens a link. In a program that takes the mouse (nvim, lazygit), hold Shift to select.
 
 ## Projects
 
-A project is a file in `%APPDATA%\kel\projects`, a recipe for a set of tabs. The
-file's name is the project's: `projects\kel.toml` opens with `kel kel`
-(or `cargo run -- kel`). Each `kel` opens a new window.
-
-From an open Kel: the sidebar (the panel button or Ctrl+Shift+B) or the command palette
-(Ctrl+Shift+P, `Open project: kel`). The project comes in this window, and the one
-you were in goes out of sight: nothing in it stops, a `ping -t` keeps going, an
-unsaved nvim stays unsaved. Choose it again and it's as you left it. `home`, at
-the top of the sidebar, is Kel without a project.
-
-The sidebar shows what's open: a bright dot for the projects open in the window, a
-faded one for the rest; a ring around it where a command runs ("running"), a small
-dot where there's output you haven't seen. Del on an open project closes it: saved,
-its shells ended. The palette has `Close project: kel` for the one on screen.
-
-Shift+Del on a project (or `Delete project: kel` in the palette) deletes it, on the
-second press: its file in `projects`, open or not. Its folder, your code, stays: Kel
-never deletes your files. An open one is closed first, its commands ended.
-
-A new home (Kel started without a project, or home again after `Close project`)
-shows the start screen over its terminal: the projects used last. ↑↓ and Enter, or a
-click, open one; typing puts the screen away and goes to the shell, which has been
-starting behind it; Esc only puts it away.
-
-Leaving a project saves its file. Its last tab closed (`exit`): back home. Home's
-last tab closed: the project you were in last comes on screen (closing a tab doesn't
-end the other projects' shells; home comes back, a new one, when you go there).
-Nothing else open: Kel closes. Closing the window saves every open project, and asks
-first if a command runs in any of them.
-
 To make one, open the tabs you want, go to the project's folder in one of them, and
-type a new name in the palette: `Save the tabs as project: myapp`. The project's
-folder is that tab's; the other tabs keep theirs, inside it as `folder = "src"`.
-The window then is that project: its name shows before the tabs, and it's saved
-when the window closes. A name that's taken has its `Open project` line instead.
+type in the palette: `Save the tabs as project: myapp`. Then:
 
-`kel` works in any shell once Kel is installed (see Install; from the repository,
-`.\install.ps1` builds it and installs it the same way). Install again after changes:
-it works while Kel is open (Windows doesn't let a running exe be written over, so the
-old one is renamed first, and removed once no Kel runs it).
+- `kel myapp` in any shell opens it, or the sidebar, or the palette's `Open project`;
+- "Open in Kel" on its folder in Explorer opens it too;
+- double-click a tab to name it and give it a command; F2 on a project in the sidebar
+  for its name and color.
 
-Installing also puts "Open in Kel" in Explorer's menu, on a folder and on the empty
-space inside an open one (on Windows 11 under "Show more options", or Shift+right-click).
-It runs `kel "<folder>"`: a tab in that folder, at home, without the start screen; or,
-if a project has that folder, the project. `.\install.ps1 -NoMenu` installs without
-it, and takes it away if it's there.
+A project is a file in `%APPDATA%\kel\projects`, `myapp.toml`. You can write one by hand:
 
 ```toml
-folder = 'C:\code\kel-terminal'   # single quotes, so a '\' stays a '\'
-color = "#e0af68"                 # optional, see below
-shell = "pwsh.exe -NoLogo"        # optional: its tabs' shell, instead of the config's
+folder = 'C:\code\myapp'   # single quotes, so a '\' stays a '\'
+color = "#e0af68"          # optional: its name, icons and logo in this color
+shell = "pwsh.exe -NoLogo" # optional: its tabs' shell, instead of the config's
 
 [[tab]]
 name = "editor"      # shown in the tab bar instead of the program's title
@@ -286,89 +98,34 @@ command = "cargo run"
 
 [[tab]]
 folder = "docs"      # inside the project's folder; a full path works too
-
-[[tab]]
-shell = "wsl.exe -d Ubuntu"   # this tab's own shell
 ```
 
-Every line of a `[[tab]]` is optional: `[[tab]]` alone is a shell in the project's
-folder. A file without any is one such tab. The running programs aren't saved, they
-can't be: opening the project starts them again.
+Every line of a `[[tab]]` is optional. A tab named `docker`, `db`, `vps`, `api` or `web`
+gets that icon while it runs a plain shell.
 
-A tab's shell is its own `shell`, else the project's, else the config's. A new tab
-(Ctrl+Shift+T) in the project gets the project's.
+When the window closes, Kel writes the file again with the tabs open then: each one's
+last folder, name and command. The commands you typed (`git push`) aren't saved:
+opening a project never runs one by itself. Edit the file while the project isn't
+open, or Kel writes over your changes.
 
-A project's window shows its name before the tabs, so you see which one it is at a
-glance. `color` is the project's own accent: the name and the icon of the tab on
-screen are in it, and the logo's cursor and the window's icon in the taskbar. Without
-`color` the project is gray, like home: Kel has no color of its own, it takes the color
-of what you work on (`accent` in `[colors]` gives home and such projects one).
+## Config
 
-A tab's icon shows what runs in it (nvim, git, claude, ssh, a database client like
-`psql` or `redis-cli`, python, node, cargo), as the program's title says, or else the
-command you typed in PowerShell (`docker compose up` has the whale, once it has run
-for half a second). Such a command, with no title of its own, is the tab's name
-too: `ping -t 1.1.1.1`, not `powershell` (a tab you named keeps its name). In a
-plain shell, the tab's `name` picks the icon: a tab called `docker` has the whale,
-`vps` a server, `db` a database, `backend` (or `api`) braces, `frontend` (or `web`) a
-browser's window, `repo` git's branch, `run` or `start` a ▶. The name itself stays whatever runs.
+`%APPDATA%\kel\config.toml`, opened by **Ctrl+,**. Kel writes it on the first start,
+with a comment on every setting: the font (JetBrains Mono is built in, or any
+installed one), the shell (`pwsh.exe`, `cmd.exe`, `wsl.exe -d Ubuntu`), the glass,
+the cursor, the colors. Saved changes apply at once.
 
-When the window closes (the × button or Alt+F4), Kel writes the file again with the
-tabs open then, so the project opens next time as you left it:
+A mistake in it shows in red in the tab bar, with the line and the reason, and Kel
+keeps the settings it had. To get the original file back, delete it and restart Kel.
 
-| | Saved? |
-|---|---|
-| The tabs, left to right (closed ones go, new ones come) | yes |
-| Each tab's last folder (`cd src`) | yes, if the shell reports it (PowerShell, cmd) |
-| A tab's `name` and `command` from the file | yes |
-| Commands you typed (`git log`, `cargo run`) | no: opening a project never runs one by itself |
-| The text on the screen | no |
+## Build from source
 
-Edit the file while the project isn't open, or Kel writes over your changes.
-Comments in it don't stay. Closing the tabs one by one (`exit`) doesn't save:
-the file keeps the tabs it had, not none.
-
-## How the code is laid out
-
-```text
- keyboard/mouse ──> app ──bytes──> pty (ConPTY) ──> powershell.exe
-                                                        │
- window <── renderer <── term::Grid <── term::Terminal <┘ bytes (text + escape codes)
-           (pixels)      (cells)        (escape codes → Grid calls)
+```sh
+cargo run              # Rust 1.88 or newer, from rustup.rs
+.\install.ps1          # build it and install it, as the palette's Install does
 ```
 
-| File | What it does |
-|---|---|
-| `src/app.rs` | The window, the list of tabs, and all events: keys, mouse, resize |
-| `src/keys.rs` | Kel's shortcuts (one table), and the bytes every other key sends to the shell |
-| `src/mouse.rs` | The bytes that tell a program what the mouse does, if it asked for the mouse |
-| `src/search.rs` | The search in the output: what's typed, the matches, which one is chosen |
-| `src/help.rs` | The help's lines: the keys (the shortcuts from the palette's list) and the settings as the config has them now; how far it's scrolled |
-| `src/start.rs` | Home's start screen: the recent projects, which one is chosen, where each one is |
-| `src/sidebar.rs` | The sidebar of projects: its rows, which one is chosen, where each one is |
-| `src/links.rs` | `https://...` in the output: where a link starts and ends |
-| `src/palette.rs` | The command palette's state: what's typed, which lines match, which one is chosen |
-| `src/setup.rs` | The install scripts from `setup/`, built into the exe, and how a tab runs one |
-| `src/layout.rs` | Where the terminal panel goes in the window |
-| `src/theme.rs` | Colors: what programs ask for, and the theme that decides how they look |
-| `src/config.rs` | Reads `config.toml` |
-| `src/glass.rs` | Glass: which colors are see-through, the grain, asking Windows for the blur |
-| `src/backdrop.rs` | The start screen's ASCII background: terrain by day, stars at night; or contours, mountains, the sea, wind (`backdrop`) |
-| `src/icons.rs` | The tab icons (8 x 8 pixel grids, a pixel 2 x 2 on screen, like the logo) and which tab gets which |
-| `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
-| `src/project.rs` | Reads and writes a project file: the tabs, their folders and commands |
-| `src/pty.rs` | Starts the shell inside a pseudo-terminal |
-| `src/shell_integration.rs` | Makes the shell tell Kel its folder, and when a command starts and ends |
-| `src/term/terminal.rs` | Understands the escape codes the shell sends |
-| `src/term/grid.rs` | The screen as a grid of cells, plus scrollback; on resize, the lines are cut again at the new width |
-| `src/renderer.rs` | Turns the grid into pixels |
-| `src/font.rs` | Finds a font, and turns its letters into pixels, each one when it's first drawn |
-| `src/fallback.rs` | Fonts for the letters the terminal's font lacks (emoji, Chinese), loaded when first needed |
-| `examples/` | Small tools that print the raw bytes a program sends: `cargo run --example probe_nvim` |
-| `setup/` | Scripts that install Kel itself (`kel.ps1`) and tools (see Install tools) |
-| `.github/workflows/` | GitHub builds and tests every push; a tag `v*` makes a draft release with `kel.exe` |
-
-Each file starts with a comment that explains it in more detail.
+How the code is laid out, and more: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
@@ -379,6 +136,3 @@ Kel is yours to use, copy, change and share, under either of
 
 at your choice. The fonts built into it have their own: JetBrains Mono (SIL Open
 Font License 1.1) and Symbols Nerd Font (MIT), in `assets/fonts`.
-
-Unless you say otherwise, anything you send to be added to Kel is under the same two
-licenses, with no other terms.
