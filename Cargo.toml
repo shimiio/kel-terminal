@@ -2,6 +2,9 @@
 name = "kel-terminal"
 version = "0.1.0"
 edition = "2024"
+description = "A terminal with tabs and projects, for daily work"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/shimiio/kel-terminal"
 
 # The program is `kel.exe`: `kel <project>` (see install.ps1).
 [[bin]]

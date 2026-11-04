@@ -6,7 +6,24 @@ The goal: tabs, and **projects**, saved sets of tabs that remember their name, f
 and startup command (say `nvim .` in one tab and `cargo run` in another), so a whole
 workspace opens in one go. See [ROADMAP.md](ROADMAP.md) for what's done and what's next.
 
-Kel runs on Windows for now. Linux and macOS are planned.
+Kel runs on Windows 10 and 11 for now. Linux and macOS are planned.
+
+## Install
+
+1. Download `kel.exe` from the [latest release](https://github.com/shimiio/kel-terminal/releases/latest).
+2. Run it. Windows may say **"Windows protected your PC"**: Kel isn't signed (a
+   signature costs money every year, so most small open-source programs have none).
+   Click **More info**, then **Run anyway**.
+3. In Kel, open the command palette (Ctrl+Shift+P), type `install`, and choose
+   **Install Kel on this computer**.
+
+That puts Kel in `%LOCALAPPDATA%\Programs\Kel`, in the Start menu, on your PATH (`kel`
+and `kel <project>` in any new shell), and "Open in Kel" in Explorer's menu on a
+folder. For you only, no admin rights. The `kel.exe` you downloaded can go then.
+
+To update: download the new `kel.exe`, run it, and choose Install again. To remove
+Kel: **Uninstall Kel from this computer** in the palette; your config and projects
+stay in `%APPDATA%\kel`.
 
 ## Build and run
 
@@ -17,7 +34,7 @@ cargo run            # start Kel
 cargo run -- kel     # open the project "kel" (see Projects)
 cargo test           # run the tests
 cargo build --release   # a fast build: target/release/kel.exe
-.\install.ps1        # build it and put it on the PATH: `kel` in any shell; "Open in Kel" in Explorer
+.\install.ps1        # build it and install it, as "Install Kel on this computer" does
 ```
 
 ## Install tools
@@ -243,17 +260,16 @@ folder is that tab's; the other tabs keep theirs, inside it as `folder = "src"`.
 The window then is that project: its name shows before the tabs, and it's saved
 when the window closes. A name that's taken has its `Open project` line instead.
 
-`kel` works in any shell after `.\install.ps1`: it builds Kel and copies `kel.exe` to
-`~\.cargo\bin`, the folder where cargo puts programs. Installing Rust put that folder
-on the PATH, so there's nothing to add by hand. Run it again after changes: it works
-while Kel is open (Windows doesn't let a running exe be written over, so the old one
-is renamed first, and removed once no Kel runs it).
+`kel` works in any shell once Kel is installed (see Install; from the repository,
+`.\install.ps1` builds it and installs it the same way). Install again after changes:
+it works while Kel is open (Windows doesn't let a running exe be written over, so the
+old one is renamed first, and removed once no Kel runs it).
 
-It also puts "Open in Kel" in Explorer's menu, on a folder and on the empty space
-inside an open one (on Windows 11 under "Show more options", or Shift+right-click).
+Installing also puts "Open in Kel" in Explorer's menu, on a folder and on the empty
+space inside an open one (on Windows 11 under "Show more options", or Shift+right-click).
 It runs `kel "<folder>"`: a tab in that folder, at home, without the start screen; or,
-if a project has that folder, the project. For you only, no admin rights needed.
-`.\install.ps1 -NoMenu` installs without it, and takes it away if it's there.
+if a project has that folder, the project. `.\install.ps1 -NoMenu` installs without
+it, and takes it away if it's there.
 
 ```toml
 folder = 'C:\code\kel-terminal'   # single quotes, so a '\' stays a '\'
@@ -349,6 +365,20 @@ the file keeps the tabs it had, not none.
 | `src/font.rs` | Finds a font, and turns its letters into pixels, each one when it's first drawn |
 | `src/fallback.rs` | Fonts for the letters the terminal's font lacks (emoji, Chinese), loaded when first needed |
 | `examples/` | Small tools that print the raw bytes a program sends: `cargo run --example probe_nvim` |
-| `setup/` | Scripts that install tools (see Install tools) |
+| `setup/` | Scripts that install Kel itself (`kel.ps1`) and tools (see Install tools) |
+| `.github/workflows/` | GitHub builds and tests every push; a tag `v*` makes a draft release with `kel.exe` |
 
 Each file starts with a comment that explains it in more detail.
+
+## License
+
+Kel is yours to use, copy, change and share, under either of
+
+- the [MIT License](LICENSE-MIT)
+- the [Apache License, Version 2.0](LICENSE-APACHE)
+
+at your choice. The fonts built into it have their own: JetBrains Mono (SIL Open
+Font License 1.1) and Symbols Nerd Font (MIT), in `assets/fonts`.
+
+Unless you say otherwise, anything you send to be added to Kel is under the same two
+licenses, with no other terms.

@@ -296,9 +296,12 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] More places that read better solid (as under lazygit): every full-screen program
       already; of the normal screen's, `solid_for` in `[glass]`, AI helpers by default
       (claude, codex, gemini, aider, opencode, copilot, crush), more added as they come
-- [ ] Linux and macOS, last: CI builds them, so testers need no Rust (a Linux VM, a clean
-      Windows laptop, a friend's Mac). See below
-- [ ] License, a release on GitHub
+- [x] Ready for a release: two licenses (MIT or Apache-2.0); kel.exe needs no DLL a
+      clean Windows lacks; it installs itself (the palette: Start menu, PATH, Explorer)
+      and uninstalls; GitHub tests every push and drafts a release from a `v*` tag
+- [ ] The first release, v0.1.0: Windows. Tried on a clean Windows laptop
+- [ ] Linux and macOS, after it, as a preview: CI builds them, so testers need no Rust
+      (a Linux in WSL, a friend's Mac). See below
 
 Settled:
 - The project's folder in the sidebar is where its tabs start, not where a tab went:
