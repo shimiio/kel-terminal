@@ -352,7 +352,11 @@ What is Windows-only today:
 - [ ] Glass on Linux and macOS: see-through at least (does softbuffer give the window
       alpha there?); macOS can blur (NSVisualEffectView), KDE too. WSLg's windows can't
       show it: try on a real Linux and the friend's Mac
-- [ ] macOS shortcuts with Cmd instead of Ctrl+Shift
-- [ ] macOS Option+letter types `ø`, `å`: Kel now sends Alt+letter by the key's place
-      for a non-Latin letter (Alt+М is Alt+V), which would make Option+O `ESC o`.
-      Decide: Option as Meta (terminals offer a setting) or as letters
+- [x] macOS shell as a login shell (`-l`), as Terminal: `~/.zprofile`, Homebrew's PATH
+- [x] macOS shortcuts with Cmd (Cmd+T, Cmd+C/V, Cmd+1…9, Cmd+Shift+], Cmd+F, Cmd+B...);
+      Ctrl is the shell's there. Cmd+Q, Cmd+H, Cmd+M Kel's own: winit's menu is off,
+      its Cmd+Q would quit without saving (the Dock's Quit still does: to see)
+- [x] macOS Option types letters (`@`, `{` on German layouts); `option_as_alt = true`
+      makes it Alt. Option+←→ a word, Cmd+←→ the line, as in Terminal
+- [ ] On the friend's Mac: the window without a title bar (moves? the traffic lights?),
+      Del in the sidebar (a Mac's Delete is Backspace), Cmd+key reaching Kel at all

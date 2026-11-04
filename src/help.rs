@@ -105,8 +105,12 @@ fn row(key: &str, value: &str, note: &str) -> Line {
 fn keys_lines() -> Vec<Line> {
     let mut lines = vec![
         title("KEYS"),
-        row("Ctrl+Shift+P", "The command palette", ""),
-        row("Ctrl+Shift+/", "This help", ""),
+        row(
+            &keys::hint(&keys::Action::Palette),
+            "The command palette",
+            "",
+        ),
+        row(&keys::hint(&keys::Action::Help), "This help", ""),
     ];
     // The palette's own list, with the shortcut each has: never out of date.
     for item in keys::palette_items() {
@@ -114,12 +118,13 @@ fn keys_lines() -> Vec<Line> {
             lines.push(row(&item.hint, &item.label, ""));
         }
     }
-    lines.push(row("Ctrl+1 … Ctrl+8", "Go to tab 1 … 8", ""));
+    let m = keys::MOD;
+    lines.push(row(&format!("{m}+1 … {m}+8"), "Go to tab 1 … 8", ""));
     lines.extend([
         Line::Gap,
         title("SIDEBAR"),
         row("↑↓  Enter", "Choose, open a project", ""),
-        row("Alt+↑↓", "Move a project up, down", ""),
+        row(&format!("{}+↑↓", keys::ALT), "Move a project up, down", ""),
         row("F2", "Edit: name and color", ""),
         row("Del", "Close it (saved)", ""),
         row("Shift+Del", "Delete it (not its folder)", ""),
@@ -142,7 +147,7 @@ fn keys_lines() -> Vec<Line> {
         row("Right click tab", "The same", ""),
         row("Middle click tab", "Close it", ""),
         row("Drag a tab", "Move it", ""),
-        row("Ctrl+click link", "Open it", ""),
+        row(&format!("{m}+click link"), "Open it", ""),
         row("Double-click text", "The word: a path whole", ""),
         row("Triple-click text", "The line", ""),
         row("Drag a project", "Move it, in the sidebar", ""),
@@ -182,10 +187,18 @@ fn settings_lines(config: &Config) -> Vec<Line> {
     };
     vec![
         title("SETTINGS"),
-        row("Ctrl+,", "config.toml", "saved: applies at once"),
+        row(
+            &keys::hint(&keys::Action::OpenConfig),
+            "config.toml",
+            "saved: applies at once",
+        ),
         Line::Gap,
         row("font", &text(&config.font), "the terminal's"),
-        row("font_size", &n(config.font_size), "Ctrl+= Ctrl+- for now"),
+        row(
+            "font_size",
+            &n(config.font_size),
+            &format!("{0}+= {0}+- for now", keys::MOD),
+        ),
         row("line_height", &n(config.line_height), "1.2: a fifth more"),
         row(
             "shell",
@@ -211,6 +224,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             "copy_on_select",
             &config.copy_on_select.to_string(),
             "copied as you let go",
+        ),
+        row(
+            "option_as_alt",
+            &config.option_as_alt.to_string(),
+            "macOS: Option is Alt",
         ),
         row(
             "scrollback",
@@ -299,9 +317,10 @@ mod tests {
         for item in keys::palette_items() {
             assert!(keys.contains(&item.hint.as_str()), "{}", item.label);
         }
-        assert!(keys.contains(&"Ctrl+Shift+/") && keys.contains(&"Shift+Del"));
+        let help_key = keys::hint(&keys::Action::Help);
+        assert!(keys.contains(&help_key.as_str()) && keys.contains(&"Shift+Del"));
         // Once: the help's own palette line isn't listed again.
-        assert_eq!(keys.iter().filter(|k| **k == "Ctrl+Shift+/").count(), 1);
+        assert_eq!(keys.iter().filter(|k| **k == help_key).count(), 1);
     }
 
     #[test]

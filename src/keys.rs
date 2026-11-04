@@ -20,7 +20,8 @@ pub enum Action {
     GoToTab(usize),
     LastTab,
     Paste,
-    /// Copies the mouse selection; without one, acts as `Interrupt`.
+    /// Copies the mouse selection; without one, acts as `Interrupt` (not on a
+    /// Mac: Cmd+C there only copies, as in its other apps).
     Copy,
     /// Ctrl+C: stop the running command.
     Interrupt,
@@ -64,6 +65,32 @@ pub enum Action {
     EditProject,
     /// Saves the tabs as a new project of this name; the window becomes it.
     SaveProject(String),
+    /// Cmd+Q on a Mac: as the window's close button (it asks first if a
+    /// command runs).
+    Quit,
+    /// Cmd+H on a Mac: hides Kel, as every Mac app.
+    Hide,
+    /// Cmd+M on a Mac: the window to the Dock.
+    Minimize,
+}
+
+/// Kel runs on a Mac: Cmd for its shortcuts, not Ctrl, and Option for letters.
+pub const MAC: bool = cfg!(target_os = "macos");
+
+/// Kel's key, as hints write it: Cmd on a Mac, Ctrl elsewhere.
+pub const MOD: &str = if MAC { "Cmd" } else { "Ctrl" };
+
+/// Alt, as hints write it: a Mac calls it Option.
+pub const ALT: &str = if MAC { "Option" } else { "Alt" };
+
+/// Is Kel's key held (Ctrl+click on a link, Ctrl+V in a card): Cmd on a Mac,
+/// Ctrl elsewhere.
+pub fn command_key(mods: ModifiersState) -> bool {
+    if MAC {
+        mods.super_key()
+    } else {
+        mods.control_key()
+    }
 }
 
 /// Which of Kel's shortcuts this key is, if any. All of Kel's shortcuts, in one table.
@@ -71,9 +98,41 @@ pub enum Action {
 /// Uses the physical key (its place on the keyboard), so shortcuts work with
 /// any layout, Cyrillic too.
 pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
+    shortcut_on(key, mods, MAC)
+}
+
+/// `shortcut` on a Mac (`mac`) or not: both are tested everywhere.
+fn shortcut_on(key: PhysicalKey, mods: ModifiersState, mac: bool) -> Option<Action> {
     let PhysicalKey::Code(code) = key else {
         return None;
     };
+    if mac {
+        mac_shortcut(code, mods)
+    } else {
+        pc_shortcut(code, mods)
+    }
+}
+
+/// Tab 1…8 by its digit key.
+fn tab_number(code: KeyCode) -> Option<usize> {
+    let digits = [
+        KeyCode::Digit1,
+        KeyCode::Digit2,
+        KeyCode::Digit3,
+        KeyCode::Digit4,
+        KeyCode::Digit5,
+        KeyCode::Digit6,
+        KeyCode::Digit7,
+        KeyCode::Digit8,
+    ];
+    digits
+        .iter()
+        .position(|&digit| digit == code)
+        .map(|i| i + 1)
+}
+
+/// Kel's shortcuts on Windows and Linux.
+fn pc_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
     // Every shortcut uses Ctrl. Not with Alt: Ctrl+Alt is AltGr on many layouts,
     // and AltGr types letters (Polish AltGr+C is `ć`, not a Ctrl+C). Except the
     // arrows: they type nothing, with AltGr neither.
@@ -93,14 +152,7 @@ pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
         (KeyCode::KeyW, true) => Action::CloseTab,
         (KeyCode::Tab, false) => Action::NextTab,
         (KeyCode::Tab, true) => Action::PreviousTab,
-        (KeyCode::Digit1, false) => Action::GoToTab(1),
-        (KeyCode::Digit2, false) => Action::GoToTab(2),
-        (KeyCode::Digit3, false) => Action::GoToTab(3),
-        (KeyCode::Digit4, false) => Action::GoToTab(4),
-        (KeyCode::Digit5, false) => Action::GoToTab(5),
-        (KeyCode::Digit6, false) => Action::GoToTab(6),
-        (KeyCode::Digit7, false) => Action::GoToTab(7),
-        (KeyCode::Digit8, false) => Action::GoToTab(8),
+        (code, false) if tab_number(code).is_some() => Action::GoToTab(tab_number(code)?),
         (KeyCode::Digit9, false) => Action::LastTab, // like browsers
         (KeyCode::PageUp, true) => Action::MoveTabLeft, // like browsers too
         (KeyCode::PageDown, true) => Action::MoveTabRight,
@@ -124,44 +176,173 @@ pub fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
     Some(action)
 }
 
+/// Kel's shortcuts on a Mac: with Cmd, as its other apps have them. Ctrl is
+/// the shell's there, as in Terminal (Ctrl+C, Ctrl+R, Ctrl+T), so Cmd needs no
+/// Shift to stay out of its way; but Ctrl+Tab, which Terminal has too. Cmd+Q,
+/// Cmd+H and Cmd+M are Kel's own: the Mac's menu would quit without saving.
+fn mac_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
+    let (cmd, ctrl, alt, shift) = (
+        mods.super_key(),
+        mods.control_key(),
+        mods.alt_key(),
+        mods.shift_key(),
+    );
+    if ctrl && !cmd && !alt {
+        return match (code, shift) {
+            (KeyCode::Tab, false) => Some(Action::NextTab),
+            (KeyCode::Tab, true) => Some(Action::PreviousTab),
+            (KeyCode::KeyC, false) => Some(Action::Interrupt),
+            _ => None,
+        };
+    }
+    if !cmd || ctrl {
+        return None;
+    }
+    // Cmd+Option: the arrows only. Option types letters on a Mac.
+    if alt {
+        return match (code, shift) {
+            (KeyCode::ArrowRight, false) => Some(Action::NextProject),
+            (KeyCode::ArrowLeft, false) => Some(Action::PreviousProject),
+            _ => None,
+        };
+    }
+    let action = match (code, shift) {
+        // (key, with Shift?)
+        (KeyCode::KeyT, false) => Action::NewTab,
+        (KeyCode::KeyW, false) => Action::CloseTab,
+        // Cmd+} and Cmd+{, as Safari and Terminal.
+        (KeyCode::BracketRight, true) => Action::NextTab,
+        (KeyCode::BracketLeft, true) => Action::PreviousTab,
+        (code, false) if tab_number(code).is_some() => Action::GoToTab(tab_number(code)?),
+        (KeyCode::Digit9, false) => Action::LastTab,
+        // A Mac's keyboard has no PageUp: the arrows, as iTerm.
+        (KeyCode::ArrowLeft, true) => Action::MoveTabLeft,
+        (KeyCode::ArrowRight, true) => Action::MoveTabRight,
+        (KeyCode::KeyV, false) => Action::Paste,
+        (KeyCode::KeyC, false) => Action::Copy,
+        (KeyCode::Equal, _) => Action::ZoomIn,
+        (KeyCode::Minus, _) => Action::ZoomOut,
+        (KeyCode::Digit0, _) => Action::ZoomReset,
+        (KeyCode::Comma, false) => Action::OpenConfig,
+        (KeyCode::KeyP, true) => Action::Palette,
+        (KeyCode::KeyF, false) => Action::Find,
+        (KeyCode::KeyB, false) => Action::Sidebar,
+        // Cmd+H alone hides, on every Mac.
+        (KeyCode::KeyH, true) => Action::OpenHome,
+        // Cmd+?, as the Help menu of Mac apps.
+        (KeyCode::Slash, true) => Action::Help,
+        (KeyCode::KeyQ, false) => Action::Quit,
+        (KeyCode::KeyH, false) => Action::Hide,
+        (KeyCode::KeyM, false) => Action::Minimize,
+        _ => return None,
+    };
+    Some(action)
+}
+
 /// Kel's actions as the command palette lists them, with their shortcuts from the
 /// table above (a test checks they match).
 pub fn palette_items() -> Vec<Item> {
-    let item = |label: &str, hint: &str, action| Item {
+    palette_items_on(MAC)
+}
+
+/// The shortcut of `action`, as the palette shows it ("Ctrl+Shift+T"); empty
+/// for one without.
+pub fn hint(action: &Action) -> String {
+    palette_items()
+        .into_iter()
+        .find(|item| item.action == *action)
+        .map(|item| item.hint)
+        .unwrap_or_default()
+}
+
+/// `palette_items` on a Mac (`mac`) or not: each has its keys.
+fn palette_items_on(mac: bool) -> Vec<Item> {
+    let item = |label: &str, pc: &str, on_mac: &str, action| Item {
         label: label.into(),
-        hint: hint.into(),
+        hint: if mac { on_mac } else { pc }.into(),
         action,
     };
-    vec![
-        item("New tab", "Ctrl+Shift+T", Action::NewTab),
-        item("Close tab", "Ctrl+Shift+W", Action::CloseTab),
-        item("Next tab", "Ctrl+Tab", Action::NextTab),
-        item("Previous tab", "Ctrl+Shift+Tab", Action::PreviousTab),
-        item("Last tab", "Ctrl+9", Action::LastTab),
-        item("Move tab left", "Ctrl+Shift+PageUp", Action::MoveTabLeft),
+    let mut items = vec![
+        item("New tab", "Ctrl+Shift+T", "Cmd+T", Action::NewTab),
+        item("Close tab", "Ctrl+Shift+W", "Cmd+W", Action::CloseTab),
+        item("Next tab", "Ctrl+Tab", "Cmd+Shift+]", Action::NextTab),
+        item(
+            "Previous tab",
+            "Ctrl+Shift+Tab",
+            "Cmd+Shift+[",
+            Action::PreviousTab,
+        ),
+        item("Last tab", "Ctrl+9", "Cmd+9", Action::LastTab),
+        item(
+            "Move tab left",
+            "Ctrl+Shift+PageUp",
+            "Cmd+Shift+←",
+            Action::MoveTabLeft,
+        ),
         item(
             "Move tab right",
             "Ctrl+Shift+PageDown",
+            "Cmd+Shift+→",
             Action::MoveTabRight,
         ),
-        item("Paste", "Ctrl+Shift+V", Action::Paste),
-        item("Copy the selection", "Ctrl+Shift+C", Action::Copy),
-        item("Find in the output", "Ctrl+Shift+F", Action::Find),
-        item("Projects: the sidebar", "Ctrl+Shift+B", Action::Sidebar),
-        item("Home: its start screen", "Ctrl+Shift+H", Action::OpenHome),
-        item("Next open project", "Ctrl+Alt+→", Action::NextProject),
+        item("Paste", "Ctrl+Shift+V", "Cmd+V", Action::Paste),
+        item("Copy the selection", "Ctrl+Shift+C", "Cmd+C", Action::Copy),
+        item("Find in the output", "Ctrl+Shift+F", "Cmd+F", Action::Find),
+        item(
+            "Projects: the sidebar",
+            "Ctrl+Shift+B",
+            "Cmd+B",
+            Action::Sidebar,
+        ),
+        item(
+            "Home: its start screen",
+            "Ctrl+Shift+H",
+            "Cmd+Shift+H",
+            Action::OpenHome,
+        ),
+        item(
+            "Next open project",
+            "Ctrl+Alt+→",
+            "Cmd+Option+→",
+            Action::NextProject,
+        ),
         item(
             "Previous open project",
             "Ctrl+Alt+←",
+            "Cmd+Option+←",
             Action::PreviousProject,
         ),
-        item("Stop the running command", "Ctrl+C", Action::Interrupt),
-        item("Zoom in: bigger font", "Ctrl+=", Action::ZoomIn),
-        item("Zoom out: smaller font", "Ctrl+-", Action::ZoomOut),
-        item("Reset zoom", "Ctrl+0", Action::ZoomReset),
-        item("Open the config file", "Ctrl+,", Action::OpenConfig),
-        item("Help: keys and settings", "Ctrl+Shift+/", Action::Help),
-    ]
+        item(
+            "Stop the running command",
+            "Ctrl+C",
+            "Ctrl+C",
+            Action::Interrupt,
+        ),
+        item("Zoom in: bigger font", "Ctrl+=", "Cmd+=", Action::ZoomIn),
+        item("Zoom out: smaller font", "Ctrl+-", "Cmd+-", Action::ZoomOut),
+        item("Reset zoom", "Ctrl+0", "Cmd+0", Action::ZoomReset),
+        item(
+            "Open the config file",
+            "Ctrl+,",
+            "Cmd+,",
+            Action::OpenConfig,
+        ),
+        item(
+            "Help: keys and settings",
+            "Ctrl+Shift+/",
+            "Cmd+Shift+/",
+            Action::Help,
+        ),
+    ];
+    // A Mac's own, which Windows and Linux leave to the window's buttons.
+    if mac {
+        items.extend([
+            item("Minimize the window", "", "Cmd+M", Action::Minimize),
+            item("Hide Kel", "", "Cmd+H", Action::Hide),
+            item("Quit Kel", "", "Cmd+Q", Action::Quit),
+        ]);
+    }
+    items
 }
 
 /// The bytes to send for pasted text.
@@ -297,6 +478,44 @@ pub fn key_to_bytes(
     Some(bytes.to_vec())
 }
 
+/// `key_to_bytes` on a Mac, where Cmd and Option are their own:
+/// - Cmd+key is Kel's, or nothing; but Cmd+← and Cmd+→ go to the line's start
+///   and end, and Cmd+Backspace deletes it (Ctrl+A, Ctrl+E, Ctrl+U), as in
+///   Terminal and Ghostty.
+/// - Option+← and Option+→: a word back, on (`ESC b`, `ESC f`), the same.
+/// - Option+letter types what the Mac makes of it (`@` and `{` on German and
+///   other layouts, which have them only so), unless `option_as_alt`: then
+///   it's Alt, `ESC` and the letter, for Alt+B in a shell or nvim's Alt keys.
+///   With it on, Kel asks the Mac for the letter without Option (see `App`).
+pub fn mac_key_to_bytes(
+    (key, physical): (&Key, PhysicalKey),
+    text: Option<&str>,
+    mods: ModifiersState,
+    option_as_alt: bool,
+) -> Option<Vec<u8>> {
+    if mods.super_key() {
+        let bytes: &[u8] = match key {
+            Key::Named(NamedKey::ArrowLeft) => b"\x01",
+            Key::Named(NamedKey::ArrowRight) => b"\x05",
+            Key::Named(NamedKey::Backspace) => b"\x15",
+            _ => return None,
+        };
+        return Some(bytes.to_vec());
+    }
+    if mods == ModifiersState::ALT {
+        match key {
+            Key::Named(NamedKey::ArrowLeft) => return Some(b"\x1bb".to_vec()),
+            Key::Named(NamedKey::ArrowRight) => return Some(b"\x1bf".to_vec()),
+            _ => {}
+        }
+    }
+    let mut mods = mods;
+    if !option_as_alt && matches!(key, Key::Character(_)) {
+        mods.remove(ModifiersState::ALT);
+    }
+    key_to_bytes((key, physical), text, mods)
+}
+
 /// The control character Ctrl+`key` sends. Terminals have no "Ctrl is down": Ctrl
 /// keeps only the low 5 bits of the character, so Ctrl+D (`D` = 0x44) is 0x04, and
 /// Ctrl+[ (`[` = 0x5B) is 0x1B, the same byte as Esc.
@@ -429,6 +648,11 @@ mod tests {
         PhysicalKey::Code(code)
     }
 
+    /// Windows' and Linux's shortcuts, on a Mac too (`mac_shortcuts` has its own).
+    fn shortcut(key: PhysicalKey, mods: ModifiersState) -> Option<Action> {
+        shortcut_on(key, mods, false)
+    }
+
     /// The bytes a named key sends, as a string, e.g. "\x1b[15~".
     fn send(key: NamedKey, mods: ModifiersState) -> String {
         let place = PhysicalKey::Code(KeyCode::F35); // named keys don't look at it
@@ -541,7 +765,8 @@ mod tests {
             match part {
                 "Ctrl" => mods |= ModifiersState::CONTROL,
                 "Shift" => mods |= ModifiersState::SHIFT,
-                "Alt" => mods |= ModifiersState::ALT,
+                "Alt" | "Option" => mods |= ModifiersState::ALT,
+                "Cmd" => mods |= ModifiersState::SUPER,
                 _ => panic!("unknown modifier in {hint}"),
             }
         }
@@ -557,10 +782,15 @@ mod tests {
             "/" => KeyCode::Slash,
             "0" => KeyCode::Digit0,
             "9" => KeyCode::Digit9,
+            "[" => KeyCode::BracketLeft,
+            "]" => KeyCode::BracketRight,
             "B" => KeyCode::KeyB,
             "C" => KeyCode::KeyC,
             "F" => KeyCode::KeyF,
             "H" => KeyCode::KeyH,
+            "M" => KeyCode::KeyM,
+            "P" => KeyCode::KeyP,
+            "Q" => KeyCode::KeyQ,
             "T" => KeyCode::KeyT,
             "V" => KeyCode::KeyV,
             "W" => KeyCode::KeyW,
@@ -571,10 +801,74 @@ mod tests {
 
     #[test]
     fn palette_hints_are_the_real_shortcuts() {
-        for item in palette_items() {
-            let (key, mods) = parse_hint(&item.hint);
-            assert_eq!(shortcut(key, mods), Some(item.action), "{}", item.label);
+        for mac in [false, true] {
+            for item in palette_items_on(mac) {
+                let (key, mods) = parse_hint(&item.hint);
+                let found = shortcut_on(key, mods, mac);
+                assert_eq!(found, Some(item.action), "{} (mac: {mac})", item.label);
+            }
         }
+    }
+
+    /// A Mac's keys, as Mac apps have them; Ctrl is the shell's.
+    #[test]
+    fn mac_shortcuts() {
+        let cmd = ModifiersState::SUPER;
+        let cmd_shift = cmd | ModifiersState::SHIFT;
+        let mac = |code, mods| shortcut_on(key(code), mods, true);
+        assert_eq!(mac(KeyCode::KeyT, cmd), Some(Action::NewTab));
+        assert_eq!(mac(KeyCode::Digit3, cmd), Some(Action::GoToTab(3)));
+        assert_eq!(mac(KeyCode::KeyQ, cmd), Some(Action::Quit));
+        assert_eq!(mac(KeyCode::KeyH, cmd), Some(Action::Hide));
+        assert_eq!(mac(KeyCode::KeyH, cmd_shift), Some(Action::OpenHome));
+        assert_eq!(mac(KeyCode::Tab, CTRL), Some(Action::NextTab));
+        // Ctrl+T, Ctrl+Shift+T, Ctrl+R: the shell's on a Mac.
+        assert_eq!(mac(KeyCode::KeyT, CTRL), None);
+        assert_eq!(mac(KeyCode::KeyT, CTRL_SHIFT), None);
+        assert_eq!(mac(KeyCode::KeyR, CTRL), None);
+        // Cmd+K: nothing of Kel's (and nothing typed, see `mac_typing`).
+        assert_eq!(mac(KeyCode::KeyK, cmd), None);
+        // And Cmd isn't Kel's key on Windows and Linux.
+        assert_eq!(shortcut_on(key(KeyCode::KeyT), cmd, false), None);
+    }
+
+    /// `mac_key_to_bytes` for a key the layout calls `text`.
+    fn mac_type(text: &str, place: KeyCode, mods: ModifiersState, alt: bool) -> Option<Vec<u8>> {
+        let key = Key::Character(text.into());
+        mac_key_to_bytes((&key, PhysicalKey::Code(place)), Some(text), mods, alt)
+    }
+
+    #[test]
+    fn mac_typing() {
+        let option = ModifiersState::ALT;
+        // Option types what the Mac makes of it: German Option+L is `@`.
+        assert_eq!(
+            mac_type("@", KeyCode::KeyL, option, false),
+            Some(b"@".to_vec())
+        );
+        // With `option_as_alt`, it's Alt (the Mac gives the plain letter then).
+        assert_eq!(
+            mac_type("b", KeyCode::KeyB, option, true),
+            Some(b"\x1bb".to_vec())
+        );
+        // Cmd+letter types nothing.
+        assert_eq!(
+            mac_type("k", KeyCode::KeyK, ModifiersState::SUPER, false),
+            None
+        );
+        // Ctrl is Ctrl.
+        assert_eq!(mac_type("r", KeyCode::KeyR, CTRL, false), Some(vec![0x12]));
+        let named = |key: NamedKey, mods| {
+            let place = PhysicalKey::Code(KeyCode::F35);
+            mac_key_to_bytes((&Key::Named(key), place), None, mods, false).unwrap()
+        };
+        // Words and lines, as in Terminal.
+        assert_eq!(named(NamedKey::ArrowLeft, option), b"\x1bb");
+        assert_eq!(named(NamedKey::ArrowRight, option), b"\x1bf");
+        assert_eq!(named(NamedKey::ArrowLeft, ModifiersState::SUPER), b"\x01");
+        assert_eq!(named(NamedKey::Backspace, ModifiersState::SUPER), b"\x15");
+        // Option+Backspace: a word, as Alt+Backspace.
+        assert_eq!(named(NamedKey::Backspace, option), b"\x1b\x7f");
     }
 
     #[test]

@@ -251,6 +251,8 @@ pub struct App {
     last_click: Option<Instant>,
     /// The window is closing (see `close_window`): `about_to_wait` ends the event loop.
     quit: bool,
+    /// Cmd+H on a Mac: hide Kel when the loop next can (it needs the loop).
+    hide: bool,
     /// A close that asked "sure?" and waits for the second press.
     pending_close: Option<PendingClose>,
     /// The mouse is at the window's edge: pressing there resizes the window this way.
@@ -456,6 +458,7 @@ impl App {
             hovered: None,
             last_click: None,
             quit: false,
+            hide: false,
             pending_close: None,
             resize_edge: None,
             status,
@@ -740,7 +743,7 @@ impl App {
 
     /// Ctrl+Shift+W: closes the tab on screen.
     fn close_tab(&mut self) {
-        self.close_tab_at(self.active, "Ctrl+Shift+W");
+        self.close_tab_at(self.active, &keys::hint(&Action::CloseTab));
     }
 
     /// Ends the shell of the tab at `index`. If a command runs (nvim, `cargo run`),
@@ -1251,6 +1254,13 @@ impl App {
                     }
                     self.request_redraw();
                 }
+                #[cfg(target_os = "macos")]
+                if new.option_as_alt != self.config.option_as_alt
+                    && let Some(window) = &self.window
+                {
+                    use winit::platform::macos::WindowExtMacOS;
+                    window.set_option_as_alt(option_as_alt(new.option_as_alt));
+                }
                 // Every tab keeps the new number of lines, the ones behind too.
                 if new.scrollback != self.config.scrollback {
                     for tab in self.all_tabs() {
@@ -1410,6 +1420,13 @@ impl App {
                 }
             }
             Action::SaveProject(name) => self.save_as_project(name),
+            Action::Quit => self.close_window(),
+            Action::Hide => self.hide = true,
+            Action::Minimize => {
+                if let Some(window) = &self.window {
+                    window.set_minimized(true);
+                }
+            }
         }
     }
 
@@ -1535,7 +1552,14 @@ impl App {
     /// A key while a card is open: it's typed in the field with the cursor. Tab
     /// or ↑↓ go to another field, Enter keeps what's typed, Esc doesn't.
     fn card_key(&mut self, event: &KeyEvent) {
-        let ctrl = self.modifiers.control_key();
+        // Kel's key (Cmd+V on a Mac), and the one for a word: Option on a Mac.
+        let ctrl = keys::command_key(self.modifiers);
+        let word = if keys::MAC {
+            self.modifiers.alt_key()
+        } else {
+            self.modifiers.control_key()
+        };
+        let typed = !self.modifiers.control_key() && !self.modifiers.super_key();
         let shift = self.modifiers.shift_key();
         let Some(card) = &mut self.card else {
             return;
@@ -1553,7 +1577,7 @@ impl App {
             Key::Named(NamedKey::ArrowRight) => card.focused().move_cursor(1),
             Key::Named(NamedKey::Home) => card.focused().jump(false),
             Key::Named(NamedKey::End) => card.focused().jump(true),
-            Key::Named(NamedKey::Backspace) if ctrl => card.focused().backspace_word(),
+            Key::Named(NamedKey::Backspace) if word => card.focused().backspace_word(),
             Key::Named(NamedKey::Backspace) => card.focused().backspace(),
             Key::Named(NamedKey::Delete) => card.focused().delete(),
             // Ctrl+V (or Kel's Ctrl+Shift+V): the clipboard, as one line.
@@ -1563,7 +1587,7 @@ impl App {
                 }
             }
             // Typed letters, not Ctrl+letter (see `palette_key`).
-            _ if !ctrl => {
+            _ if typed => {
                 if let Some(text) = event.text.as_deref() {
                     card.type_text(text);
                 }
@@ -1820,7 +1844,7 @@ impl App {
                 self.find(true);
             }
             // Typed letters, not Ctrl+letter (see `palette_key`).
-            _ if !self.modifiers.control_key() => {
+            _ if !self.modifiers.control_key() && !self.modifiers.super_key() => {
                 if let Some(text) = event.text.as_deref() {
                     let text: String = text.chars().filter(|c| !c.is_control()).collect();
                     search.type_text(&text);
@@ -1880,8 +1904,8 @@ impl App {
             Key::Named(NamedKey::ArrowDown) => palette.move_selection(1),
             Key::Named(NamedKey::Backspace) => palette.backspace(),
             // Typed letters, not Ctrl+letter: winit leaves Ctrl out of `text`, so
-            // Ctrl+D would type a "d".
-            _ if !self.modifiers.control_key() => {
+            // Ctrl+D would type a "d". Nor Cmd+letter, on a Mac.
+            _ if !self.modifiers.control_key() && !self.modifiers.super_key() => {
                 if let Some(text) = event.text.as_deref() {
                     let text: String = text.chars().filter(|c| !c.is_control()).collect();
                     palette.type_text(&text);
@@ -1907,7 +1931,8 @@ impl App {
             return;
         }
         let (text, lines) = keys::plain_paste(&text);
-        let message = format!("Paste {lines} lines? They run. Ctrl+Shift+V again");
+        let again = keys::hint(&Action::Paste);
+        let message = format!("Paste {lines} lines? They run. {again} again");
         let what = Closing::Paste(text.to_string());
         if self.confirm_close(what, lines > 1, message) {
             self.send_to_shell(&keys::paste_bytes(text, false));
@@ -1918,7 +1943,10 @@ impl App {
     /// and PowerShell then copies its own keyboard selection.
     fn copy(&mut self) {
         if !self.copy_selection() {
-            self.send_to_shell(&[0x03]);
+            // Cmd+C on a Mac only copies; Ctrl+Shift+C elsewhere is Ctrl+C then.
+            if !keys::MAC {
+                self.send_to_shell(&[0x03]);
+            }
             return;
         }
         self.selection = None;
@@ -1958,6 +1986,18 @@ impl App {
         self.cursor_on = true;
         self.next_blink = Instant::now() + BLINK_INTERVAL;
         self.request_redraw();
+    }
+}
+
+/// `option_as_alt` as the Mac's window takes it: both Options are Alt (the Mac
+/// gives the plain letter then), or neither (they type `@`, `{`, `å`).
+#[cfg(target_os = "macos")]
+fn option_as_alt(on: bool) -> winit::platform::macos::OptionAsAlt {
+    use winit::platform::macos::OptionAsAlt;
+    if on {
+        OptionAsAlt::Both
+    } else {
+        OptionAsAlt::None
     }
 }
 
@@ -2018,6 +2058,11 @@ impl ApplicationHandler<UserEvent> for App {
             attrs
                 .with_undecorated_shadow(true)
                 .with_corner_preference(CornerPreference::Round)
+        };
+        #[cfg(target_os = "macos")]
+        let attrs = {
+            use winit::platform::macos::WindowAttributesExtMacOS;
+            attrs.with_option_as_alt(option_as_alt(self.config.option_as_alt))
         };
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
         if self.config.glass.on() {
@@ -2141,6 +2186,13 @@ impl ApplicationHandler<UserEvent> for App {
         if self.quit {
             event_loop.exit();
             return;
+        }
+        if std::mem::take(&mut self.hide) {
+            #[cfg(target_os = "macos")]
+            {
+                use winit::platform::macos::ActiveEventLoopExtMacOS;
+                event_loop.hide_application();
+            }
         }
         if Instant::now() >= self.next_blink {
             // `cursor_blink = false`: always on, so nothing to draw again.
@@ -2411,7 +2463,13 @@ impl App {
         };
         let text = event.text.as_deref();
         let key = (&event.logical_key, event.physical_key);
-        if let Some(bytes) = keys::key_to_bytes(key, text, self.modifiers) {
+        let bytes = if keys::MAC {
+            let option_as_alt = self.config.option_as_alt;
+            keys::mac_key_to_bytes(key, text, self.modifiers, option_as_alt)
+        } else {
+            keys::key_to_bytes(key, text, self.modifiers)
+        };
+        if let Some(bytes) = bytes {
             let bytes = if app_cursor {
                 keys::app_cursor(bytes)
             } else {
@@ -2636,10 +2694,11 @@ impl App {
         }
     }
 
-    /// Finds the link under the mouse again, while Ctrl is held: it's underlined
-    /// and the mouse becomes a hand. After the mouse moved, or Ctrl changed.
+    /// Finds the link under the mouse again, while Ctrl (Cmd on a Mac) is held:
+    /// it's underlined and the mouse becomes a hand. After the mouse moved, or
+    /// Ctrl changed.
     fn update_link(&mut self) {
-        let look = self.modifiers.control_key()
+        let look = keys::command_key(self.modifiers)
             && self.sidebar.is_none()
             && self.start.is_none()
             && self.mouse_inside
@@ -2834,11 +2893,11 @@ impl App {
                 return;
             }
         }
-        // Ctrl+click on a link opens it, even in a program that has the mouse.
-        // Elsewhere Ctrl+click is what it was.
+        // Ctrl+click (Cmd+click on a Mac) on a link opens it, even in a program
+        // that has the mouse. Elsewhere Ctrl+click is what it was.
         if button == MouseButton::Left
             && state == ElementState::Pressed
-            && self.modifiers.control_key()
+            && keys::command_key(self.modifiers)
             && let Some(link) = &self.link
         {
             let url = link.url.clone();

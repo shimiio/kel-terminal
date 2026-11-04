@@ -1536,8 +1536,9 @@ fn draw_start(
     if projects.is_empty() {
         let r = start::row_rect(col, layout.scale, 0);
         let at = (left, r.y + r.h.saturating_sub(ui.line_h) / 2);
-        let text = "none yet: Ctrl+Shift+P, \"Save the tabs as project\"";
-        draw_ui_hint(pixels, width, ui, text, at, col.w, dim);
+        let palette = crate::keys::hint(&crate::keys::Action::Palette);
+        let text = format!("none yet: {palette}, \"Save the tabs as project\"");
+        draw_ui_hint(pixels, width, ui, &text, at, col.w, dim);
     }
     let hint_y = start::hint_y(col, layout.scale, projects.len());
     if hint_y + ui.line_h <= layout.text.y + layout.text.h {
@@ -1547,8 +1548,9 @@ fn draw_start(
     // Where the rest is: all the keys, the settings.
     let help_y = hint_y + ui.line_h;
     if help_y + ui.line_h <= layout.text.y + layout.text.h {
-        let text = "Ctrl+Shift+/ all the keys and settings";
-        draw_ui_hint(pixels, width, ui, text, (left, help_y), col.w, dim);
+        let help = crate::keys::hint(&crate::keys::Action::Help);
+        let text = format!("{help} all the keys and settings");
+        draw_ui_hint(pixels, width, ui, &text, (left, help_y), col.w, dim);
     }
 }
 

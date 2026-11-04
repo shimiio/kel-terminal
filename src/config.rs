@@ -58,6 +58,11 @@ cursor_blink = true   # false: it stands still (the logo's and the sidebar's too
 # true: what you select with the mouse is copied as you let go, no Ctrl+Shift+C.
 copy_on_select = false
 
+# macOS: true makes Option the Alt key: Alt+B and Alt+F a word back and on in
+# the shell, nvim's Alt keys. false: it types its letters, as on any Mac (@ and
+# { on German and other layouts are Option+letter).
+option_as_alt = false
+
 # How many lines of output each tab keeps to scroll back to. Older ones go.
 # 10 000 lines take a few MB per tab. A smaller number applies at once.
 scrollback = 10000
@@ -165,6 +170,8 @@ pub struct Config {
     pub cursor: CursorShape,
     pub cursor_blink: bool,
     pub copy_on_select: bool,
+    /// macOS only: Option is Alt, not a key for letters (see `keys::mac_key_to_bytes`).
+    pub option_as_alt: bool,
     pub scrollback: usize,
     pub bell: Bell,
     pub start_screen: bool,
@@ -186,6 +193,7 @@ impl Default for Config {
             cursor: CursorShape::Block,
             cursor_blink: true,
             copy_on_select: false,
+            option_as_alt: false,
             scrollback: crate::term::SCROLLBACK_LIMIT,
             bell: Bell::Taskbar,
             start_screen: true,
