@@ -115,6 +115,8 @@ mod tests {
         assert!(reports_folder("powershell.exe"));
         assert!(reports_folder("pwsh.exe -NoLogo"));
         assert!(!reports_folder("wsl.exe -d Ubuntu"));
+        assert!(reports_folder("/usr/bin/pwsh"));
+        #[cfg(windows)]
         assert!(reports_folder(r"C:\Program Files\PowerShell\7\pwsh.exe"));
         assert!(reports_folder("CMD.EXE"));
         assert!(!reports_folder("nu.exe"));

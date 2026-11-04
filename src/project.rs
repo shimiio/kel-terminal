@@ -119,12 +119,20 @@ impl Project {
     /// The other way round: `folder` as a tab's `folder` line. Inside the project's
     /// folder: the rest of the path (`src\term`); the folder itself: no line;
     /// elsewhere: the full path. Big and small letters are the same folder on
-    /// Windows, and the shell reports them as typed (`cd SRC`).
+    /// Windows and macOS, and the shell reports them as typed (`cd SRC`); on
+    /// Linux `Code` and `code` are two folders.
     pub fn tab_folder(&self, folder: &Path) -> Option<PathBuf> {
+        let same = |a: &std::ffi::OsStr, b: &std::ffi::OsStr| {
+            if cfg!(any(windows, target_os = "macos")) {
+                a.eq_ignore_ascii_case(b)
+            } else {
+                a == b
+            }
+        };
         let mut rest = folder.components();
         let inside = self.folder.components().all(|part| {
             rest.next()
-                .is_some_and(|next| next.as_os_str().eq_ignore_ascii_case(part.as_os_str()))
+                .is_some_and(|next| same(next.as_os_str(), part.as_os_str()))
         });
         match inside {
             true if rest.as_path().as_os_str().is_empty() => None,
@@ -569,6 +577,9 @@ folder = 'D:\other'
         assert_eq!(project.tabs[1].command, None);
     }
 
+    // A Windows path (`C:\code`) is one odd name on Linux and macOS, where `\`
+    // is a letter: these tests are Windows', `unix_folders` theirs.
+    #[cfg(windows)]
     #[test]
     fn tab_folders() {
         let project: Project = config::parse_toml("kel.toml", EXAMPLE).unwrap();
@@ -589,6 +600,7 @@ folder = 'D:\other'
         assert_eq!(project.tabs(), [TabRecipe::default()]);
     }
 
+    #[cfg(windows)]
     #[test]
     fn folders_as_tab_folders() {
         let project: Project = config::parse_toml("kel.toml", EXAMPLE).unwrap();
@@ -601,6 +613,33 @@ folder = 'D:\other'
         );
         assert_eq!(tab_folder(r"C:\code\kelp"), Some(r"C:\code\kelp".into()));
         assert_eq!(tab_folder(r"C:\code"), Some(r"C:\code".into()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_folders() {
+        let text = "folder = '/home/me/kel'\n[[tab]]\n[[tab]]\nfolder = 'docs'\n[[tab]]\nfolder = '/srv/other'\n";
+        let project: Project = config::parse_toml("kel.toml", text).unwrap();
+        let folders: Vec<PathBuf> = project
+            .tabs()
+            .iter()
+            .map(|t| project.folder_of(t))
+            .collect();
+        let expected = ["/home/me/kel", "/home/me/kel/docs", "/srv/other"];
+        assert_eq!(folders, expected.map(PathBuf::from));
+
+        let tab_folder = |folder: &str| project.tab_folder(Path::new(folder));
+        assert_eq!(tab_folder("/home/me/kel"), None);
+        assert_eq!(tab_folder("/home/me/kel/"), None);
+        assert_eq!(tab_folder("/home/me/kel/src/term"), Some("src/term".into()));
+        assert_eq!(tab_folder("/home/me/kelp"), Some("/home/me/kelp".into()));
+        // Linux: another folder; macOS: the same one, in other letters.
+        let other_case = tab_folder("/home/me/KEL");
+        if cfg!(target_os = "macos") {
+            assert_eq!(other_case, None);
+        } else {
+            assert_eq!(other_case, Some("/home/me/KEL".into()));
+        }
     }
 
     #[test]

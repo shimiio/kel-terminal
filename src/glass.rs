@@ -196,6 +196,8 @@ mod tests {
         let glass = Glass::default();
         assert!(glass.wants_solid(Some("claude --resume"), "powershell"));
         assert!(glass.wants_solid(None, "\u{2733} Claude Code"));
+        assert!(glass.wants_solid(Some("/usr/local/bin/codex --resume"), ""));
+        #[cfg(windows)]
         assert!(glass.wants_solid(Some("& 'C:\\tools\\Codex.exe'"), ""));
         assert!(!glass.wants_solid(Some("cargo build"), "powershell"));
         // Its program, not any word: a commit's message isn't a program.
