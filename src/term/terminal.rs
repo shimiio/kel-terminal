@@ -210,7 +210,7 @@ impl Perform for Terminal {
 
         // Private modes, `ESC[?...h` on, `ESC[?...l` off: the `?` arrives in
         // `intermediates`. Several can come at once: `ESC[?1000;1006h`.
-        if intermediates == [b'?'] {
+        if intermediates == b"?" {
             let on = match action {
                 'h' => true,
                 'l' => false,
@@ -234,7 +234,7 @@ impl Perform for Terminal {
             return;
         }
         // Cursor shape, `ESC[n q`.
-        if intermediates == [b' '] && action == 'q' {
+        if intermediates == b" " && action == 'q' {
             self.grid.cursor_shape = match param(params, 0, 0) {
                 1 | 2 => Some(CursorShape::Block),
                 3 | 4 => Some(CursorShape::Underline),
