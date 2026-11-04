@@ -342,3 +342,6 @@ What is Windows-only today:
       `ESC[L` / `ESC[M` / `ESC[S` / `ESC[T`, save/restore cursor `ESC 7` / `ESC 8`,
       application cursor keys `ESC[?1h`, device attributes `ESC[c`
 - [ ] macOS shortcuts with Cmd instead of Ctrl+Shift
+- [ ] macOS Option+letter types `ø`, `å`: Kel now sends Alt+letter by the key's place
+      for a non-Latin letter (Alt+М is Alt+V), which would make Option+O `ESC o`.
+      Decide: Option as Meta (terminals offer a setting) or as letters

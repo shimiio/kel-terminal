@@ -286,6 +286,12 @@ pub fn key_to_bytes(
     // Alt+key: ESC, then the key, e.g. Alt+f sends `\x1bf`. Not with Ctrl:
     // Ctrl+Alt is AltGr on many layouts, and AltGr types letters like `@` or `ł`.
     if mods.alt_key() && !mods.control_key() {
+        // Alt+М on a Russian layout is Alt+V, as Ctrl+В is Ctrl+D: programs bind
+        // Alt to Latin letters (Claude Code's Alt+V pastes an image, PowerShell's
+        // Alt+D deletes a word), none to Cyrillic ones.
+        if let Some(latin) = latin_letter(key, physical) {
+            return Some(vec![0x1b, latin]);
+        }
         return Some([b"\x1b", bytes].concat());
     }
     Some(bytes.to_vec())
@@ -315,6 +321,47 @@ fn control_char(key: &Key, physical: PhysicalKey) -> Option<u8> {
         c if c.is_alphabetic() && !c.is_ascii() => letter_key(physical).map(|c| c & 0x1F),
         _ => None,
     }
+}
+
+/// For a letter that isn't Latin (`м` on a Russian layout), the Latin one on its
+/// key (`v`), in the same case (`М`: `V`). `None` for anything else: a Latin
+/// letter is itself, and German `ü` (on US `[`) has no letter's place.
+fn latin_letter(key: &Key, physical: PhysicalKey) -> Option<u8> {
+    let Key::Character(text) = key else {
+        return None;
+    };
+    let mut chars = text.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else {
+        return None;
+    };
+    if !c.is_alphabetic() || c.is_ascii() {
+        return None;
+    }
+    let latin = letter_key(physical)?;
+    Some(if c.is_uppercase() {
+        latin.to_ascii_uppercase()
+    } else {
+        latin
+    })
+}
+
+/// Files copied in Explorer (Ctrl+C on them), as text to paste: their paths,
+/// a space between them, one with a space in it in `""`. So Ctrl+Shift+V on
+/// a copied picture gives `"C:\Shots\my shot.png"`, as Windows Terminal does,
+/// and Claude Code attaches the picture at that path.
+pub fn paths_text(paths: &[std::path::PathBuf]) -> String {
+    let quoted: Vec<String> = paths
+        .iter()
+        .map(|path| {
+            let path = path.display().to_string();
+            if path.contains(' ') {
+                format!("\"{path}\"")
+            } else {
+                path
+            }
+        })
+        .collect();
+    quoted.join(" ")
 }
 
 /// The Latin letter on this key of a US keyboard, if it's one of A–Z.
@@ -569,6 +616,33 @@ mod tests {
         assert_eq!(type_key("@", KeyCode::KeyQ, altgr), b"@");
         // Arrows already carry Alt in their number, no extra ESC.
         assert_eq!(send(NamedKey::ArrowUp, ModifiersState::ALT), "\x1b[1;3A");
+    }
+
+    #[test]
+    fn alt_on_other_layouts() {
+        let alt = ModifiersState::ALT;
+        // Russian: Alt+М is the V key, Alt+Shift+М a capital V.
+        assert_eq!(type_key("м", KeyCode::KeyV, alt), b"\x1bv");
+        assert_eq!(
+            type_key("М", KeyCode::KeyV, alt | ModifiersState::SHIFT),
+            b"\x1bV"
+        );
+        // German: Z where US keyboards have Y goes by the letter on it.
+        assert_eq!(type_key("z", KeyCode::KeyY, alt), b"\x1bz");
+        // German Ü is where US keyboards have `[`: no letter there, Ü it is.
+        assert_eq!(type_key("ü", KeyCode::BracketLeft, alt), "\x1bü".as_bytes());
+    }
+
+    #[test]
+    fn copied_files_paste_as_paths() {
+        use std::path::PathBuf;
+        let one = [PathBuf::from(r"C:\shots\a.png")];
+        assert_eq!(paths_text(&one), r"C:\shots\a.png");
+        let two = [
+            PathBuf::from(r"C:\my shots\a.png"),
+            PathBuf::from(r"C:\b.png"),
+        ];
+        assert_eq!(paths_text(&two), r#""C:\my shots\a.png" C:\b.png"#);
     }
 
     #[test]

@@ -1558,7 +1558,7 @@ impl App {
             Key::Named(NamedKey::Delete) => card.focused().delete(),
             // Ctrl+V (or Kel's Ctrl+Shift+V): the clipboard, as one line.
             _ if ctrl && event.physical_key == PhysicalKey::Code(KeyCode::KeyV) => {
-                if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                if let Some(text) = clipboard_text() {
                     card.type_text(&text);
                 }
             }
@@ -1805,7 +1805,7 @@ impl App {
         let back = if self.modifiers.shift_key() { 1 } else { -1 };
         match &event.logical_key {
             _ if shortcut == Some(Action::Paste) => {
-                if let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+                if let Some(text) = clipboard_text() {
                     // A match is in one line: the first line of what's copied.
                     search.type_text(text.lines().next().unwrap_or(""));
                     self.find(true);
@@ -1898,7 +1898,7 @@ impl App {
     /// break, and several ask first, in the tab bar ("paste 2 lines?"), as
     /// Windows Terminal does.
     fn paste(&mut self) {
-        let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text()) else {
+        let Some(text) = clipboard_text() else {
             return;
         };
         let bracketed = self.tab().terminal.lock().unwrap().bracketed_paste;
@@ -1959,6 +1959,18 @@ impl App {
         self.next_blink = Instant::now() + BLINK_INTERVAL;
         self.request_redraw();
     }
+}
+
+/// What's in the clipboard, as text to paste: the text, or else the paths of
+/// files copied in Explorer (see `keys::paths_text`). `None` for anything else,
+/// a picture too: Claude Code takes one itself, on Alt+V.
+fn clipboard_text() -> Option<String> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    if let Ok(text) = clipboard.get_text() {
+        return Some(text);
+    }
+    let paths = clipboard.get().file_list().ok()?;
+    (!paths.is_empty()).then(|| keys::paths_text(&paths))
 }
 
 // winit calls these methods when something happens; we never call them ourselves.
