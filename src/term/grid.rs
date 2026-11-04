@@ -15,9 +15,9 @@ use serde::Deserialize;
 use std::collections::VecDeque;
 use unicode_width::UnicodeWidthChar;
 
-/// How many old lines to keep. Older ones are thrown away. Lines, not rows: a
-/// line 3 rows long in a narrow window is still one, so a resize doesn't throw
-/// any away.
+/// How many old lines to keep, unless the config says (`scrollback`). Older
+/// ones are thrown away. Lines, not rows: a line 3 rows long in a narrow window
+/// is still one, so a resize doesn't throw any away.
 pub const SCROLLBACK_LIMIT: usize = 10_000;
 const TAB_WIDTH: usize = 8;
 
@@ -171,6 +171,8 @@ pub struct Grid {
     dropped: usize,
     /// How many lines the view is scrolled up into the scrollback. 0 = the live screen.
     scroll_offset: usize,
+    /// How many lines the scrollback keeps (see `SCROLLBACK_LIMIT`).
+    limit: usize,
     rows: usize,
     cols: usize,
     cursor_row: usize,
@@ -221,6 +223,7 @@ impl Grid {
             scrollback_lines: 0,
             dropped: 0,
             scroll_offset: 0,
+            limit: SCROLLBACK_LIMIT,
             rows,
             cols,
             cursor_col: 0,
@@ -469,8 +472,19 @@ impl Grid {
         if self.scroll_offset > 0 {
             self.scroll_offset += 1;
         }
-        // Past the limit: the oldest line goes, all its rows.
-        while self.scrollback_lines > SCROLLBACK_LIMIT {
+        self.trim_scrollback();
+    }
+
+    /// Keeps `limit` lines of scrollback: a smaller one throws the oldest away
+    /// now, a bigger one keeps more from now on.
+    pub fn set_scrollback_limit(&mut self, limit: usize) {
+        self.limit = limit;
+        self.trim_scrollback();
+    }
+
+    /// Past the limit: the oldest lines go, all their rows.
+    fn trim_scrollback(&mut self) {
+        while self.scrollback_lines > self.limit {
             match self.scrollback.pop_front() {
                 Some(row) if !row.wrapped => self.scrollback_lines -= 1,
                 Some(_) => {}
@@ -1264,6 +1278,32 @@ mod tests {
         g.resize(2, 10); // all of them are there to join
         assert_eq!(g.scrollback().len(), SCROLLBACK_LIMIT + 1);
         assert_eq!(line_text(&g.scrollback()[0]), "abcdef");
+    }
+
+    #[test]
+    fn a_smaller_limit_throws_the_oldest_away() {
+        let mut g = grid(
+            2,
+            10,
+            &"line
+"
+            .repeat(20),
+        );
+        assert_eq!(g.scrollback().len(), 19);
+        let top = g.first_visible_row();
+        g.set_scrollback_limit(5);
+        assert_eq!(g.scrollback().len(), 5);
+        // The rows keep their lasting numbers (see `dropped`): 14 went from the
+        // scrollback, and the screen's top is the same row as before.
+        assert_eq!(g.first_visible_row(), top);
+        // From now on 5 at most; 0 keeps none.
+        for _ in 0..10 {
+            g.carriage_return();
+            g.newline();
+        }
+        assert_eq!(g.scrollback().len(), 5);
+        g.set_scrollback_limit(0);
+        assert_eq!(g.scrollback().len(), 0);
     }
 
     #[test]

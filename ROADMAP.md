@@ -285,7 +285,7 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
         terminal flashes while it's in front (`"flash"`), or nothing. It was ignored
   - [x] `cursor_blink`
   - [x] `copy_on_select`
-  - [ ] `scrollback` (10 000 lines now)
+  - [x] `scrollback` (10 000 lines by default)
   - [ ] `line_height`
   - [ ] `start_screen` on / off
   - After the release: `[keys]` (your own shortcuts; Cmd on macOS), themes as files

@@ -209,6 +209,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             &config.copy_on_select.to_string(),
             "copied as you let go",
         ),
+        row(
+            "scrollback",
+            &config.scrollback.to_string(),
+            "lines per tab",
+        ),
         row("bell", &text(config.bell.name()), "a program's \"done\""),
         row(
             "backdrop",

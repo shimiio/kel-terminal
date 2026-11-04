@@ -54,6 +54,10 @@ cursor_blink = true   # false: it stands still (the logo's and the sidebar's too
 # true: what you select with the mouse is copied as you let go, no Ctrl+Shift+C.
 copy_on_select = false
 
+# How many lines of output each tab keeps to scroll back to. Older ones go.
+# 10 000 lines take a few MB per tab. A smaller number applies at once.
+scrollback = 10000
+
 # The bell, a program's "done" or "come here" (Claude Code can ring it):
 # "taskbar": Kel's button in the taskbar blinks while you're in another window,
 # until you come back; "flash": that, and the terminal flashes when you're here;
@@ -149,6 +153,7 @@ pub struct Config {
     pub cursor: CursorShape,
     pub cursor_blink: bool,
     pub copy_on_select: bool,
+    pub scrollback: usize,
     pub bell: Bell,
     pub backdrop: backdrop::Choice,
     pub layout: Spacing,
@@ -167,6 +172,7 @@ impl Default for Config {
             cursor: CursorShape::Block,
             cursor_blink: true,
             copy_on_select: false,
+            scrollback: crate::term::SCROLLBACK_LIMIT,
             bell: Bell::Taskbar,
             backdrop: backdrop::Choice::Auto,
             layout: Spacing::default(),
@@ -306,6 +312,14 @@ project_colors = [\"#112233\", \"blue\"]";
         assert!(Config::default().cursor_blink);
         let config: Config = toml::from_str("cursor_blink = false").unwrap();
         assert!(!config.cursor_blink);
+    }
+
+    #[test]
+    fn scrollback() {
+        assert_eq!(Config::default().scrollback, 10_000);
+        let config: Config = toml::from_str("scrollback = 50000").unwrap();
+        assert_eq!(config.scrollback, 50_000);
+        assert!(toml::from_str::<Config>("scrollback = -1").is_err());
     }
 
     #[test]

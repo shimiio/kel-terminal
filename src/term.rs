@@ -8,5 +8,7 @@
 mod grid;
 mod terminal;
 
-pub use grid::{Cell, CursorShape, Found, Grid, Line, Link, Underline, Width, char_width};
+pub use grid::{
+    Cell, CursorShape, Found, Grid, Line, Link, SCROLLBACK_LIMIT, Underline, Width, char_width,
+};
 pub use terminal::{Mark, Terminal};

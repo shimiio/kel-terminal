@@ -95,6 +95,7 @@ Kel creates it on the first start, with a comment for every setting.
 | `cursor` | `"block"` | The cursor: `"block"` (the whole cell), `"underline"` or `"bar"`. Programs can pick their own (nvim does). While the keys go elsewhere (the sidebar, the palette, another window) it's a hollow box, not blinking |
 | `cursor_blink` | `true` | `false`: the cursor stands still (the logo's and the sidebar's too) |
 | `copy_on_select` | `false` | `true`: what you select with the mouse is copied as you let go of the button, no Ctrl+Shift+C. It stays selected |
+| `scrollback` | `10000` | How many lines of output each tab keeps to scroll back to; older ones go. 10 000 lines take a few MB per tab. A smaller number applies at once |
 | `bell` | `"taskbar"` | The bell, a program's "done" or "come here" (Claude Code can ring it): `"taskbar"` blinks Kel's taskbar button while you're in another window, until you come back; `"flash"` does that and flashes the terminal while you're in Kel; `"none"` |
 | `backdrop` | `"auto"` | The start screen's ASCII picture, new each time it shows: `"auto"` (a terrain by day, stars at night), `"terrain"`, `"contours"`, `"mountains"`, `"sea"`, `"wind"`, `"stars"` or `"none"`. Mountains and the sea have stars in their sky at night |
 | `[layout]` | `margin = 8`, `border = 1`, `padding = 6`, `tab_height = 32`, `tab_width = 180` | Spaces around the terminal panel and the tab sizes, in pixels |

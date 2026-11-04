@@ -304,6 +304,7 @@ impl App {
         // when ConPTY asks where the cursor is, the answer is the line after them.
         let screen = |problems: &[String]| {
             let mut terminal = Terminal::new(ROWS, COLS);
+            terminal.grid.set_scrollback_limit(config.scrollback);
             for problem in problems {
                 let text = format!("\x1b[31mkel: {problem}\x1b[m\n\n").replace('\n', "\r\n");
                 Parser::new().advance(&mut terminal, text.as_bytes());
@@ -358,7 +359,8 @@ impl App {
         for (id, recipe) in (1..).zip(&recipes[1..]) {
             let (shell, folder) = (shell_of(recipe), folder_of(recipe));
             let spawn = |shell: &str| {
-                let screen = Terminal::new(ROWS, COLS);
+                let mut screen = Terminal::new(ROWS, COLS);
+                screen.grid.set_scrollback_limit(config.scrollback);
                 Tab::spawn(id, shell, folder.as_deref(), screen, proxy.clone())
             };
             // The others say it in the tab bar, and get the system's shell too.
@@ -466,8 +468,20 @@ impl App {
     /// end of a shell come for any tab, and an answer that's lost can leave a
     /// program waiting for it.
     fn tab_anywhere(&mut self, id: TabId) -> Option<&mut Tab> {
+        self.all_tabs().find(|tab| tab.id == id)
+    }
+
+    /// Every tab: on screen, and in the projects open behind.
+    fn all_tabs(&mut self) -> impl Iterator<Item = &mut Tab> {
         let parked = self.parked.iter_mut().flat_map(|w| w.tabs.iter_mut());
-        self.tabs.iter_mut().chain(parked).find(|tab| tab.id == id)
+        self.tabs.iter_mut().chain(parked)
+    }
+
+    /// An empty screen for a new tab, keeping the config's `scrollback`.
+    fn screen(&self, rows: usize, cols: usize) -> Terminal {
+        let mut terminal = Terminal::new(rows, cols);
+        terminal.grid.set_scrollback_limit(self.config.scrollback);
+        terminal
     }
 
     /// Sends bytes to the shell of the tab on screen, as if they were typed.
@@ -489,7 +503,7 @@ impl App {
         };
         let id = self.next_id;
         self.next_id += 1;
-        let screen = Terminal::new(rows, cols);
+        let screen = self.screen(rows, cols);
         let cwd = self.tab().cwd();
         match Tab::spawn(
             id,
@@ -994,7 +1008,7 @@ impl App {
             };
             let id = self.next_id;
             self.next_id += 1;
-            let screen = Terminal::new(rows, cols);
+            let screen = self.screen(rows, cols);
             match Tab::spawn(id, &shell, folder.as_deref(), screen, self.proxy.clone()) {
                 Ok(mut tab) => {
                     tab.name = recipe.name.clone();
@@ -1189,6 +1203,14 @@ impl App {
                 if new.glass != self.config.glass {
                     if let Some(renderer) = &mut self.renderer {
                         renderer.set_glass(new.glass.clone());
+                    }
+                    self.request_redraw();
+                }
+                // Every tab keeps the new number of lines, the ones behind too.
+                if new.scrollback != self.config.scrollback {
+                    for tab in self.all_tabs() {
+                        let mut terminal = tab.terminal.lock().unwrap();
+                        terminal.grid.set_scrollback_limit(new.scrollback);
                     }
                     self.request_redraw();
                 }
