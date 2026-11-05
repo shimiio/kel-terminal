@@ -45,6 +45,9 @@ pub struct Glass {
     /// The color of that solid background. None (the default): the theme's.
     #[serde(deserialize_with = "crate::theme::optional_hex")]
     pub solid_color: Option<u32>,
+    /// The backgrounds programs pick themselves (nvim's color scheme, lazygit's
+    /// bars) are glass too, as much as the theme's. false: they stay solid.
+    pub cells: bool,
 }
 
 impl Default for Glass {
@@ -57,6 +60,7 @@ impl Default for Glass {
             solid_under_apps: true,
             solid_for: SOLID_FOR.iter().map(|name| name.to_string()).collect(),
             solid_color: None,
+            cells: false,
         }
     }
 }
@@ -92,6 +96,15 @@ impl Glass {
     /// How solid the theme's background is over the glass, 0 to 255.
     fn alpha(&self) -> u32 {
         (self.opacity.clamp(0.0, 1.0) * 255.0).round() as u32
+    }
+
+    /// A background a program picked, as the renderer paints it (see `cells`).
+    pub fn picked_background(&self, color: u32) -> u32 {
+        if self.on() && self.cells {
+            see_through(color, self.alpha())
+        } else {
+            color
+        }
     }
 
     /// `theme` as the renderer paints it: with glass, its background and frame
@@ -236,6 +249,22 @@ mod tests {
         assert_eq!(painted.frame >> 24, 255 - 217);
         assert_eq!(painted.foreground, theme.foreground);
         assert_eq!(painted.palette, theme.palette);
+    }
+
+    #[test]
+    fn a_program_s_background() {
+        let mut glass = Glass {
+            opacity: 0.8,
+            ..Glass::default()
+        };
+        assert_eq!(glass.picked_background(0x1e1e1e), 0x1e1e1e); // solid by default
+        glass.cells = true;
+        assert_eq!(
+            glass.picked_background(0x1e1e1e),
+            see_through(0x1e1e1e, 204)
+        );
+        glass.effect = Effect::None;
+        assert_eq!(glass.picked_background(0x1e1e1e), 0x1e1e1e); // no glass at all
     }
 
     #[test]

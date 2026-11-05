@@ -85,12 +85,19 @@ backdrop = "auto"
 # Spaces around the terminal, in pixels. The terminal is a panel inside the window:
 # margin (window edge → panel), border (the panel's line), padding (line → text).
 # All 0: the text fills the window, like a plain terminal.
+# border is every line of Kel's: the panel's, the sidebar's, the palette's, the help's.
+# 0: none, those stand out by their color.
 [layout]
 margin = 8
 border = 1
 padding = 6
 tab_height = 32   # the tab bar above the panel
 tab_width = 180   # narrower when there are many tabs
+# The title bar's buttons: "always", "hover" (while the mouse is on the title bar)
+# or "never" (their place goes to the tabs; their keys still work).
+sidebar_button = "always"
+tab_buttons = "always"      # + and ⌄ after the tabs
+window_buttons = "always"   # minimize, maximize, close
 
 # Glass: Kel see-through, Windows blurring what's behind it.
 # effect: "acrylic" (what's behind, blurred), "mica" (a faint tint of the
@@ -106,6 +113,7 @@ solid_under_apps = true   # a solid background under lazygit, htop, Claude Code:
 # by the program's name or a word of the title it gives the tab. Add your own.
 solid_for = ["claude", "codex", "gemini", "aider", "opencode", "copilot", "crush"]
 # solid_color = "#000000" # its color; without it, the theme's background
+cells = false   # true: the backgrounds programs pick (nvim's color scheme) are glass too
 
 # Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
 # Programs that pick exact colors themselves (like nvim color schemes) don't use them.

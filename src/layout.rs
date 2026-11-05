@@ -74,6 +74,36 @@ pub enum TitleHit {
     },
 }
 
+/// When a group of title bar buttons shows: `sidebar_button`, `tab_buttons` and
+/// `window_buttons` in the config.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Show {
+    #[default]
+    Always,
+    /// While the mouse is over the title bar. The place stays theirs, so the tabs
+    /// don't move when they come; a click there works as ever.
+    Hover,
+    /// No button, and its place goes to the tabs.
+    Never,
+}
+
+impl Show {
+    /// Is it on screen, with the mouse over the title bar or not?
+    pub fn shown(self, mouse_on_bar: bool) -> bool {
+        match self {
+            Show::Always => true,
+            Show::Hover => mouse_on_bar,
+            Show::Never => false,
+        }
+    }
+
+    /// `width`, or none where the button isn't there at all.
+    fn room(self, width: usize) -> usize {
+        if self == Show::Never { 0 } else { width }
+    }
+}
+
 /// A rectangle in pixels: top-left corner (x, y), width w, height h.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
@@ -115,6 +145,12 @@ pub struct Spacing {
     pub tab_height: usize,
     /// A tab's width. With many tabs, they get narrower to fit.
     pub tab_width: usize,
+    /// The button before the tabs.
+    pub sidebar_button: Show,
+    /// `+` and `⌄` after the tabs.
+    pub tab_buttons: Show,
+    /// Minimize, maximize and close.
+    pub window_buttons: Show,
 }
 
 impl Default for Spacing {
@@ -125,6 +161,9 @@ impl Default for Spacing {
             padding: 6,
             tab_height: 32,
             tab_width: 180,
+            sidebar_button: Show::Always,
+            tab_buttons: Show::Always,
+            window_buttons: Show::Always,
         }
     }
 }
@@ -157,6 +196,10 @@ pub struct Layout {
     pub text: Rect,
     /// The panel's border line, in pixels (the active tab draws its own the same).
     pub border: usize,
+    /// When each group of buttons shows (see `Show`).
+    pub sidebar_shows: Show,
+    pub tab_buttons_show: Show,
+    pub window_buttons_show: Show,
     tab_width: usize,
     bar_button_w: usize,
     /// Room at the tab bar's start, before the first tab: the open project's name
@@ -186,7 +229,7 @@ impl Spacing {
         };
         // The buttons fill its right end, right up to the window's corner
         // (easy to hit: the mouse stops at the screen's edge).
-        let button_w = s(BUTTON_WIDTH);
+        let button_w = self.window_buttons.room(s(BUTTON_WIDTH));
         let button = |n: usize| Rect {
             x: width.saturating_sub(n * button_w),
             w: button_w,
@@ -207,7 +250,7 @@ impl Spacing {
         let inside = panel.shrink(border);
         let text = inside.shrink(padding);
         let sidebar_button = Rect {
-            w: s(BAR_BUTTON_WIDTH).min(tab_bar.w),
+            w: self.sidebar_button.room(s(BAR_BUTTON_WIDTH)).min(tab_bar.w),
             ..tab_bar
         };
         Layout {
@@ -223,8 +266,11 @@ impl Spacing {
             inside,
             text,
             border,
+            sidebar_shows: self.sidebar_button,
+            tab_buttons_show: self.tab_buttons,
+            window_buttons_show: self.window_buttons,
             tab_width: s(self.tab_width),
-            bar_button_w: s(BAR_BUTTON_WIDTH),
+            bar_button_w: self.tab_buttons.room(s(BAR_BUTTON_WIDTH)),
             lead: 0,
         }
     }
@@ -388,6 +434,35 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_buttons() {
+        let plain = Spacing::default().layout(1000, 700, 1.0);
+        // Hover: the same places, nothing moves when they come.
+        let hover = Spacing {
+            sidebar_button: Show::Hover,
+            tab_buttons: Show::Hover,
+            window_buttons: Show::Hover,
+            ..Spacing::default()
+        };
+        let layout = hover.layout(1000, 700, 1.0);
+        assert_eq!(layout.tabs(2), plain.tabs(2));
+        assert_eq!(layout.close, plain.close);
+        assert!(layout.window_buttons_show.shown(true));
+        assert!(!layout.window_buttons_show.shown(false));
+        // Never: their places go to the tabs, and a click there finds nothing.
+        let never = Spacing {
+            sidebar_button: Show::Never,
+            tab_buttons: Show::Never,
+            window_buttons: Show::Never,
+            ..Spacing::default()
+        };
+        let layout = never.layout(1000, 700, 1.0);
+        assert_eq!(layout.tabs(1)[0].x, 8);
+        assert_eq!(layout.tab_bar.w, 1000 - 8 - 8);
+        assert_eq!(layout.title_hit(995, 20, 1), None);
+        assert_eq!(layout.title_hit(190, 20, 1), None); // where + would be
+    }
 
     #[test]
     fn tab_bar_panel_and_text_inside_the_window() {

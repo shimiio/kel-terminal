@@ -247,6 +247,8 @@ pub struct App {
     layout: Layout,
     /// The window button under the mouse, if any.
     hovered: Option<TitleHit>,
+    /// The mouse is over the title bar: buttons set to `hover` show.
+    mouse_on_bar: bool,
     /// When the empty title bar was last clicked, to notice a double click.
     last_click: Option<Instant>,
     /// The window is closing (see `close_window`): `about_to_wait` ends the event loop.
@@ -456,6 +458,7 @@ impl App {
             fonts: Some(fonts),
             layout,
             hovered: None,
+            mouse_on_bar: false,
             last_click: None,
             quit: false,
             hide: false,
@@ -2167,7 +2170,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CursorMoved { position, .. } => self.on_mouse_move(position),
             WindowEvent::CursorLeft { .. } => {
                 self.mouse_inside = false;
-                self.set_hovered(None);
+                self.update_hovered();
                 self.leave_peek();
                 self.update_link();
                 if let Some(start) = &mut self.start
@@ -2299,6 +2302,7 @@ impl App {
             tabs: &labels,
             active: self.active,
             hovered: self.hovered,
+            mouse_on_bar: self.mouse_on_bar,
             maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),
             status: self.status.as_deref(),
             question: self.pending_close.as_ref().map(|p| p.message.as_str()),
@@ -2938,6 +2942,11 @@ impl App {
     /// Nothing at the window's edge: the resize arrows are there.
     fn update_hovered(&mut self) {
         let (x, y) = self.mouse_pos;
+        let on_bar = self.mouse_inside && self.layout.title_bar.contains(x, y);
+        if on_bar != self.mouse_on_bar {
+            self.mouse_on_bar = on_bar;
+            self.request_redraw();
+        }
         let hit = if !self.mouse_inside || self.resize_edge.is_some() {
             None
         } else {

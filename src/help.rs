@@ -21,6 +21,7 @@
 use crate::config::Config;
 use crate::glass::Effect;
 use crate::keys;
+use crate::layout::Show;
 use crate::term::CursorShape;
 use std::cell::Cell;
 
@@ -159,6 +160,18 @@ fn keys_lines() -> Vec<Line> {
 }
 
 /// Every setting, with its value now and what it's for in a few words.
+/// What the title bar's button settings can be.
+const BUTTONS: &str = "always, hover, never";
+
+/// A button setting, as the config spells it.
+fn show(show: Show) -> &'static str {
+    match show {
+        Show::Always => "always",
+        Show::Hover => "hover",
+        Show::Never => "never",
+    }
+}
+
 fn settings_lines(config: &Config) -> Vec<Line> {
     let n = |v: f32| v.to_string(); // 18.0 → "18", 0.85 → "0.85"
     let text = |s: &str| format!("\"{s}\"");
@@ -256,6 +269,17 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             "tab_width",
             &layout.tab_width.to_string(),
             "less with many tabs",
+        ),
+        row(
+            "sidebar_button",
+            &text(show(layout.sidebar_button)),
+            BUTTONS,
+        ),
+        row("tab_buttons", &text(show(layout.tab_buttons)), BUTTONS),
+        row(
+            "window_buttons",
+            &text(show(layout.window_buttons)),
+            BUTTONS,
         ),
         Line::Gap,
         title("[GLASS]"),

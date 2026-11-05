@@ -14,7 +14,7 @@ use crate::font::{self, Font, Fonts, Metrics};
 use crate::glass::Glass;
 use crate::help::{Help, Line};
 use crate::icons::{Icon, Icons};
-use crate::layout::{Layout, Rect, TitleHit, WindowButton, scaled};
+use crate::layout::{Layout, Rect, Show, TitleHit, WindowButton, scaled};
 use crate::logo;
 use crate::palette::Palette;
 use crate::search::{self, Search};
@@ -22,7 +22,7 @@ use crate::sidebar::{self, Entry, Live, Row, Sidebar};
 use crate::start::{self, Start};
 use crate::term::Found;
 use crate::term::{CursorShape, Grid, Underline, Width, char_width};
-use crate::theme::Theme;
+use crate::theme::{Color, Theme};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -53,6 +53,11 @@ const PROJECT_NAME_CHARS: usize = 16;
 
 /// How dark the window gets behind the open sidebar: this much black (of 255).
 const SIDEBAR_DIM: u32 = 120;
+
+/// What's over the terminal without a line around it (`border = 0`) stands out by
+/// its color: the frame's, with this much black (of 255). Over glass that's denser
+/// glass too, so the text on it reads better.
+const PANE_BLACK: u32 = 130;
 
 /// The search box: this wide, in letters (less in a narrow window).
 const SEARCH_CHARS: usize = 36;
@@ -129,6 +134,8 @@ pub struct Chrome<'a> {
     /// and their many colors and lines read worse over what's behind the window.
     /// nvim paints its own, so there it changes nothing.
     pub solid: bool,
+    /// The mouse is over the title bar: the buttons set to `hover` show.
+    pub mouse_on_bar: bool,
     /// The bell just rang (`bell = "flash"`): the terminal a bit lighter.
     pub flash: bool,
     /// The help, if it's open: over everything.
@@ -514,6 +521,13 @@ impl Renderer {
                     // color for text and background, so this comes before the swap.
                     let fg = theme.rgb(cell.fg, theme.foreground);
                     let bg = theme.rgb(cell.bg, theme.background);
+                    // A background the program picked: glass too, if the config
+                    // says so. Not an inverted one: that's its highlight.
+                    let picked = cell.bg != Color::Default && !cell.inverse && !chrome.solid;
+                    let bg = match picked {
+                        true => self.glass.picked_background(bg),
+                        false => bg,
+                    };
                     let (fg, bg) = if cell.inverse { (bg, fg) } else { (fg, bg) };
                     // The chosen match: dark letters on bright yellow; the others,
                     // a yellow tint over their background. Both from the theme.
@@ -842,6 +856,9 @@ fn draw_window_buttons(
     layout: &Layout,
     chrome: &Chrome,
 ) {
+    if !layout.window_buttons_show.shown(chrome.mouse_on_bar) {
+        return;
+    }
     let dim = blend(theme.frame, theme.foreground, 160);
     let lit = blend(theme.frame, theme.foreground, 40);
     for (rect, button) in [
@@ -899,12 +916,17 @@ fn draw_bar_buttons(
     let lit = blend(theme.frame, theme.foreground, 40);
     let (new_tab, palette) = layout.bar_buttons(chrome.tabs.len());
     let s = |n: usize| scaled(n, layout.scale);
+    let on_bar = chrome.mouse_on_bar;
+    // The sidebar's stays while its sidebar is open: it's lit then.
+    let sidebar_shown = layout.sidebar_shows.shown(on_bar)
+        || layout.sidebar_shows == Show::Hover && chrome.sidebar.is_some();
+    let tab_buttons_shown = layout.tab_buttons_show.shown(on_bar);
     let buttons = [
-        (layout.sidebar_button, TitleHit::Sidebar),
-        (new_tab, TitleHit::NewTab),
-        (palette, TitleHit::Palette),
+        (layout.sidebar_button, TitleHit::Sidebar, sidebar_shown),
+        (new_tab, TitleHit::NewTab, tab_buttons_shown),
+        (palette, TitleHit::Palette, tab_buttons_shown),
     ];
-    for (r, hit) in buttons {
+    for (r, hit, _) in buttons.into_iter().filter(|button| button.2) {
         // A square in the middle of the button's place, 24 x 24 at 100%.
         let side = s(24).min(r.w).min(r.h);
         let (bx, by) = (r.x + (r.w - side) / 2, r.y + (r.h - side) / 2);
@@ -1009,7 +1031,7 @@ fn draw_palette(
 ) {
     let area = layout.inside;
     let pad = ui.px(PALETTE_PADDING);
-    let b = layout.border.max(1);
+    let b = layout.border;
     let line_h = ui.line_h + 2 * pad;
     // As wide as 64 letters, or the panel minus some room at the sides.
     let box_w = (PALETTE_CHARS * ui.advance + 2 * pad).min(area.w.saturating_sub(4 * pad));
@@ -1026,7 +1048,8 @@ fn draw_palette(
     let lines = shown.len().clamp(1, PALETTE_LINES); // "nothing found" takes a line too
     let box_h = line_h + b + lines * line_h + 2 * b;
 
-    let dim = blend(theme.frame, theme.foreground, 128);
+    let back = pane(theme, layout);
+    let dim = blend(back, theme.foreground, 128);
     outline(
         pixels,
         width,
@@ -1046,7 +1069,7 @@ fn draw_palette(
         y + b,
         box_w - 2 * b,
         box_h - 2 * b,
-        theme.frame,
+        back,
     );
     let text_w = box_w - 2 * (b + pad);
     let text_x = x + b + pad;
@@ -1093,7 +1116,7 @@ fn draw_palette(
         // text and the hint still read on it); at home (no color), gray.
         if i == palette.selected() {
             let fill = match color {
-                Some(color) => blend(theme.frame, color, 60),
+                Some(color) => blend(back, color, 60),
                 None => theme.selection,
             };
             fill_rect(pixels, width, x + b, line_y, box_w - 2 * b, line_h, fill);
@@ -1144,7 +1167,7 @@ fn draw_sidebar(
         *pixel = blend(*pixel, 0x000000, SIDEBAR_DIM);
     }
     let panel = layout.sidebar();
-    let b = layout.border.max(1);
+    let b = layout.border;
     let back = blend(theme.frame, theme.foreground, 8);
     outline(pixels, width, panel, b, theme.border);
     let inside = panel.shrink(b);
@@ -1178,7 +1201,7 @@ fn draw_sidebar(
                 // After a line across.
                 let line_y = r.y - ui.px(8);
                 let line = theme.border;
-                fill_rect(pixels, width, panel.x + pad, line_y, text_w, 1, line);
+                fill_rect(pixels, width, panel.x + pad, line_y, text_w, b, line);
                 let color = if chosen { theme.foreground } else { dim };
                 let label = "+ Save the tabs as a project";
                 let at = (r.x + ui.px(10), text_y);
@@ -1254,10 +1277,10 @@ fn draw_card(
     font: &Font,
     ui: &mut Ui,
 ) {
-    let b = layout.border.max(1);
+    let b = layout.border;
     outline(pixels, width, rect, b, theme.border);
     let inside = rect.shrink(b);
-    let back = theme.frame;
+    let back = pane(theme, layout);
     fill_rect(pixels, width, inside.x, inside.y, inside.w, inside.h, back);
     let dim = blend(back, theme.foreground, 128);
     let pad = ui.px(8);
@@ -1579,7 +1602,7 @@ fn draw_help(
     let area = layout.inside;
     let margin = ui.px(16);
     let pad = ui.px(16);
-    let b = layout.border.max(1);
+    let b = layout.border;
     let rect = Rect {
         x: area.x + margin,
         y: area.y + margin,
@@ -1600,7 +1623,7 @@ fn draw_help(
         rect.y + b,
         inner_w,
         inner_h,
-        theme.frame,
+        pane(theme, layout),
     );
     let text_x = rect.x + b + pad;
     let text_w = rect.w - 2 * (b + pad);
@@ -1858,7 +1881,7 @@ fn draw_search(
 ) {
     let area = layout.inside;
     let pad = ui.px(PALETTE_PADDING);
-    let b = layout.border.max(1);
+    let b = layout.border;
     let box_w = (SEARCH_CHARS * ui.advance + 2 * (pad + b)).min(area.w.saturating_sub(4 * pad));
     if box_w < 12 * ui.advance {
         return; // a window too narrow for it
@@ -1880,7 +1903,7 @@ fn draw_search(
         y + b,
         box_w - 2 * b,
         box_h - 2 * b,
-        theme.frame,
+        pane(theme, layout),
     );
     let text_w = box_w - 2 * (b + pad);
     let (text_x, text_y) = (x + b + pad, y + b + pad);
@@ -2027,6 +2050,14 @@ fn cut_middle(text: &str, max: usize) -> String {
 }
 
 /// A rectangle's outline, `t` pixels thick.
+/// The color of a box over the terminal: the palette, the help, a card, the search.
+fn pane(theme: &Theme, layout: &Layout) -> u32 {
+    match layout.border {
+        0 => blend(theme.frame, 0x000000, PANE_BLACK),
+        _ => theme.frame,
+    }
+}
+
 fn outline(pixels: &mut [u32], width: usize, r: Rect, t: usize, color: u32) {
     fill_rect(pixels, width, r.x, r.y, r.w, t, color); // top
     fill_rect(pixels, width, r.x, r.y + r.h - t, r.w, t, color); // bottom
