@@ -420,24 +420,19 @@ impl Renderer {
             text,
             ..
         } = *layout;
-        fill_rect(
-            &mut buffer,
-            width,
-            panel.x,
-            panel.y,
-            panel.w,
-            panel.h,
-            theme.border,
-        );
-        fill_rect(
-            &mut buffer,
-            width,
-            inside.x,
-            inside.y,
-            inside.w,
-            inside.h,
-            theme.background,
-        );
+        // The tab on screen grows out of the panel: over the panel's corner, that
+        // corner stays square.
+        let r = layout.radius;
+        let tabs = layout.tabs(chrome.tabs.len());
+        let under_tab = tabs
+            .get(chrome.active)
+            .is_some_and(|tab| tab.x < panel.x + r);
+        let corners = [if under_tab { 0 } else { r }, r, r, r];
+        if layout.border > 0 {
+            fill_round(&mut buffer, width, panel, corners, theme.border);
+        }
+        let inner = corners.map(|n| n.saturating_sub(layout.border));
+        fill_round(&mut buffer, width, inside, inner, theme.background);
         // After the panel: the tab on screen covers a piece of the panel's top line.
         let font = &self.ui_font; // all of the UI below: the built-in font
         draw_tab_bar(
@@ -763,18 +758,23 @@ fn draw_tab_bar(
         let on_screen = i == active;
         let color = if on_screen {
             // The outline, reaching `b` pixels down over the panel's top line…
-            fill_rect(pixels, width, tab.x, tab.y, tab.w, tab.h + b, theme.border);
+            let r = layout.radius;
+            if b > 0 {
+                let outer = Rect {
+                    h: tab.h + b,
+                    ..*tab
+                };
+                fill_round(pixels, width, outer, [r, r, 0, 0], theme.border);
+            }
             // …and the inside, in the panel's color, covering that line: one shape.
-            let inner_w = tab.w.saturating_sub(2 * b);
-            fill_rect(
-                pixels,
-                width,
-                tab.x + b,
-                tab.y + b,
-                inner_w,
-                tab.h,
-                theme.background,
-            );
+            let inner = Rect {
+                x: tab.x + b,
+                y: tab.y + b,
+                w: tab.w.saturating_sub(2 * b),
+                h: tab.h,
+            };
+            let r = r.saturating_sub(b);
+            fill_round(pixels, width, inner, [r, r, 0, 0], theme.background);
             theme.foreground
         } else {
             dim
@@ -806,7 +806,7 @@ fn draw_tab_bar(
             };
             if on_close {
                 let lit = blend(tab_bg, theme.foreground, 40);
-                fill_rect(pixels, width, r.x, r.y, r.w, r.h, lit);
+                fill_round(pixels, width, r, [layout.small_radius(); 4], lit);
             }
             let (n, t) = (ui.px(8), ui.px(1));
             let (x, y) = (r.x + (r.w - n) / 2, r.y + (r.h - n) / 2);
@@ -933,7 +933,13 @@ fn draw_bar_buttons(
         // The sidebar's button stays lit while its sidebar is open.
         let open = hit == TitleHit::Sidebar && chrome.sidebar.is_some();
         let fg = if chrome.hovered == Some(hit) || open {
-            fill_rect(pixels, width, bx, by, side, side, lit);
+            let spot = Rect {
+                x: bx,
+                y: by,
+                w: side,
+                h: side,
+            };
+            fill_round(pixels, width, spot, [layout.small_radius(); 4], lit);
             theme.foreground
         } else {
             dim
@@ -1050,27 +1056,13 @@ fn draw_palette(
 
     let back = pane(theme, layout);
     let dim = blend(back, theme.foreground, 128);
-    outline(
-        pixels,
-        width,
-        Rect {
-            x,
-            y,
-            w: box_w,
-            h: box_h,
-        },
-        b,
-        theme.border,
-    );
-    fill_rect(
-        pixels,
-        width,
-        x + b,
-        y + b,
-        box_w - 2 * b,
-        box_h - 2 * b,
-        back,
-    );
+    let r = Rect {
+        x,
+        y,
+        w: box_w,
+        h: box_h,
+    };
+    draw_box(pixels, width, theme, layout, r, back);
     let text_w = box_w - 2 * (b + pad);
     let text_x = x + b + pad;
 
@@ -1119,7 +1111,15 @@ fn draw_palette(
                 Some(color) => blend(back, color, 60),
                 None => theme.selection,
             };
-            fill_rect(pixels, width, x + b, line_y, box_w - 2 * b, line_h, fill);
+            // With round corners, clear of the box's own.
+            let inset = if layout.radius > 0 { ui.px(2) } else { 0 };
+            let line = Rect {
+                x: x + b + inset,
+                y: line_y,
+                w: box_w - 2 * (b + inset),
+                h: line_h,
+            };
+            fill_round(pixels, width, line, [layout.small_radius(); 4], fill);
         }
         // The hint at the right end, then the label in the room left of it.
         // At most half the line, so a long folder leaves the label room.
@@ -1169,9 +1169,7 @@ fn draw_sidebar(
     let panel = layout.sidebar();
     let b = layout.border;
     let back = blend(theme.frame, theme.foreground, 8);
-    outline(pixels, width, panel, b, theme.border);
-    let inside = panel.shrink(b);
-    fill_rect(pixels, width, inside.x, inside.y, inside.w, inside.h, back);
+    draw_box(pixels, width, theme, layout, panel, back);
     let dim = blend(back, theme.foreground, 128);
     let pad = ui.px(18);
     let text_w = panel.w.saturating_sub(2 * pad);
@@ -1193,7 +1191,7 @@ fn draw_sidebar(
         let chosen = row == sidebar.selected();
         if chosen {
             let lit = blend(back, theme.foreground, 22);
-            fill_rect(pixels, width, r.x, r.y, r.w, r.h, lit);
+            fill_round(pixels, width, r, [layout.small_radius(); 4], lit);
         }
         let text_y = r.y + r.h.saturating_sub(ui.line_h) / 2;
         let look = match sidebar.row(row) {
@@ -1277,11 +1275,8 @@ fn draw_card(
     font: &Font,
     ui: &mut Ui,
 ) {
-    let b = layout.border;
-    outline(pixels, width, rect, b, theme.border);
-    let inside = rect.shrink(b);
     let back = pane(theme, layout);
-    fill_rect(pixels, width, inside.x, inside.y, inside.w, inside.h, back);
+    draw_box(pixels, width, theme, layout, rect, back);
     let dim = blend(back, theme.foreground, 128);
     let pad = ui.px(8);
     // "Command" and a space.
@@ -1330,15 +1325,14 @@ fn draw_card(
         let (by, bh) = (r.y + ui.px(3), r.h.saturating_sub(ui.px(6)));
         let bw = (r.x + r.w).saturating_sub(bx);
         let lit = if focused { 20 } else { 8 };
-        fill_rect(
-            pixels,
-            width,
-            bx,
-            by,
-            bw,
-            bh,
-            blend(back, theme.foreground, lit),
-        );
+        let field_box = Rect {
+            x: bx,
+            y: by,
+            w: bw,
+            h: bh,
+        };
+        let color = blend(back, theme.foreground, lit);
+        fill_round(pixels, width, field_box, [layout.small_radius(); 4], color);
         let mut tx = bx + ui.px(6);
         // A color's `#hex`: a dot of it before, as it's typed (none: not one yet).
         if !field.swatches.is_empty() {
@@ -1505,7 +1499,9 @@ fn draw_start(
 ) {
     let area = layout.inside;
     let back = theme.background;
-    fill_rect(pixels, width, area.x, area.y, area.w, area.h, back);
+    // Over the terminal's text, not the panel's round corners.
+    let text = layout.text;
+    fill_rect(pixels, width, text.x, text.y, text.w, text.h, back);
     let dim = blend(back, theme.foreground, 128);
     let projects = start.projects();
     let col = start::column(layout.text, layout.scale, projects.len());
@@ -1543,7 +1539,7 @@ fn draw_start(
         }
         if start.lit(row) {
             let lit = blend(back, theme.foreground, 22);
-            fill_rect(pixels, width, r.x, r.y, r.w, r.h, lit);
+            fill_round(pixels, width, r, [layout.small_radius(); 4], lit);
         }
         draw_project_row(
             pixels,
@@ -1614,17 +1610,7 @@ fn draw_help(
     if rect.w < 2 * (b + pad) + 24 * advance || rect.h < 2 * (b + pad) + 4 * row_h {
         return; // a window too small for it
     }
-    outline(pixels, width, rect, b, theme.border);
-    let (inner_w, inner_h) = (rect.w - 2 * b, rect.h - 2 * b);
-    fill_rect(
-        pixels,
-        width,
-        rect.x + b,
-        rect.y + b,
-        inner_w,
-        inner_h,
-        pane(theme, layout),
-    );
+    draw_box(pixels, width, theme, layout, rect, pane(theme, layout));
     let text_x = rect.x + b + pad;
     let text_w = rect.w - 2 * (b + pad);
     let top = rect.y + b + pad;
@@ -1895,16 +1881,7 @@ fn draw_search(
         w: box_w,
         h: box_h,
     };
-    outline(pixels, width, r, b, theme.border);
-    fill_rect(
-        pixels,
-        width,
-        x + b,
-        y + b,
-        box_w - 2 * b,
-        box_h - 2 * b,
-        pane(theme, layout),
-    );
+    draw_box(pixels, width, theme, layout, r, pane(theme, layout));
     let text_w = box_w - 2 * (b + pad);
     let (text_x, text_y) = (x + b + pad, y + b + pad);
 
@@ -2055,6 +2032,62 @@ fn pane(theme: &Theme, layout: &Layout) -> u32 {
     match layout.border {
         0 => blend(theme.frame, 0x000000, PANE_BLACK),
         _ => theme.frame,
+    }
+}
+
+/// A box over the terminal at `r`: its line, if there is one, and `back` inside.
+fn draw_box(pixels: &mut [u32], width: usize, theme: &Theme, layout: &Layout, r: Rect, back: u32) {
+    let (b, radius) = (layout.border, layout.radius);
+    if b > 0 {
+        fill_round(pixels, width, r, [radius; 4], theme.border);
+    }
+    let inner = radius.saturating_sub(b);
+    fill_round(pixels, width, r.shrink(b), [inner; 4], back);
+}
+
+/// How much of a pixel a round corner covers, 0 to 255. The pixel is `a` columns
+/// and `b` rows in from the corner of a `radius` square: its middle's distance
+/// from the circle's center says it, and the last pixel's worth is the soft edge.
+/// e.g. radius 8: the very corner, (0, 0), is 0; (7, 7), by the center, 255.
+fn corner_cover(radius: usize, a: usize, b: usize) -> u32 {
+    let n = radius as f32;
+    let (dx, dy) = (n - a as f32 - 0.5, n - b as f32 - 0.5);
+    let edge = n - (dx * dx + dy * dy).sqrt() + 0.5;
+    (edge.clamp(0.0, 1.0) * 255.0).round() as u32
+}
+
+/// `r` filled, its corners round: `radii` from the top left, clockwise. A corner's
+/// pixels mix with what's under them, so its edge is soft, over glass too.
+fn fill_round(pixels: &mut [u32], width: usize, r: Rect, radii: [usize; 4], color: u32) {
+    let [tl, tr, br, bl] = radii.map(|n| n.min(r.w / 2).min(r.h / 2));
+    let (top_h, bottom_h) = (tl.max(tr), br.max(bl));
+    // Between the corners: plain rows.
+    fill_rect(
+        pixels,
+        width,
+        r.x,
+        r.y + top_h,
+        r.w,
+        r.h.saturating_sub(top_h + bottom_h),
+        color,
+    );
+    let height = pixels.len() / width;
+    let rows = (0..top_h).chain(r.h.saturating_sub(bottom_h)..r.h);
+    for y in rows.filter(|y| r.y + y < height) {
+        let up = r.h - 1 - y; // rows to the bottom edge
+        let row = &mut pixels[(r.y + y) * width..][..width];
+        for x in 0..r.w.min(width.saturating_sub(r.x)) {
+            let back = r.w - 1 - x; // columns to the right edge
+            let cover = match () {
+                _ if x < tl && y < tl => corner_cover(tl, x, y),
+                _ if back < tr && y < tr => corner_cover(tr, back, y),
+                _ if back < br && up < br => corner_cover(br, back, up),
+                _ if x < bl && up < bl => corner_cover(bl, x, up),
+                _ => 255,
+            };
+            let pixel = &mut row[r.x + x];
+            *pixel = blend(*pixel, color, cover);
+        }
     }
 }
 
@@ -2423,6 +2456,38 @@ mod tests {
         assert_eq!(cut_middle(url, 20), "https:/…m/a/b/c/page");
         assert_eq!(cut_middle(url, 20).chars().count(), 20);
         assert_eq!(cut_middle("short", 20), "short");
+    }
+
+    #[test]
+    fn round_corners() {
+        assert_eq!(corner_cover(8, 0, 0), 0);
+        assert_eq!(corner_cover(8, 7, 7), 255);
+        assert!(corner_cover(8, 0, 7) > 240); // the edge, where the corner ends
+        let (w, h) = (20, 20);
+        let r = Rect {
+            x: 2,
+            y: 2,
+            w: 16,
+            h: 16,
+        };
+        // Square: as a plain fill.
+        let mut pixels = vec![0; w * h];
+        fill_round(&mut pixels, w, r, [0; 4], 0xffffff);
+        let mut plain = vec![0; w * h];
+        fill_rect(&mut plain, w, r.x, r.y, r.w, r.h, 0xffffff);
+        assert_eq!(pixels, plain);
+        // Round on top only: the top corners cut, the bottom ones filled, the middle solid.
+        let mut pixels = vec![0; w * h];
+        fill_round(&mut pixels, w, r, [6, 6, 0, 0], 0xffffff);
+        assert_eq!(pixels[2 * w + 2], 0);
+        assert_eq!(pixels[2 * w + 17], 0);
+        assert_eq!(pixels[17 * w + 2], 0xffffff);
+        assert_eq!(pixels[17 * w + 17], 0xffffff);
+        assert_eq!(pixels[10 * w + 10], 0xffffff);
+        // Bigger than the box: as round as it can be, no overflow.
+        let mut pixels = vec![0; w * h];
+        fill_round(&mut pixels, w, r, [99; 4], 0xffffff);
+        assert_eq!(pixels[10 * w + 10], 0xffffff);
     }
 
     #[test]

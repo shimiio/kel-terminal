@@ -98,6 +98,7 @@ tab_width = 180   # narrower when there are many tabs
 sidebar_button = "always"
 tab_buttons = "always"      # + and ⌄ after the tabs
 window_buttons = "always"   # minimize, maximize, close
+corner_radius = 0   # round corners of the panel, the tab, the boxes: 0 square, 8 soft
 
 # Glass: Kel see-through, Windows blurring what's behind it.
 # effect: "acrylic" (what's behind, blurred), "mica" (a faint tint of the

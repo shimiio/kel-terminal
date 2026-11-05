@@ -151,6 +151,8 @@ pub struct Spacing {
     pub tab_buttons: Show,
     /// Minimize, maximize and close.
     pub window_buttons: Show,
+    /// How round the corners are: the panel's, the tab's, the boxes over them.
+    pub corner_radius: usize,
 }
 
 impl Default for Spacing {
@@ -164,6 +166,7 @@ impl Default for Spacing {
             sidebar_button: Show::Always,
             tab_buttons: Show::Always,
             window_buttons: Show::Always,
+            corner_radius: 0,
         }
     }
 }
@@ -200,6 +203,8 @@ pub struct Layout {
     pub sidebar_shows: Show,
     pub tab_buttons_show: Show,
     pub window_buttons_show: Show,
+    /// How round the corners are, in pixels. 0: square.
+    pub radius: usize,
     tab_width: usize,
     bar_button_w: usize,
     /// Room at the tab bar's start, before the first tab: the open project's name
@@ -269,6 +274,7 @@ impl Spacing {
             sidebar_shows: self.sidebar_button,
             tab_buttons_show: self.tab_buttons,
             window_buttons_show: self.window_buttons,
+            radius: s(self.corner_radius),
             tab_width: s(self.tab_width),
             bar_button_w: self.tab_buttons.room(s(BAR_BUTTON_WIDTH)),
             lead: 0,
@@ -323,6 +329,11 @@ impl Layout {
         .into_iter()
         .find(|(rect, _)| rect.contains(x, y))
         .map(|(_, button)| button)
+    }
+
+    /// How round the small things are: a chosen line, a button under the mouse.
+    pub fn small_radius(&self) -> usize {
+        self.radius / 2
     }
 
     /// Leaves `lead` pixels after the sidebar button, before the first tab, for the project's

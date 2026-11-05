@@ -281,6 +281,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             &text(show(layout.window_buttons)),
             BUTTONS,
         ),
+        row(
+            "corner_radius",
+            &layout.corner_radius.to_string(),
+            "0 square, 8 soft",
+        ),
         Line::Gap,
         title("[GLASS]"),
         row("effect", &text(effect), "acrylic, mica: restart"),
