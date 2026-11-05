@@ -246,6 +246,11 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       hover, never), `corner_radius`, `cells` in `[glass]` (programs' backgrounds too)
 - [ ] Which of it becomes the default, before the next release: Kel's defaults are
       still the old look (lines, `#1e1e1e`, all the buttons, square)
+- [ ] README: say that Kel's look can be changed in the config (lines, buttons, corners,
+      glass, colors)
+- [ ] Later, an idea: a title bar with no tabs, or none at all, like Ghostty: `project/tab`
+      and `2/3` only. To solve first: moving the window, the marks on tabs (done, failed,
+      new output), the messages in the bar
 
 ## 10. Before the release
 
