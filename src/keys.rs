@@ -246,8 +246,11 @@ pub fn palette_items() -> Vec<Item> {
 }
 
 /// The shortcut of `action`, as the palette shows it ("Ctrl+Shift+T"); empty
-/// for one without.
+/// for one without. The palette's own isn't in its list: it's open by then.
 pub fn hint(action: &Action) -> String {
+    if *action == Action::Palette {
+        return if MAC { "Cmd+Shift+P" } else { "Ctrl+Shift+P" }.into();
+    }
     palette_items()
         .into_iter()
         .find(|item| item.action == *action)
@@ -879,6 +882,12 @@ mod tests {
         );
         // Ctrl+P alone goes to the program (nvim: up in a list).
         assert_eq!(shortcut(key(KeyCode::KeyP), CTRL), None);
+    }
+
+    #[test]
+    fn the_palette_has_a_hint_though_it_doesn_t_list_itself() {
+        let hint = hint(&Action::Palette);
+        assert!(hint.ends_with("+Shift+P"), "{hint}");
     }
 
     #[test]
