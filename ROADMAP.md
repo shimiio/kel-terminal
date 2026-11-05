@@ -241,6 +241,11 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       the background and the frame, the theme's color over it (`opacity`) and a still grain
       (`grain`). A color's top byte says how clear it is, so letters' edges blend right;
       on battery Windows may drop the blur, then the glass is a plain color
+- [x] A quieter look, by the config: `border = 0` takes away every line (the boxes stand
+      out by denser glass), `sidebar_button`, `tab_buttons`, `window_buttons` (always,
+      hover, never), `corner_radius`, `cells` in `[glass]` (programs' backgrounds too)
+- [ ] Which of it becomes the default, before the next release: Kel's defaults are
+      still the old look (lines, `#1e1e1e`, all the buttons, square)
 
 ## 10. Before the release
 
