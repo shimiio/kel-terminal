@@ -63,11 +63,11 @@ pub struct Theme {
 impl Default for Theme {
     fn default() -> Self {
         Theme {
-            foreground: 0xd4d4d4, // light gray
-            background: 0x1e1e1e, // dark gray
-            cursor: 0x808080,
-            selection: 0x474747, // gray: never one of the search's or a project's colors
-            frame: 0x141414,     // a bit darker than the background
+            foreground: 0xffffff, // white: over the glass it has to carry the most
+            background: 0x141416, // near black: the most contrast at any opacity
+            cursor: 0xa0a0a0,
+            selection: 0x3d3d44, // gray: never one of the search's or a project's colors
+            frame: 0x0e0e10,     // a bit darker than the background
             border: 0x333333,    // a bit lighter
             accent: None,        // none: home is gray
             project_colors: vec![
@@ -83,9 +83,10 @@ impl Default for Theme {
             done: 0x98c379,   // the green
             failed: 0xe06c75, // the red
             palette: [
-                // Soft, of the same family as `project_colors`; the bright ones lighter.
-                0x3a3a3a, 0xe06c75, 0x98c379, 0xe5c07b, 0x7aa2e6, 0xb39ae6, 0x6cc4b8, 0xc8c8c8,
-                0x6e6e6e, 0xf08a92, 0xb4d99a, 0xf2d49b, 0x9dbcf2, 0xcbb6f2, 0x8fd9cf, 0xececec,
+                // Strong colors, to read over the glass even with a white page behind.
+                // Black stays dark: programs paint backgrounds with it too.
+                0x5c5c5c, 0xff4d5e, 0x6dff5c, 0xffe14d, 0x4dabff, 0xd47dff, 0x2df5dc, 0xf0f0f0,
+                0xa6a6a6, 0xff7a86, 0x9dff91, 0xfff08a, 0x8cc8ff, 0xe6adff, 0x7ff9ea, 0xffffff,
             ],
         }
     }
@@ -213,8 +214,8 @@ mod tests {
     #[test]
     fn default_depends_on_text_or_background() {
         let theme = Theme::default();
-        assert_eq!(theme.rgb(Color::Default, theme.foreground), 0xd4d4d4);
-        assert_eq!(theme.rgb(Color::Default, theme.background), 0x1e1e1e);
+        assert_eq!(theme.rgb(Color::Default, theme.foreground), 0xffffff);
+        assert_eq!(theme.rgb(Color::Default, theme.background), 0x141416);
     }
 
     #[test]

@@ -48,7 +48,7 @@ line_height = 1
 ui_scale = 1
 
 # The project's name before the tabs in pixels, like Kel's logo. false: in the font.
-pixel_name = true
+pixel_name = false
 
 # The cursor: "block" (the whole cell), "underline" or "bar".
 # Programs can pick their own (nvim does); this is for the rest.
@@ -89,16 +89,16 @@ backdrop = "auto"
 # 0: none, those stand out by their color.
 [layout]
 margin = 8
-border = 1
+border = 0
 padding = 6
 tab_height = 32   # the tab bar above the panel
 tab_width = 180   # narrower when there are many tabs
 # The title bar's buttons: "always", "hover" (while the mouse is on the title bar)
 # or "never" (their place goes to the tabs; their keys still work).
-sidebar_button = "always"
-tab_buttons = "always"      # + and ⌄ after the tabs
-window_buttons = "always"   # minimize, maximize, close
-corner_radius = 0   # round corners of the panel, the tab, the boxes: 0 square, 8 soft
+sidebar_button = "hover"
+tab_buttons = "hover"       # + and ⌄ after the tabs
+window_buttons = "hover"    # minimize, maximize, close
+corner_radius = 6   # round corners of the panel, the tab, the boxes: 0 square, 8 soft
 
 # Glass: Kel see-through, Windows blurring what's behind it.
 # effect: "acrylic" (what's behind, blurred), "mica" (a faint tint of the
@@ -107,23 +107,23 @@ corner_radius = 0   # round corners of the panel, the tab, the boxes: 0 square, 
 # glass is a plain color.
 [glass]
 effect = "acrylic"
-opacity = 0.85   # how much of the theme's colors cover the glass: 1 solid, 0 all glass
+opacity = 0.8    # how much of the theme's colors cover the glass: 1 solid, 0 all glass
 grain = 0.1      # a fine grain on the glass, like frosted glass: 0 none, 1 strong
 solid_under_apps = true   # a solid background under lazygit, htop, Claude Code: they read better
 # Full-screen programs get it all. These draw in the normal screen and get it too,
 # by the program's name or a word of the title it gives the tab. Add your own.
 solid_for = ["claude", "codex", "gemini", "aider", "opencode", "copilot", "crush"]
 # solid_color = "#000000" # its color; without it, the theme's background
-cells = false   # true: the gray backgrounds programs pick (nvim's color scheme) are glass too; colored ones (a diff's red, green) stay solid
+cells = true   # the gray backgrounds programs pick (nvim's color scheme) are glass too, colored ones (a diff's red, green) stay solid; false: all solid
 
 # Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
 # Programs that pick exact colors themselves (like nvim color schemes) don't use them.
 [colors]
-foreground = "#d4d4d4"
-background = "#1e1e1e"
-cursor = "#808080"
-selection = "#474747"
-frame = "#141414"    # the window around the panel
+foreground = "#ffffff"
+background = "#141416"
+cursor = "#a0a0a0"
+selection = "#3d3d44"
+frame = "#0e0e10"    # the window around the panel
 border = "#333333"   # the panel's border line
 # accent = "#569cd6" # home's color, and of projects without their own: the tab
                      # icons, the logo's cursor. Without it: none, the text's gray
@@ -137,8 +137,8 @@ failed = "#e06c75"   # one that failed; and Kel's own errors
 # black, red, green, yellow, blue, magenta, cyan, white,
 # then the bright versions of the same 8.
 palette = [
-    "#3a3a3a", "#e06c75", "#98c379", "#e5c07b", "#7aa2e6", "#b39ae6", "#6cc4b8", "#c8c8c8",
-    "#6e6e6e", "#f08a92", "#b4d99a", "#f2d49b", "#9dbcf2", "#cbb6f2", "#8fd9cf", "#ececec",
+    "#5c5c5c", "#ff4d5e", "#6dff5c", "#ffe14d", "#4dabff", "#d47dff", "#2df5dc", "#f0f0f0",
+    "#a6a6a6", "#ff7a86", "#9dff91", "#fff08a", "#8cc8ff", "#e6adff", "#7ff9ea", "#ffffff",
 ]
 "##;
 
@@ -198,7 +198,7 @@ impl Default for Config {
             line_height: 1.0,
             shell: None,
             ui_scale: 1.0,
-            pixel_name: true,
+            pixel_name: false,
             cursor: CursorShape::Block,
             cursor_blink: true,
             copy_on_select: false,

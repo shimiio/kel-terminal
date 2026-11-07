@@ -159,14 +159,14 @@ impl Default for Spacing {
     fn default() -> Self {
         Spacing {
             margin: 8,
-            border: 1,
+            border: 0,
             padding: 6,
             tab_height: 32,
             tab_width: 180,
-            sidebar_button: Show::Always,
-            tab_buttons: Show::Always,
-            window_buttons: Show::Always,
-            corner_radius: 0,
+            sidebar_button: Show::Hover,
+            tab_buttons: Show::Hover,
+            window_buttons: Show::Hover,
+            corner_radius: 6,
         }
     }
 }
@@ -477,7 +477,11 @@ mod tests {
 
     #[test]
     fn tab_bar_panel_and_text_inside_the_window() {
-        let layout = Spacing::default().layout(1000, 700, 1.0);
+        let spacing = Spacing {
+            border: 1,
+            ..Spacing::default()
+        };
+        let layout = spacing.layout(1000, 700, 1.0);
         // margin 8, then the tab bar, 32 tall. It ends 8 pixels before the
         // 3 buttons (3 x 46 = 138): 1000 - 138 - 8 - 8 = 846 wide.
         assert_eq!(
@@ -523,7 +527,11 @@ mod tests {
 
     #[test]
     fn everything_bigger_at_150_percent() {
-        let layout = Spacing::default().layout(1500, 1050, 1.5);
+        let spacing = Spacing {
+            border: 1,
+            ..Spacing::default()
+        };
+        let layout = spacing.layout(1500, 1050, 1.5);
         // margin 8 → 12, tab bar 32 → 48, buttons 46 → 69 wide
         assert_eq!((layout.tab_bar.y, layout.tab_bar.h), (12, 48));
         assert_eq!(layout.close.w, 69);

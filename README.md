@@ -150,6 +150,9 @@ with a comment on every setting: the font (JetBrains Mono is built in, or any
 installed one), the shell (`pwsh.exe`, `cmd.exe`, `wsl.exe -d Ubuntu`), the glass,
 the cursor, the colors. Saved changes apply at once.
 
+Kel's look is yours to change there too: the title bar's buttons (always, on hover,
+never), lines and round corners, how see-through the glass is, every color.
+
 A mistake in it shows in red in the tab bar, with the line and the reason, and Kel
 keeps the settings it had. To get the original file back, delete it and restart Kel.
 

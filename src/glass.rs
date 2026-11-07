@@ -55,12 +55,12 @@ impl Default for Glass {
         Glass {
             // Acrylic: what's behind, blurred, with a light grain.
             effect: Effect::Acrylic,
-            opacity: 0.85,
+            opacity: 0.8,
             grain: 0.1,
             solid_under_apps: true,
             solid_for: SOLID_FOR.iter().map(|name| name.to_string()).collect(),
             solid_color: None,
-            cells: false,
+            cells: true,
         }
     }
 }
@@ -293,8 +293,8 @@ mod tests {
             ..Glass::default()
         };
         let painted = glass.theme(&theme);
-        assert_eq!(painted.background >> 24, 255 - 217); // 0.85 of 255: 217 solid
-        assert_eq!(painted.frame >> 24, 255 - 217);
+        assert_eq!(painted.background >> 24, 255 - 204); // 0.8 of 255: 204 solid
+        assert_eq!(painted.frame >> 24, 255 - 204);
         assert_eq!(painted.foreground, theme.foreground);
         assert_eq!(painted.palette, theme.palette);
     }
@@ -304,9 +304,10 @@ mod tests {
     fn a_program_s_background() {
         let mut glass = Glass {
             opacity: 0.8,
+            cells: false,
             ..Glass::default()
         };
-        assert_eq!(glass.picked_background(0x1e1e1e), 0x1e1e1e); // solid by default
+        assert_eq!(glass.picked_background(0x1e1e1e), 0x1e1e1e); // cells off: solid
         glass.cells = true;
         assert_eq!(
             glass.picked_background(0x1e1e1e),

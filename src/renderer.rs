@@ -179,7 +179,7 @@ impl Ui {
             italic,
             italic_glyphs: HashMap::new(),
             icons: Icons::load(),
-            pixel_name: true,
+            pixel_name: false,
         };
         ui.set_font(font)?;
         Ok(ui)
