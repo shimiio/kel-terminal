@@ -105,9 +105,13 @@ impl Glass {
     }
 
     /// A background a program picked, as the renderer paints it (see `cells`).
+    /// A gray one (nvim's color scheme, a panel) is glass as the theme's. A
+    /// colored one says something (a diff's red and green, a mark), and over
+    /// the glass its color would fade to gray: it stays solid.
     pub fn picked_background(&self, color: u32) -> u32 {
         if self.on() && self.cells {
-            see_through(color, self.alpha())
+            let alpha = self.alpha();
+            see_through(color, alpha + (255 - alpha) * colored(color) / 255)
         } else {
             color
         }
@@ -167,6 +171,20 @@ impl Glass {
             }
         }
     }
+}
+
+/// How far a color is from gray (its strongest channel minus its weakest) where
+/// it starts to count as colored, and where it fully is. Dark themes' grays lean
+/// blue up to about 18 (Nord, Catppuccin); a diff's red is 35 and more.
+const GRAY_UP_TO: u32 = 16;
+const COLORED_FROM: u32 = 32;
+
+/// How colored `color` is, 0 (gray) to 255.
+fn colored(color: u32) -> u32 {
+    let [r, g, b] = [color >> 16 & 0xff, color >> 8 & 0xff, color & 0xff];
+    let chroma = r.max(g).max(b) - r.min(g).min(b);
+    let over_gray = chroma.clamp(GRAY_UP_TO, COLORED_FROM) - GRAY_UP_TO;
+    over_gray * 255 / (COLORED_FROM - GRAY_UP_TO)
 }
 
 /// `color` see-through: `alpha` of it solid (0 to 255), premultiplied, its top
@@ -294,8 +312,27 @@ mod tests {
             glass.picked_background(0x1e1e1e),
             see_through(0x1e1e1e, 204)
         );
+        // A color scheme's gray, a little blue: glass as well.
+        assert_eq!(
+            glass.picked_background(0x1a1b26),
+            see_through(0x1a1b26, 204)
+        );
+        // A diff's green: solid, or it would fade into the glass.
+        assert_eq!(glass.picked_background(0x16391f), 0x0016_391f);
+        // In between: between.
+        let half = glass.picked_background(0x30402a) >> 24;
+        assert!(half > 0 && half < 255 - 204, "{half}");
         glass.effect = Effect::None;
         assert_eq!(glass.picked_background(0x1e1e1e), 0x1e1e1e); // no glass at all
+    }
+
+    #[test]
+    fn how_colored_a_color_is() {
+        assert_eq!(colored(0x808080), 0);
+        assert_eq!(colored(0x1e1e2e), 0); // Catppuccin's background
+        assert_eq!(colored(0x3f1a20), 255);
+        assert_eq!(colored(0xff0000), 255);
+        assert_eq!(colored(0x1a1a32), 127); // 24: halfway
     }
 
     #[test]

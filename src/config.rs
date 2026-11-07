@@ -114,7 +114,7 @@ solid_under_apps = true   # a solid background under lazygit, htop, Claude Code:
 # by the program's name or a word of the title it gives the tab. Add your own.
 solid_for = ["claude", "codex", "gemini", "aider", "opencode", "copilot", "crush"]
 # solid_color = "#000000" # its color; without it, the theme's background
-cells = false   # true: the backgrounds programs pick (nvim's color scheme) are glass too
+cells = false   # true: the gray backgrounds programs pick (nvim's color scheme) are glass too; colored ones (a diff's red, green) stay solid
 
 # Colors, as "#rrggbb". Programs ask for "red" or "default text"; these say how they look.
 # Programs that pick exact colors themselves (like nvim color schemes) don't use them.
