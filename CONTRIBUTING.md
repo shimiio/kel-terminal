@@ -54,6 +54,7 @@ one doesn't.
 | `src/term/grid.rs` | The screen as a grid of cells, plus scrollback; on resize, the lines are cut again at the new width |
 | `src/renderer.rs` | Turns the grid into pixels |
 | `src/font.rs` | Finds a font, and turns its letters into pixels, each one when it's first drawn |
+| `src/frames.rs` | `KEL_FRAMES=1`: how long frames take, on stderr, for a slowness on another machine |
 | `src/fallback.rs` | Fonts for the letters the terminal's font lacks (emoji, Chinese), loaded when first needed |
 | `examples/` | Small tools that print the raw bytes a program sends: `cargo run --example probe_nvim` |
 | `setup/` | Scripts that install Kel itself (`kel.ps1`) and tools (`lazygit.ps1`, with winget). They run from any shell too: `.\setup\lazygit.ps1 -DryRun` only says what it would do |

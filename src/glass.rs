@@ -88,9 +88,15 @@ const GRAIN_STRENGTH: f32 = 10.0;
 /// The grain repeats every `TILE` pixels: too far apart to see it repeat.
 const TILE: usize = 256;
 
+/// Glass needs a system that can show it. Only Windows here: on macOS and Linux
+/// the window's alpha doesn't reach the screen (softbuffer draws it solid), so
+/// there the see-through colors would only darken the theme, and `finish` cost
+/// 47 ms a frame at a Retina display's size, for nothing.
+const SHOWS_GLASS: bool = cfg!(windows);
+
 impl Glass {
     pub fn on(&self) -> bool {
-        self.effect != Effect::None
+        SHOWS_GLASS && self.effect != Effect::None
     }
 
     /// How solid the theme's background is over the glass, 0 to 255.
@@ -127,23 +133,37 @@ impl Glass {
         let glass = 255 - self.alpha();
         let strength = self.grain.clamp(0.0, 1.0) * GRAIN_STRENGTH;
         let grain = grain_tile();
+        // This runs on every pixel of every frame, so whole numbers: what each
+        // grain step moves a pixel on full glass, worked out once a frame.
+        let move_by = |step: i32| step as f32 / 127.0 * strength;
+        let steps: [i32; 255] = std::array::from_fn(|i| move_by(i as i32 - 127).round() as i32);
         for (y, row) in pixels.chunks_mut(width.max(1)).enumerate() {
             let tile_row = &grain[(y % TILE) * TILE..][..TILE];
-            for (x, p) in row.iter_mut().enumerate() {
-                let clear = *p >> 24;
-                let alpha = 255 - clear;
-                let mut rgb = *p & 0xff_ffff;
-                if clear > 0 && glass > 0 && strength > 0.0 {
-                    let part = clear.min(glass) as f32 / glass as f32;
-                    let d = f32::from(tile_row[x % TILE]) / 127.0 * strength * part;
-                    // Premultiplied: a channel can't be more than alpha.
-                    let ch = |s: u32| {
-                        let c = ((rgb >> s) & 0xff) as f32 + d;
-                        (c.round().clamp(0.0, alpha as f32) as u32) << s
-                    };
-                    rgb = ch(16) | ch(8) | ch(0);
+            for piece in row.chunks_mut(TILE) {
+                for (p, &step) in piece.iter_mut().zip(tile_row) {
+                    let clear = *p >> 24;
+                    if clear == 0 {
+                        *p |= 0xff00_0000; // solid, most of a letter: no grain
+                        continue;
+                    }
+                    let alpha = 255 - clear;
+                    let mut rgb = *p & 0xff_ffff;
+                    if glass > 0 && strength > 0.0 {
+                        let d = if clear >= glass {
+                            steps[(i32::from(step) + 127) as usize]
+                        } else {
+                            let part = clear as f32 / glass as f32;
+                            (move_by(i32::from(step)) * part).round() as i32
+                        };
+                        // Premultiplied: a channel can't be more than alpha.
+                        let ch = |s: u32| {
+                            let c = ((rgb >> s) & 0xff) as i32 + d;
+                            (c.clamp(0, alpha as i32) as u32) << s
+                        };
+                        rgb = ch(16) | ch(8) | ch(0);
+                    }
+                    *p = (alpha << 24) | rgb;
                 }
-                *p = (alpha << 24) | rgb;
             }
         }
     }
@@ -232,6 +252,16 @@ mod tests {
         assert_eq!(see_through(0xffffff, 0), 0xff00_0000); // all glass
     }
 
+    /// Where the window can't show it: no glass, whatever the config says.
+    #[cfg(not(windows))]
+    #[test]
+    fn no_glass_where_it_can_t_show() {
+        assert!(!Glass::default().on());
+        let theme = Theme::default();
+        assert_eq!(Glass::default().theme(&theme), theme);
+    }
+
+    #[cfg(windows)]
     #[test]
     fn glass_touches_only_the_background_and_frame() {
         let theme = Theme::default();
@@ -251,6 +281,7 @@ mod tests {
         assert_eq!(painted.palette, theme.palette);
     }
 
+    #[cfg(windows)]
     #[test]
     fn a_program_s_background() {
         let mut glass = Glass {

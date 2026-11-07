@@ -21,6 +21,7 @@ use crate::term::{Mark, Terminal};
 use portable_pty::{Child, ChildKiller, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -380,29 +381,63 @@ fn short_title(title: &str) -> String {
 /// then wakes the event loop so it can redraw.
 fn spawn_reader(
     id: TabId,
-    mut reader: Box<dyn Read + Send>,
+    reader: Box<dyn Read + Send>,
     terminal: Arc<Mutex<Terminal>>,
     proxy: EventLoopProxy<UserEvent>,
 ) {
+    pump(reader, terminal, move |replies| {
+        // The writer belongs to the main thread, so the answers go there.
+        // Err means the event loop has already shut down.
+        if !replies.is_empty() && proxy.send_event(UserEvent::Reply(id, replies)).is_err() {
+            return false;
+        }
+        proxy.send_event(UserEvent::PtyOutput(id)).is_ok()
+    });
+}
+
+/// How many chunks of output can wait to be parsed. Past it, the program waits
+/// to write, so `yes` doesn't fill the memory.
+const WAITING_CHUNKS: usize = 256;
+
+/// Output from `reader` into `terminal`, on two threads. A frame holds the
+/// terminal's lock while it's drawn, and a tty gives a read little (a Mac: about
+/// 1 KB). On one thread, a read would wait for the frame, so only one chunk
+/// would get in per frame, and text would come out in pieces. So one thread only
+/// reads, and the other takes all that came in the meantime at once.
+///
+/// `notify` is told after each batch, with the answers for the program; `false`
+/// ends it all.
+fn pump(
+    mut reader: Box<dyn Read + Send>,
+    terminal: Arc<Mutex<Terminal>>,
+    mut notify: impl FnMut(Vec<u8>) -> bool + Send + 'static,
+) {
+    let (chunks, waiting) = sync_channel::<Vec<u8>>(WAITING_CHUNKS);
     thread::spawn(move || {
-        let mut parser = Parser::new();
         let mut buf = [0u8; 4096];
         // `read` waits until the shell sends something, then gives `n` bytes.
         // 0 or an error: the PTY was closed, the tab is gone.
         while let Ok(n @ 1..) = reader.read(&mut buf) {
-            // The lock is held only while this chunk is parsed.
-            let replies = {
-                let mut terminal = terminal.lock().unwrap();
-                parser.advance(&mut *terminal, &buf[..n]);
-                // Take the answers out, leaving the list empty for the next chunk.
-                std::mem::take(&mut terminal.replies)
-            };
-            // The writer belongs to the main thread, so the answers go there.
-            // Err means the event loop has already shut down.
-            if !replies.is_empty() && proxy.send_event(UserEvent::Reply(id, replies)).is_err() {
+            if chunks.send(buf[..n].to_vec()).is_err() {
                 return;
             }
-            if proxy.send_event(UserEvent::PtyOutput(id)).is_err() {
+        }
+    });
+    thread::spawn(move || {
+        let mut parser = Parser::new();
+        while let Ok(first) = waiting.recv() {
+            let replies = {
+                let mut terminal = terminal.lock().unwrap();
+                parser.advance(&mut *terminal, &first);
+                // What came while this one waited for the lock. Not more than
+                // that: `yes` mustn't keep the lock from the frames.
+                for chunk in waiting.try_iter().take(WAITING_CHUNKS) {
+                    parser.advance(&mut *terminal, &chunk);
+                }
+                // Take the answers out, leaving the list empty for the next batch.
+                std::mem::take(&mut terminal.replies)
+            };
+            if !notify(replies) {
                 return;
             }
         }
@@ -429,6 +464,37 @@ fn ends_the_line(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A program's output, a piece a read.
+    struct Pieces(Vec<&'static [u8]>);
+
+    impl Read for Pieces {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let Some(piece) = self.0.pop() else {
+                return Ok(0);
+            };
+            buf[..piece.len()].copy_from_slice(piece);
+            Ok(piece.len())
+        }
+    }
+
+    /// While a frame holds the lock, output keeps coming; when it lets go, all
+    /// of it gets in at once, not a piece per frame.
+    #[test]
+    fn output_waits_for_a_frame_in_one_batch() {
+        let terminal = Arc::new(Mutex::new(Terminal::new(2, 10)));
+        let frame = terminal.lock().unwrap();
+        let (told, batches) = std::sync::mpsc::channel();
+        let pieces = Box::new(Pieces(vec![b"c", b"b", b"a"]));
+        pump(pieces, terminal.clone(), move |_| told.send(()).is_ok());
+        thread::sleep(Duration::from_millis(200)); // a slow frame
+        drop(frame);
+        batches.recv_timeout(Duration::from_secs(5)).unwrap();
+        let terminal = terminal.lock().unwrap();
+        let text: String = (0..3).map(|col| terminal.grid.cell(0, col).ch).collect();
+        assert_eq!(text, "abc");
+        assert!(batches.try_recv().is_err(), "more than one batch");
+    }
 
     #[test]
     fn keys_that_end_the_line() {

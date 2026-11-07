@@ -253,6 +253,8 @@ pub struct App {
     last_click: Option<Instant>,
     /// The window is closing (see `close_window`): `about_to_wait` ends the event loop.
     quit: bool,
+    /// `KEL_FRAMES=1`: how long frames take, on stderr.
+    frames: crate::frames::FrameLog,
     /// Cmd+H on a Mac: hide Kel when the loop next can (it needs the loop).
     hide: bool,
     /// A close that asked "sure?" and waits for the second press.
@@ -464,6 +466,7 @@ impl App {
             mouse_on_bar: false,
             last_click: None,
             quit: false,
+            frames: crate::frames::FrameLog::from_env(),
             hide: false,
             pending_close: None,
             notice: None,
@@ -2367,6 +2370,7 @@ impl App {
             flash: self.flash_until.is_some(),
         };
         if let Some(renderer) = &mut self.renderer {
+            let started = Instant::now();
             renderer.draw(
                 &self.tabs[self.active].terminal.lock().unwrap().grid,
                 &self.layout,
@@ -2374,6 +2378,7 @@ impl App {
                 self.selection,
                 self.cursor_on,
             );
+            self.frames.add(started.elapsed());
         }
     }
 
