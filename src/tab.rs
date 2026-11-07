@@ -104,8 +104,10 @@ pub struct Tab {
     /// The project's command for the tab, e.g. `nvim .`: typed at start (see
     /// `type_at_start`), and saved with the project.
     pub start_command: Option<String>,
-    /// A command waiting for the shell to be ready, to be typed then (see
-    /// `type_when_ready`). Only once, and not saved with the project.
+    /// It's typed without Enter: yours starts it. Saved with the project.
+    pub wait: bool,
+    /// What waits for the shell to be ready, to be typed then, with its Enter if
+    /// it has one (see `type_when_ready`). Only once, and not saved with the project.
     to_type: Option<String>,
     /// New output since the tab was last on screen: a dot in the tab bar.
     pub activity: bool,
@@ -156,6 +158,7 @@ impl Tab {
             shell_name,
             started_in: cwd.map(Path::to_path_buf),
             start_command: None,
+            wait: false,
             to_type: None,
             activity: false,
             resized_at: Instant::now(),
@@ -204,10 +207,15 @@ impl Tab {
     }
 
     /// The project's command for this tab: typed at start (see `type_when_ready`),
-    /// and saved with the project.
-    pub fn type_at_start(&mut self, command: &str) {
+    /// and saved with the project. With `wait`, it stays in the line for your Enter.
+    pub fn type_at_start(&mut self, command: &str, wait: bool) {
         self.start_command = Some(command.to_string());
-        self.type_when_ready(command);
+        self.wait = wait;
+        if wait {
+            self.input_when_ready(command.to_string());
+        } else {
+            self.type_when_ready(command);
+        }
     }
 
     /// Types `command` and Enter into the shell, once it's ready for typing: at
@@ -215,10 +223,15 @@ impl Tab {
     /// up. The first prompt is when shell integration first reports the folder;
     /// a shell without it gets the command at once.
     pub fn type_when_ready(&mut self, command: &str) {
+        self.input_when_ready(format!("{command}\r"));
+    }
+
+    /// Types `text`, as it is, once the shell is ready (see `type_when_ready`).
+    fn input_when_ready(&mut self, text: String) {
         if shell_integration::reports_folder(&self.shell) {
-            self.to_type = Some(command.to_string());
+            self.to_type = Some(text);
         } else {
-            self.write(format!("{command}\r").as_bytes());
+            self.write(text.as_bytes());
         }
     }
 
@@ -227,8 +240,8 @@ impl Tab {
         if self.to_type.is_none() || self.terminal.lock().unwrap().cwd.is_none() {
             return;
         }
-        if let Some(command) = self.to_type.take() {
-            self.write(format!("{command}\r").as_bytes());
+        if let Some(text) = self.to_type.take() {
+            self.write(text.as_bytes());
         }
     }
 

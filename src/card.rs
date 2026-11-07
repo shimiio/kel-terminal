@@ -145,6 +145,8 @@ pub struct Field {
     /// A color's field: the colors ←→ choose from, before its `#hex`. `None`:
     /// no color of its own (gray, or the theme's accent). Empty for a text field.
     pub swatches: Vec<Option<u32>>,
+    /// A choice's field: what ←→ go through; it isn't typed. Empty for a text field.
+    pub choices: &'static [&'static str],
 }
 
 impl Field {
@@ -155,6 +157,7 @@ impl Field {
             note,
             text: TextField::new(text),
             swatches: Vec::new(),
+            choices: &[],
         }
     }
 
@@ -183,6 +186,9 @@ impl Field {
     /// be: a `#` at its start and at most 6 hex digits after it. The rest isn't
     /// typed: e.g. "#e0af68ff" pasted is "#e0af68".
     fn type_text(&mut self, text: &str) {
+        if !self.choices.is_empty() {
+            return;
+        }
         if self.swatches.is_empty() {
             return self.text.insert(text);
         }
@@ -204,6 +210,10 @@ impl Field {
     }
 }
 
+/// When a tab's command starts: the first as the project opens, the second
+/// when you press Enter on it.
+const STARTS: [&str; 2] = ["at once", "on Enter"];
+
 pub struct Card {
     pub target: Target,
     fields: Vec<Field>,
@@ -215,9 +225,15 @@ pub struct Card {
 }
 
 impl Card {
-    /// The card of tab `id`: its name, and in a project its command (home has no
-    /// file to keep one in).
-    pub fn tab(id: TabId, name: Option<&str>, command: Option<&str>, in_project: bool) -> Card {
+    /// The card of tab `id`: its name, and in a project its command and when it
+    /// starts (home has no file to keep them in).
+    pub fn tab(
+        id: TabId,
+        name: Option<&str>,
+        command: Option<&str>,
+        wait: bool,
+        in_project: bool,
+    ) -> Card {
         let name = name.unwrap_or("");
         let mut fields = vec![Field::text(
             "Name",
@@ -227,8 +243,13 @@ impl Card {
         )];
         if in_project {
             let command = command.unwrap_or("");
-            let note = "Runs when the project opens";
+            let note = "Typed when the project opens";
             fields.push(Field::text("Command", "none", note, command));
+            let note = "←→ at once, or wait for your Enter";
+            fields.push(Field {
+                choices: &STARTS,
+                ..Field::text("Start", "", note, STARTS[wait as usize])
+            });
         }
         Card {
             target: Target::Tab(id),
@@ -281,10 +302,33 @@ impl Card {
         self.focus = (self.focus as isize + step).rem_euclid(n) as usize;
     }
 
-    /// ←→ in a color's field: the next swatch (or the first, from a color of
-    /// its own), its `#hex` typed in. Returns `false` in a text field: there ←→
+    /// Whether the cursor is in a choice's field.
+    pub fn on_choice(&self) -> bool {
+        !self.fields[self.focus].choices.is_empty()
+    }
+
+    /// ←→: the next choice or swatch. Returns `false` in a text field: there ←→
     /// move the cursor.
-    pub fn step_swatch(&mut self, step: isize) -> bool {
+    pub fn step(&mut self, step: isize) -> bool {
+        self.step_choice(step) || self.step_swatch(step)
+    }
+
+    /// ←→ in a choice's field: the next one, round from the last to the first.
+    fn step_choice(&mut self, step: isize) -> bool {
+        let field = &mut self.fields[self.focus];
+        let n = field.choices.len() as isize;
+        if n == 0 {
+            return false;
+        }
+        let now = field.choices.iter().position(|&c| c == field.text.text());
+        let next = (now.unwrap_or(0) as isize + step).rem_euclid(n);
+        field.text = TextField::new(field.choices[next as usize]);
+        true
+    }
+
+    /// ←→ in a color's field: the next swatch (or the first, from a color of
+    /// its own), its `#hex` typed in. Returns `false` elsewhere.
+    fn step_swatch(&mut self, step: isize) -> bool {
         let field = &mut self.fields[self.focus];
         let n = field.swatches.len() as isize;
         if n == 0 {
@@ -298,6 +342,11 @@ impl Card {
         let hex = field.swatches[next as usize].map_or(String::new(), |c| format!("#{c:06x}"));
         field.text = TextField::new(&hex);
         true
+    }
+
+    /// Whether the field "Start" says the command waits for your Enter.
+    pub fn waits(&self) -> bool {
+        self.value("Start").as_deref() == Some(STARTS[1])
     }
 
     /// The color typed in the field "Color": `Err` if it isn't one.
@@ -425,22 +474,45 @@ mod tests {
 
     #[test]
     fn a_tab_s_card() {
-        let mut card = Card::tab(3, Some("server"), Some("npm run dev"), true);
-        assert_eq!(card.fields().len(), 2);
+        let mut card = Card::tab(3, Some("server"), Some("npm run dev"), false, true);
+        assert_eq!(card.fields().len(), 3);
         card.next_field(1);
         card.focused().insert(" -- --port 4000");
         assert_eq!(
             card.value("Command"),
             Some("npm run dev -- --port 4000".into())
         );
-        card.next_field(1); // round to the name
+        card.next_field(-1); // back to the name
         card.focused().jump(false);
         card.focused().delete();
         assert_eq!(card.value("Name"), Some("erver".into()));
         // Home: no command.
-        let card = Card::tab(1, None, None, false);
+        let card = Card::tab(1, None, None, false, false);
         assert!(!card.has("Command"));
+        assert!(!card.has("Start"));
         assert_eq!(card.value("Name"), None);
+    }
+
+    #[test]
+    fn when_a_tab_s_command_starts() {
+        let mut card = Card::tab(3, None, Some("npm run dev"), false, true);
+        assert!(!card.waits());
+        // In a text field ←→ move the cursor.
+        assert!(!card.step(1));
+        assert!(!card.on_choice());
+        card.next_field(2);
+        assert!(card.on_choice());
+        assert!(card.step(1));
+        assert!(card.waits());
+        // It isn't typed; and it goes round, both ways.
+        card.type_text("x");
+        assert_eq!(card.value("Start"), Some("on Enter".into()));
+        assert!(card.step(1));
+        assert!(!card.waits());
+        assert!(card.step(-1));
+        assert!(card.waits());
+        // What the project's file said comes back.
+        assert!(Card::tab(3, None, Some("npm run dev"), true, true).waits());
     }
 
     #[test]
@@ -521,7 +593,7 @@ mod tests {
         let far = rect(Rect { x: 700, ..tab }, window, 1.0, 2);
         assert_eq!(far.x, 572);
         // Fields at 52..82 and 82..112.
-        let card_ = Card::tab(1, None, None, true);
+        let card_ = Card::project("kel", None, &[]);
         assert_eq!(card_.field_at(card, 1.0, 100, 60), Some(0));
         assert_eq!(card_.field_at(card, 1.0, 100, 90), Some(1));
         assert_eq!(card_.field_at(card, 1.0, 100, 130), None); // the keys' line

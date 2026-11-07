@@ -1363,7 +1363,8 @@ fn draw_card(
             let fg = theme.foreground;
             draw_ui_text(pixels, width, font, ui, &shown, (tx, text_y), text_w, fg);
         }
-        if focused {
+        // A choice has no cursor: it isn't typed.
+        if focused && field.choices.is_empty() {
             let cx = tx + cursor * ui.advance;
             fill_rect(pixels, width, cx, text_y, ui.px(2), ui.line_h, theme.cursor);
         }

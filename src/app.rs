@@ -415,7 +415,7 @@ impl App {
             tab.name = recipe.name.clone();
             tab.own_shell = recipe.shell.clone();
             if let Some(command) = &recipe.command {
-                tab.type_at_start(command);
+                tab.type_at_start(command, recipe.wait);
             }
         }
         let next_id = recipes.len() as TabId;
@@ -1057,7 +1057,7 @@ impl App {
                     tab.name = recipe.name.clone();
                     tab.own_shell = recipe.shell.clone();
                     if let Some(command) = &recipe.command {
-                        tab.type_at_start(command);
+                        tab.type_at_start(command, recipe.wait);
                     }
                     tabs.push(tab);
                 }
@@ -1525,7 +1525,8 @@ impl App {
         };
         let name = tab.name.as_deref();
         let command = tab.start_command.as_deref();
-        self.card = Some(Card::tab(tab.id, name, command, self.project.is_some()));
+        let in_project = self.project.is_some();
+        self.card = Some(Card::tab(tab.id, name, command, tab.wait, in_project));
         self.palette = None;
         self.search = None;
         self.sidebar = None;
@@ -1570,14 +1571,16 @@ impl App {
         card.error = None;
         match &event.logical_key {
             Key::Named(NamedKey::Escape) => self.card = None,
-            Key::Named(NamedKey::ArrowLeft) if card.step_swatch(-1) => {}
-            Key::Named(NamedKey::ArrowRight) if card.step_swatch(1) => {}
+            Key::Named(NamedKey::ArrowLeft) if card.step(-1) => {}
+            Key::Named(NamedKey::ArrowRight) if card.step(1) => {}
             Key::Named(NamedKey::Enter) => self.apply_card(),
             Key::Named(NamedKey::Tab) => card.next_field(if shift { -1 } else { 1 }),
             Key::Named(NamedKey::ArrowUp) => card.next_field(-1),
             Key::Named(NamedKey::ArrowDown) => card.next_field(1),
             Key::Named(NamedKey::ArrowLeft) => card.focused().move_cursor(-1),
             Key::Named(NamedKey::ArrowRight) => card.focused().move_cursor(1),
+            // A choice isn't typed: ←→ change it.
+            Key::Named(NamedKey::Backspace | NamedKey::Delete) if card.on_choice() => {}
             Key::Named(NamedKey::Home) => card.focused().jump(false),
             Key::Named(NamedKey::End) => card.focused().jump(true),
             Key::Named(NamedKey::Backspace) if word => card.focused().backspace_word(),
@@ -1633,6 +1636,7 @@ impl App {
         tab.name = card.value("Name");
         if card.has("Command") {
             tab.start_command = card.value("Command");
+            tab.wait = card.waits();
         }
         if let Err(e) = self.save_project() {
             self.set_status(Some(format!("{e:#}")));
@@ -2035,6 +2039,7 @@ fn save_tabs(open: &OpenProject, tabs: &[Tab]) -> anyhow::Result<()> {
         name: tab.name.clone(),
         folder: tab.cwd().and_then(|cwd| project.tab_folder(&cwd)),
         command: tab.start_command.clone(),
+        wait: tab.wait && tab.start_command.is_some(),
         shell: tab.own_shell.clone(),
     });
     project.tabs = tabs.collect();

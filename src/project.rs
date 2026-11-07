@@ -17,6 +17,11 @@
 //! command = "nvim ."
 //!
 //! [[tab]]
+//! name = "server"
+//! command = "npm run dev"
+//! wait = true       # typed, not run: Enter, when its turn comes
+//!
+//! [[tab]]
 //! folder = "docs"   # inside the project's folder
 //!
 //! [[tab]]
@@ -83,6 +88,10 @@ pub struct TabRecipe {
     /// Typed into the shell once it's ready, e.g. `nvim .`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// The command stays in the line, not run: your Enter starts it, when
+    /// something it needs is up. Not written while it's `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wait: bool,
     /// This tab's own shell, e.g. `wsl.exe -d Ubuntu`: not the project's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shell: Option<String>,
@@ -684,6 +693,27 @@ shell = \"wsl.exe -d Ubuntu\"
         assert!(saved.contains("shell = \"pwsh.exe -NoLogo\""), "{saved}");
         assert!(saved.contains("shell = \"wsl.exe -d Ubuntu\""), "{saved}");
         assert!(!plain.to_file().unwrap().contains("shell"));
+    }
+
+    #[test]
+    fn a_command_that_waits() {
+        let text = "folder = 'C:\\code'
+
+[[tab]]
+command = \"npm run dev\"
+wait = true
+
+[[tab]]
+command = \"nvim .\"
+";
+        let project: Project = config::parse_toml("kel.toml", text).unwrap();
+        assert!(project.tabs[0].wait);
+        // Without the line it runs at once, as it always did.
+        assert!(!project.tabs[1].wait);
+        // Only the one that waits gets a line in the file.
+        let saved = project.to_file().unwrap();
+        assert_eq!(saved.matches("wait").count(), 1, "{saved}");
+        assert!(saved.contains("wait = true"), "{saved}");
     }
 
     #[test]

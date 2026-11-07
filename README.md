@@ -111,8 +111,8 @@ type in the palette: `Save the tabs as project: myapp`. Then:
 
 - `kel myapp` in any shell opens it, or the sidebar, or the palette's `Open project`;
 - "Open in Kel" on its folder in Explorer opens it too;
-- double-click a tab to name it and give it a command; F2 on a project in the sidebar
-  for its name and color.
+- double-click a tab to name it, give it a command, and say when that starts; F2 on a
+  project in the sidebar for its name and color.
 
 A project is a file in `%APPDATA%\kel\projects`, `myapp.toml`. You can write one by hand:
 
@@ -126,8 +126,9 @@ name = "editor"      # shown in the tab bar instead of the program's title
 command = "nvim ."   # typed into the shell once it's ready, as if you did
 
 [[tab]]
-name = "run"
-command = "cargo run"
+name = "server"
+command = "npm run dev"
+wait = true          # typed, not run: press Enter when its turn comes
 
 [[tab]]
 folder = "docs"      # inside the project's folder; a full path works too
