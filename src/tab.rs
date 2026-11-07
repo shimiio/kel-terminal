@@ -106,6 +106,8 @@ pub struct Tab {
     pub start_command: Option<String>,
     /// It's typed without Enter: yours starts it. Saved with the project.
     pub wait: bool,
+    /// It stands in the shell's line now, typed and not run (see `wait`).
+    command_in_line: bool,
     /// What waits for the shell to be ready, to be typed then, with its Enter if
     /// it has one (see `type_when_ready`). Only once, and not saved with the project.
     to_type: Option<String>,
@@ -159,6 +161,7 @@ impl Tab {
             started_in: cwd.map(Path::to_path_buf),
             start_command: None,
             wait: false,
+            command_in_line: false,
             to_type: None,
             activity: false,
             resized_at: Instant::now(),
@@ -212,6 +215,7 @@ impl Tab {
         self.start_command = Some(command.to_string());
         self.wait = wait;
         if wait {
+            self.command_in_line = true;
             self.input_when_ready(command.to_string());
         } else {
             self.type_when_ready(command);
@@ -226,13 +230,37 @@ impl Tab {
         self.input_when_ready(format!("{command}\r"));
     }
 
-    /// Types `text`, as it is, once the shell is ready (see `type_when_ready`).
+    /// Types `text`, as it is, once the shell is ready (see `type_when_ready`). A
+    /// shell that's been ready for long sends nothing more: it gets it now.
     fn input_when_ready(&mut self, text: String) {
-        if shell_integration::reports_folder(&self.shell) {
+        let starting = self.terminal.lock().unwrap().cwd.is_none();
+        if shell_integration::reports_folder(&self.shell) && starting {
             self.to_type = Some(text);
         } else {
             self.write(text.as_bytes());
         }
+    }
+
+    /// Runs the project's command now. One that stands in the line needs only
+    /// its Enter: typed again, it would be there twice.
+    pub fn run_start_command(&mut self) {
+        let Some(command) = self.start_command.clone() else {
+            return;
+        };
+        if std::mem::take(&mut self.command_in_line) && self.to_type.is_none() {
+            self.write(b"\r");
+        } else {
+            self.type_when_ready(&command);
+        }
+    }
+
+    /// Sends what you typed to the shell. Enter or Ctrl+C: the line is gone, and
+    /// the command that stood in it.
+    pub fn send_typed(&mut self, bytes: &[u8]) {
+        if ends_the_line(bytes) {
+            self.command_in_line = false;
+        }
+        self.write(bytes);
     }
 
     /// Called on new output: if the shell is ready now, types the waiting command.
@@ -393,9 +421,22 @@ fn spawn_waiter(
     });
 }
 
+/// Whether these keys leave the shell's line: Enter (`\r`) or Ctrl+C.
+fn ends_the_line(bytes: &[u8]) -> bool {
+    bytes.iter().any(|b| matches!(b, b'\r' | 0x03))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keys_that_end_the_line() {
+        assert!(ends_the_line(b"\r"));
+        assert!(ends_the_line(&[0x03]));
+        assert!(!ends_the_line(b" --port 4000"));
+        assert!(!ends_the_line(&[0x7f])); // Backspace: the line stays
+    }
 
     #[test]
     fn command_ended_unseen() {

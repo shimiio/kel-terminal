@@ -25,6 +25,8 @@ pub enum Action {
     Copy,
     /// Ctrl+C: stop the running command.
     Interrupt,
+    /// Runs the project's command of the tab on screen, now.
+    RunTabCommand,
     ZoomIn,
     ZoomOut,
     ZoomReset,
@@ -168,6 +170,7 @@ fn pc_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
         (KeyCode::KeyF, true) => Action::Find,
         (KeyCode::KeyB, true) => Action::Sidebar, // like VS Code's Ctrl+B
         (KeyCode::KeyH, true) => Action::OpenHome,
+        (KeyCode::KeyR, true) => Action::RunTabCommand,
         // Ctrl+? : the question mark's key. Not F1, which programs have (htop,
         // mc, nvim: their own help); not Ctrl+/ alone, which nvim plugins use.
         (KeyCode::Slash, true) => Action::Help,
@@ -229,6 +232,7 @@ fn mac_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
         (KeyCode::KeyB, false) => Action::Sidebar,
         // Cmd+H alone hides, on every Mac.
         (KeyCode::KeyH, true) => Action::OpenHome,
+        (KeyCode::KeyR, false) => Action::RunTabCommand,
         // Cmd+?, as the Help menu of Mac apps.
         (KeyCode::Slash, true) => Action::Help,
         (KeyCode::KeyQ, false) => Action::Quit,
@@ -314,6 +318,12 @@ fn palette_items_on(mac: bool) -> Vec<Item> {
             "Ctrl+Alt+←",
             "Cmd+Option+←",
             Action::PreviousProject,
+        ),
+        item(
+            "Run the tab's command",
+            "Ctrl+Shift+R",
+            "Cmd+R",
+            Action::RunTabCommand,
         ),
         item(
             "Stop the running command",
@@ -791,6 +801,7 @@ mod tests {
             "C" => KeyCode::KeyC,
             "F" => KeyCode::KeyF,
             "H" => KeyCode::KeyH,
+            "R" => KeyCode::KeyR,
             "M" => KeyCode::KeyM,
             "P" => KeyCode::KeyP,
             "Q" => KeyCode::KeyQ,
@@ -826,6 +837,7 @@ mod tests {
         assert_eq!(mac(KeyCode::KeyH, cmd_shift), Some(Action::OpenHome));
         assert_eq!(mac(KeyCode::Tab, CTRL), Some(Action::NextTab));
         // Ctrl+T, Ctrl+Shift+T, Ctrl+R: the shell's on a Mac.
+        assert_eq!(mac(KeyCode::KeyR, CTRL), None);
         assert_eq!(mac(KeyCode::KeyT, CTRL), None);
         assert_eq!(mac(KeyCode::KeyT, CTRL_SHIFT), None);
         assert_eq!(mac(KeyCode::KeyR, CTRL), None);

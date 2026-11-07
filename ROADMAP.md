@@ -101,6 +101,8 @@ tab merging into the panel, other tabs muted. Sizes and colors live in one place
       by name: `kel <name>`
 - [x] A tab's command that waits (`wait = true`, or `Start` on its card): typed when the
       project opens, not run; your Enter starts it, when what it needs is up
+- [x] Run the tab's command now (Ctrl+Shift+R, or the palette): one that waits, a new one
+      from the card, or again after it ended. Not while a command runs there
 - [x] Save the project when the window closes: its tabs, each in its last folder
 - [x] `kel` from any shell: the exe is `kel.exe`, and `install.ps1` puts it on the PATH
 

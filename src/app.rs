@@ -257,6 +257,9 @@ pub struct App {
     hide: bool,
     /// A close that asked "sure?" and waits for the second press.
     pending_close: Option<PendingClose>,
+    /// Why a key did nothing, and until when it says so: where a question goes,
+    /// for `CONFIRM_TIME`. Not a problem, so not the status, which stays.
+    notice: Option<(String, Instant)>,
     /// The mouse is at the window's edge: pressing there resizes the window this way.
     resize_edge: Option<ResizeDirection>,
     /// Something went wrong (a config error...), shown in the tab bar until it's fixed.
@@ -463,6 +466,7 @@ impl App {
             quit: false,
             hide: false,
             pending_close: None,
+            notice: None,
             resize_edge: None,
             status,
             project: project_name
@@ -533,7 +537,28 @@ impl App {
         if self.selection.take().is_some() {
             self.request_redraw();
         }
-        self.tab_mut().write(bytes);
+        self.tab_mut().send_typed(bytes);
+    }
+
+    /// Ctrl+Shift+R: the tab's command, now: one that waits for its turn, or
+    /// again after it ended. Not over a program that runs: it would get the
+    /// letters as keys.
+    fn run_tab_command(&mut self) {
+        let tab = self.tab();
+        let refused = if tab.start_command.is_none() {
+            Some("no command in this tab")
+        } else if tab.command.running() {
+            Some("a command runs in this tab")
+        } else {
+            None
+        };
+        if let Some(refused) = refused {
+            self.notice = Some((refused.to_string(), Instant::now() + CONFIRM_TIME));
+            return self.request_redraw();
+        }
+        self.selection = None;
+        self.tab_mut().run_start_command();
+        self.request_redraw();
     }
 
     /// Opens a new tab at the end, the same size as the others and in the current
@@ -1307,6 +1332,7 @@ impl App {
             Action::Paste => self.paste(),
             Action::Copy => self.copy(),
             Action::Interrupt => self.send_to_shell(&[0x03]), // the byte Ctrl+C stands for
+            Action::RunTabCommand => self.run_tab_command(),
             Action::ZoomIn => self.zoom(1.0),
             Action::ZoomOut => self.zoom(-1.0),
             Action::ZoomReset => self.set_font_size(self.config.font_size),
@@ -1604,8 +1630,8 @@ impl App {
     }
 
     /// Enter, or a click outside the card: what's typed is kept. A tab's name and
-    /// command go into the project's file at once. The command runs the next
-    /// time the project opens, not now.
+    /// command go into the project's file at once. The command starts the next
+    /// time the project opens, or with Ctrl+Shift+R: not now.
     fn apply_card(&mut self) {
         let Some(mut card) = self.card.take() else {
             return;
@@ -2227,6 +2253,14 @@ impl ApplicationHandler<UserEvent> for App {
             {
                 self.pending_close = None;
             }
+            if self
+                .notice
+                .as_ref()
+                .is_some_and(|(_, until)| Instant::now() >= *until)
+            {
+                self.notice = None;
+                self.request_redraw();
+            }
         }
         self.peek();
         // The bell's flash is over.
@@ -2310,7 +2344,11 @@ impl App {
             mouse_on_bar: self.mouse_on_bar,
             maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),
             status: self.status.as_deref(),
-            question: self.pending_close.as_ref().map(|p| p.message.as_str()),
+            question: self
+                .pending_close
+                .as_ref()
+                .map(|p| p.message.as_str())
+                .or(self.notice.as_ref().map(|(text, _)| text.as_str())),
             palette: self.palette.as_ref(),
             search: self.search.as_ref(),
             project: self.project.as_ref().map(|p| (p.name.as_str(), p.color)),
