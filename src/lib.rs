@@ -9,7 +9,8 @@
 //!            (pixels)      (cells)        (escape codes → Grid calls)
 //! ```
 //!
-//! - `app`: the window and all events. Owns everything else.
+//! - `app`: the window and all events. Owns everything else. Its parts are in
+//!   `app/` (events, mouse, tabs, workspaces, overlays, actions).
 //! - `keys`: Kel's shortcuts, and the bytes other keys send to the shell.
 //! - `config`: the settings file, `%APPDATA%\kel\config.toml` (Linux, macOS: `~/.config/kel`).
 //! - `fallback`: fonts for the letters the terminal's font lacks (emoji, Chinese).
