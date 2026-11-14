@@ -43,7 +43,7 @@ impl App {
         let name = tab.name.as_deref();
         let command = tab.start_command.as_deref();
         let in_project = self.project.is_some();
-        self.card = Some(Card::tab(tab.id, name, command, tab.wait, in_project));
+        self.card = Some(Card::tab(tab.id, name, command, tab.start, in_project));
         self.palette = None;
         self.search = None;
         self.sidebar = None;
@@ -153,7 +153,7 @@ impl App {
         tab.name = card.value("Name");
         if card.has("Command") {
             tab.start_command = card.value("Command");
-            tab.wait = card.waits();
+            tab.start = card.start();
         }
         if let Err(e) = self.save_project() {
             self.set_status(Some(format!("{e:#}")));

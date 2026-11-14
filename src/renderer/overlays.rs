@@ -371,7 +371,7 @@ pub(super) fn draw_card(
     // Under the fields: what the one with the cursor does, and the keys. Or,
     // in red, why what's typed can't be kept.
     let n = card.fields().len();
-    let note = card.fields()[card.focus()].note;
+    let note = card.note();
     let y = card::hint_y(rect, layout.scale, n) + ui.px(6);
     let w = rect.w.saturating_sub(2 * pad);
     let at = (rect.x + 2 * pad, y);

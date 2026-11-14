@@ -95,7 +95,7 @@ Option types its letters, as on any Mac; `option_as_alt = true` makes it Alt.
 | Ctrl+Shift+B | The sidebar of projects |
 | Ctrl+Alt+→ / ← | The next / previous open project |
 | Ctrl+Shift+H | Home |
-| Ctrl+Shift+R | Run the tab's command: when its turn comes, or again after it ended |
+| Ctrl+Shift+R | Run the tab's command: when its turn comes, when you want it (`start = "key"`), or again after it ended |
 | Ctrl+Shift+P | The command palette: all Kel does, found by a few letters (`ntb`: New tab) |
 | Ctrl+Shift+C / Ctrl+Shift+V | Copy / paste. Ctrl+C and Ctrl+V go to the program, as nvim wants them |
 | Ctrl+Shift+F | Find in the output |
@@ -129,7 +129,12 @@ command = "nvim ."   # typed into the shell once it's ready, as if you did
 [[tab]]
 name = "server"
 command = "npm run dev"
-wait = true          # typed, not run: press Enter when its turn comes
+start = "enter"      # typed, not run: press Enter when its turn comes
+
+[[tab]]
+name = "deploy"
+command = "git push"
+start = "key"        # not typed: Ctrl+Shift+R runs it, when you want it
 
 [[tab]]
 folder = "docs"      # inside the project's folder; a full path works too

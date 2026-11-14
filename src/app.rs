@@ -426,7 +426,7 @@ impl App {
             tab.name = recipe.name.clone();
             tab.own_shell = recipe.shell.clone();
             if let Some(command) = &recipe.command {
-                tab.type_at_start(command, recipe.wait);
+                tab.type_at_start(command, recipe.start);
             }
         }
         let next_id = recipes.len() as TabId;

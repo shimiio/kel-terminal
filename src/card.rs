@@ -14,7 +14,9 @@
 //! Only its state and where its fields are live here: `App` sends the keys and
 //! the clicks and saves what's typed, `renderer` draws it.
 
+use crate::keys::{self, Action};
 use crate::layout::{Rect, scaled};
+use crate::project::When;
 use crate::tab::TabId;
 use crate::theme;
 
@@ -212,7 +214,9 @@ impl Field {
 
 /// When a tab's command starts: the first as the project opens, the second
 /// when you press Enter on it.
-const STARTS: [&str; 2] = ["at once", "on Enter"];
+const STARTS: [&str; 3] = ["at once", "on Enter", "by key"];
+/// What each of `STARTS` is in the project's file.
+const WHENS: [When; 3] = [When::Now, When::Enter, When::Key];
 
 pub struct Card {
     pub target: Target,
@@ -231,7 +235,7 @@ impl Card {
         id: TabId,
         name: Option<&str>,
         command: Option<&str>,
-        wait: bool,
+        start: When,
         in_project: bool,
     ) -> Card {
         let name = name.unwrap_or("");
@@ -243,12 +247,13 @@ impl Card {
         )];
         if in_project {
             let command = command.unwrap_or("");
-            let note = "Typed when the project opens";
+            let note = "Start says when it runs";
             fields.push(Field::text("Command", "none", note, command));
-            let note = "←→ at once, or wait for your Enter";
+            let chosen = WHENS.iter().position(|&when| when == start).unwrap_or(0);
+            // Its note is the chosen one's (see `note`).
             fields.push(Field {
                 choices: &STARTS,
-                ..Field::text("Start", "", note, STARTS[wait as usize])
+                ..Field::text("Start", "", "", STARTS[chosen])
             });
         }
         Card {
@@ -275,6 +280,21 @@ impl Card {
             fields: vec![Field::text("Name", "a name", note, name), color],
             focus: 0,
             error: None,
+        }
+    }
+
+    /// Under the fields: what the one with the cursor does. "Start" says what
+    /// the chosen one means, one at a time: the three wouldn't fit in a line.
+    /// The key by its name here (Cmd+R on a Mac), from the shortcuts' table.
+    pub fn note(&self) -> String {
+        let field = &self.fields[self.focus];
+        if field.label != "Start" {
+            return field.note.to_string();
+        }
+        match self.start() {
+            When::Now => "←→ runs as the project opens".into(),
+            When::Enter => "←→ typed, waits for your Enter".into(),
+            When::Key => format!("←→ only by {}", keys::hint(&Action::RunTabCommand)),
         }
     }
 
@@ -344,9 +364,11 @@ impl Card {
         true
     }
 
-    /// Whether the field "Start" says the command waits for your Enter.
-    pub fn waits(&self) -> bool {
-        self.value("Start").as_deref() == Some(STARTS[1])
+    /// What the field "Start" says: when the command starts.
+    pub fn start(&self) -> When {
+        let value = self.value("Start");
+        let chosen = STARTS.iter().position(|&s| Some(s) == value.as_deref());
+        chosen.map_or(When::Now, |i| WHENS[i])
     }
 
     /// The color typed in the field "Color": `Err` if it isn't one.
@@ -474,7 +496,7 @@ mod tests {
 
     #[test]
     fn a_tab_s_card() {
-        let mut card = Card::tab(3, Some("server"), Some("npm run dev"), false, true);
+        let mut card = Card::tab(3, Some("server"), Some("npm run dev"), When::Now, true);
         assert_eq!(card.fields().len(), 3);
         card.next_field(1);
         card.focused().insert(" -- --port 4000");
@@ -487,7 +509,7 @@ mod tests {
         card.focused().delete();
         assert_eq!(card.value("Name"), Some("erver".into()));
         // Home: no command.
-        let card = Card::tab(1, None, None, false, false);
+        let card = Card::tab(1, None, None, When::Now, false);
         assert!(!card.has("Command"));
         assert!(!card.has("Start"));
         assert_eq!(card.value("Name"), None);
@@ -495,24 +517,34 @@ mod tests {
 
     #[test]
     fn when_a_tab_s_command_starts() {
-        let mut card = Card::tab(3, None, Some("npm run dev"), false, true);
-        assert!(!card.waits());
+        let mut card = Card::tab(3, None, Some("npm run dev"), When::Now, true);
+        assert_eq!(card.start(), When::Now);
         // In a text field ←→ move the cursor.
         assert!(!card.step(1));
         assert!(!card.on_choice());
         card.next_field(2);
         assert!(card.on_choice());
+        assert!(card.note().contains("opens"), "{}", card.note());
         assert!(card.step(1));
-        assert!(card.waits());
+        assert_eq!(card.start(), When::Enter);
+        assert!(card.note().contains("Enter"), "{}", card.note());
         // It isn't typed; and it goes round, both ways.
         card.type_text("x");
         assert_eq!(card.value("Start"), Some("on Enter".into()));
         assert!(card.step(1));
-        assert!(!card.waits());
+        assert_eq!(card.start(), When::Key);
+        assert_eq!(card.value("Start"), Some("by key".into()));
+        // Its note names the key that runs it.
+        assert!(card.note().ends_with("+R"), "{}", card.note());
+        assert!(card.step(1));
+        assert_eq!(card.start(), When::Now);
         assert!(card.step(-1));
-        assert!(card.waits());
+        assert_eq!(card.start(), When::Key);
         // What the project's file said comes back.
-        assert!(Card::tab(3, None, Some("npm run dev"), true, true).waits());
+        for when in [When::Now, When::Enter, When::Key] {
+            let card = Card::tab(3, None, Some("git push"), when, true);
+            assert_eq!(card.start(), when);
+        }
     }
 
     #[test]

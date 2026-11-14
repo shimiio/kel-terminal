@@ -2,7 +2,7 @@
 //! starting, saving, closing, deleting one.
 
 use super::{App, COLS, Closing, OpenProject, ROWS, Workspace};
-use crate::project::{self, Project, TabRecipe};
+use crate::project::{self, Project, TabRecipe, When};
 use crate::sidebar::Live;
 use crate::start::{self, Start};
 use crate::tab::{Tab, TabId};
@@ -315,7 +315,7 @@ impl App {
                     tab.name = recipe.name.clone();
                     tab.own_shell = recipe.shell.clone();
                     if let Some(command) = &recipe.command {
-                        tab.type_at_start(command, recipe.wait);
+                        tab.type_at_start(command, recipe.start);
                     }
                     tabs.push(tab);
                 }
@@ -435,7 +435,8 @@ pub(super) fn save_tabs(open: &OpenProject, tabs: &[Tab]) -> anyhow::Result<()> 
         name: tab.name.clone(),
         folder: tab.cwd().and_then(|cwd| project.tab_folder(&cwd)),
         command: tab.start_command.clone(),
-        wait: tab.wait && tab.start_command.is_some(),
+        // Without a command there's nothing to start: no line.
+        start: tab.start_command.as_ref().map_or(When::Now, |_| tab.start),
         shell: tab.own_shell.clone(),
     });
     project.tabs = tabs.collect();

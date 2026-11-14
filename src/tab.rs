@@ -15,6 +15,7 @@
 
 use crate::app::UserEvent;
 use crate::icons;
+use crate::project::When;
 use crate::pty;
 use crate::shell_integration;
 use crate::term::{Mark, Terminal};
@@ -105,9 +106,10 @@ pub struct Tab {
     /// The project's command for the tab, e.g. `nvim .`: typed at start (see
     /// `type_at_start`), and saved with the project.
     pub start_command: Option<String>,
-    /// It's typed without Enter: yours starts it. Saved with the project.
-    pub wait: bool,
-    /// It stands in the shell's line now, typed and not run (see `wait`).
+    /// When it starts: at once, on your Enter, or only by Ctrl+Shift+R. Saved
+    /// with the project.
+    pub start: When,
+    /// It stands in the shell's line now, typed and not run (`When::Enter`).
     command_in_line: bool,
     /// What waits for the shell to be ready, to be typed then, with its Enter if
     /// it has one (see `type_when_ready`). Only once, and not saved with the project.
@@ -161,7 +163,7 @@ impl Tab {
             shell_name,
             started_in: cwd.map(Path::to_path_buf),
             start_command: None,
-            wait: false,
+            start: When::Now,
             command_in_line: false,
             to_type: None,
             activity: false,
@@ -210,16 +212,20 @@ impl Tab {
         icons::pick(&self.title, line, self.name.as_deref())
     }
 
-    /// The project's command for this tab: typed at start (see `type_when_ready`),
-    /// and saved with the project. With `wait`, it stays in the line for your Enter.
-    pub fn type_at_start(&mut self, command: &str, wait: bool) {
+    /// The project's command for this tab, saved with the project. `start` says
+    /// what happens to it now, as the project opens: typed and run (see
+    /// `type_when_ready`), typed and left in the line for your Enter, or
+    /// nothing: kept for Ctrl+Shift+R (see `run_start_command`).
+    pub fn type_at_start(&mut self, command: &str, start: When) {
         self.start_command = Some(command.to_string());
-        self.wait = wait;
-        if wait {
-            self.command_in_line = true;
-            self.input_when_ready(command.to_string());
-        } else {
-            self.type_when_ready(command);
+        self.start = start;
+        match start {
+            When::Now => self.type_when_ready(command),
+            When::Enter => {
+                self.command_in_line = true;
+                self.input_when_ready(command.to_string());
+            }
+            When::Key => {}
         }
     }
 

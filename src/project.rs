@@ -19,7 +19,12 @@
 //! [[tab]]
 //! name = "server"
 //! command = "npm run dev"
-//! wait = true       # typed, not run: Enter, when its turn comes
+//! start = "enter"   # typed, not run: Enter, when its turn comes
+//!
+//! [[tab]]
+//! name = "deploy"
+//! command = "git push"
+//! start = "key"     # not typed: Ctrl+Shift+R runs it, when you want it
 //!
 //! [[tab]]
 //! folder = "docs"   # inside the project's folder
@@ -74,10 +79,31 @@ pub struct Project {
     pub tabs: Vec<TabRecipe>,
 }
 
+/// When a tab's command starts: `start` in its `[[tab]]`, "Start" on its card.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum When {
+    /// Typed and run when the project opens. What no line means.
+    #[default]
+    Now,
+    /// Typed, not run: it stays in the line, your Enter starts it, when
+    /// something it needs is up.
+    Enter,
+    /// Not typed at all, only kept: Ctrl+Shift+R (or the palette) runs it when
+    /// you want it. For what's run now and then: a deploy, the tests.
+    Key,
+}
+
+impl When {
+    fn is_now(&self) -> bool {
+        *self == When::Now
+    }
+}
+
 /// One tab of a project. Every line is optional: `[[tab]]` alone is a shell in
 /// the project's folder.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "TabFile")]
 pub struct TabRecipe {
     /// Shown in the tab bar instead of the program's title.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -88,13 +114,41 @@ pub struct TabRecipe {
     /// Typed into the shell once it's ready, e.g. `nvim .`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
-    /// The command stays in the line, not run: your Enter starts it, when
-    /// something it needs is up. Not written while it's `false`.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub wait: bool,
+    /// When the command starts. Not written while it's at once.
+    #[serde(skip_serializing_if = "When::is_now")]
+    pub start: When,
     /// This tab's own shell, e.g. `wsl.exe -d Ubuntu`: not the project's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shell: Option<String>,
+}
+
+/// A `[[tab]]` as files have it: `TabRecipe`'s lines, and `wait = true`, which
+/// said `start = "enter"` before there was `start` (Kel 0.2). Read, so those
+/// files still open; written as `start` the next time Kel saves the project.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TabFile {
+    name: Option<String>,
+    folder: Option<PathBuf>,
+    command: Option<String>,
+    start: Option<When>,
+    #[serde(default)]
+    wait: bool,
+    shell: Option<String>,
+}
+
+impl From<TabFile> for TabRecipe {
+    fn from(file: TabFile) -> TabRecipe {
+        // `start` wins where a file has both.
+        let old = if file.wait { When::Enter } else { When::Now };
+        TabRecipe {
+            name: file.name,
+            folder: file.folder,
+            command: file.command,
+            start: file.start.unwrap_or(old),
+            shell: file.shell,
+        }
+    }
 }
 
 impl Project {
@@ -696,7 +750,39 @@ shell = \"wsl.exe -d Ubuntu\"
     }
 
     #[test]
-    fn a_command_that_waits() {
+    fn when_a_command_starts() {
+        let text = "folder = 'C:\\code'
+
+[[tab]]
+command = \"npm run dev\"
+start = \"enter\"
+
+[[tab]]
+command = \"nvim .\"
+
+[[tab]]
+command = \"git push\"
+start = \"key\"
+";
+        let project: Project = config::parse_toml("kel.toml", text).unwrap();
+        assert_eq!(project.tabs[0].start, When::Enter);
+        // Without the line it runs at once, as it always did.
+        assert_eq!(project.tabs[1].start, When::Now);
+        assert_eq!(project.tabs[2].start, When::Key);
+        // Only those that don't get a line in the file.
+        let saved = project.to_file().unwrap();
+        assert_eq!(saved.matches("start").count(), 2, "{saved}");
+        assert!(saved.contains("start = \"enter\""), "{saved}");
+        assert!(saved.contains("start = \"key\""), "{saved}");
+        // A word that isn't one of them: an error that names them.
+        let bad = text.replace("\"key\"", "\"later\"");
+        let e = config::parse_toml::<Project>("kel.toml", &bad).unwrap_err();
+        assert!(format!("{e:#}").contains("`now`, `enter`, `key`"), "{e:#}");
+    }
+
+    #[test]
+    fn the_old_wait_still_reads() {
+        // Kel 0.2's files: `wait = true` was `start = "enter"`.
         let text = "folder = 'C:\\code'
 
 [[tab]]
@@ -705,15 +791,21 @@ wait = true
 
 [[tab]]
 command = \"nvim .\"
+wait = false
+
+[[tab]]
+command = \"git push\"
+wait = true
+start = \"key\"
 ";
         let project: Project = config::parse_toml("kel.toml", text).unwrap();
-        assert!(project.tabs[0].wait);
-        // Without the line it runs at once, as it always did.
-        assert!(!project.tabs[1].wait);
-        // Only the one that waits gets a line in the file.
+        assert_eq!(project.tabs[0].start, When::Enter);
+        assert_eq!(project.tabs[1].start, When::Now);
+        assert_eq!(project.tabs[2].start, When::Key); // `start` wins
+        // Saved the new way.
         let saved = project.to_file().unwrap();
-        assert_eq!(saved.matches("wait").count(), 1, "{saved}");
-        assert!(saved.contains("wait = true"), "{saved}");
+        assert!(!saved.contains("wait"), "{saved}");
+        assert!(saved.contains("start = \"enter\""), "{saved}");
     }
 
     #[test]
