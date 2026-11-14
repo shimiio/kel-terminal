@@ -25,7 +25,8 @@
 //! - `pty`: starts the shell inside a pseudo-terminal.
 //! - `shell`: `shell` in the config: the program and its arguments, or the system's.
 //! - `term`: understands what the shell sends and keeps the screen as a grid of cells.
-//! - `renderer`: turns that grid into pixels.
+//! - `renderer`: turns that grid into pixels. Its parts are in `renderer/`
+//!   (bar, overlays, screens, text, shapes).
 //! - `search`: the search in the output (Ctrl+Shift+F): what's typed, the matches.
 //! - `sidebar`: the panel of projects (the sidebar button, Ctrl+Shift+B).
 //! - `card`: the small box for changing a tab's name and command.
