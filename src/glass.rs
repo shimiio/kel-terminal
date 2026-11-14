@@ -107,11 +107,12 @@ impl Glass {
     /// A background a program picked, as the renderer paints it (see `cells`).
     /// A gray one (nvim's color scheme, a panel) is glass as the theme's. A
     /// colored one says something (a diff's red and green, a mark), and over
-    /// the glass its color would fade to gray: it stays solid.
+    /// the glass its color would fade to gray: it's half as clear as the glass.
+    /// So it follows `opacity`: 0.6 makes it 0.8, 0.8 makes it 0.9.
     pub fn picked_background(&self, color: u32) -> u32 {
         if self.on() && self.cells {
             let alpha = self.alpha();
-            see_through(color, alpha + (255 - alpha) * colored(color) / 255)
+            see_through(color, alpha + (255 - alpha) * colored(color) / 255 / 2)
         } else {
             color
         }
@@ -318,11 +319,14 @@ mod tests {
             glass.picked_background(0x1a1b26),
             see_through(0x1a1b26, 204)
         );
-        // A diff's green: solid, or it would fade into the glass.
-        assert_eq!(glass.picked_background(0x16391f), 0x0016_391f);
+        // A diff's green: half as clear, or it would fade into the glass.
+        assert_eq!(
+            glass.picked_background(0x16391f),
+            see_through(0x16391f, 204 + 25)
+        );
         // In between: between.
-        let half = glass.picked_background(0x30402a) >> 24;
-        assert!(half > 0 && half < 255 - 204, "{half}");
+        let between = glass.picked_background(0x30402a) >> 24;
+        assert!(between > 255 - 229 && between < 255 - 204, "{between}");
         glass.effect = Effect::None;
         assert_eq!(glass.picked_background(0x1e1e1e), 0x1e1e1e); // no glass at all
     }

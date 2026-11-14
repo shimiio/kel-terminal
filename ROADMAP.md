@@ -252,6 +252,8 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       `#141416`, stronger colors, `cells`, `pixel_name` off. `opacity` 0.8: the least at
       which the colors still read with a white page behind the window
 - [x] README: says that Kel's look can be changed in the config
+- [x] A colored background under `cells` half as clear as the glass (`opacity` 0.6 makes
+      it 0.8), not solid: at a low opacity a diff's solid rows looked like plates on the glass
 - [ ] Later, an idea: a title bar with no tabs, or none at all, like Ghostty: `project/tab`
       and `2/3` only. To solve first: moving the window, the marks on tabs (done, failed,
       new output), the messages in the bar
