@@ -15,6 +15,15 @@ use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::window::{CursorIcon, Window};
 
+/// Two cells of the view (a word's or a line's ends) by lasting rows: `top` is
+/// the lasting number of the view's first row (see `Grid::first_visible_row`).
+fn lasting(
+    top: usize,
+    (start, end): ((usize, usize), (usize, usize)),
+) -> ((usize, usize), (usize, usize)) {
+    ((top + start.0, start.1), (top + end.0, end.1))
+}
+
 impl App {
     /// Mouse wheel or touchpad: scroll the view into the scrollback.
     pub(super) fn on_mouse_wheel(&mut self, delta: MouseScrollDelta) {
@@ -91,6 +100,9 @@ impl App {
                 .unwrap()
                 .grid
                 .scroll_view(whole as i32);
+            // Scrolled with the button held: the selection grows to the cell
+            // now under the mouse.
+            self.extend_selection();
             self.request_redraw();
         }
     }
@@ -167,42 +179,44 @@ impl App {
             return;
         }
 
-        if let Some(Selecting { from, by }) = self.selecting {
-            match by {
-                // Off the pressed cell: the selection starts. Back on it later:
-                // it stays, one cell, chosen on purpose.
-                By::Cell => match &mut self.selection {
-                    Some(selection) => selection.end = (row, col),
-                    None if (row, col) != from => {
-                        self.selection = Some(Selection {
-                            start: from,
-                            end: (row, col),
-                        });
-                    }
-                    None => return,
-                },
-                // Word by word, line by line.
-                By::Word(clicked) | By::Line(clicked) => {
-                    let here = {
-                        let grid = &self.tab().terminal.lock().unwrap().grid;
-                        match by {
-                            By::Word(_) => grid.word_at(row, col),
-                            _ => grid.line_at(row),
-                        }
-                    };
-                    let selection = Some(clicked.joined(here));
-                    if selection == self.selection {
-                        return;
-                    }
-                    self.selection = selection;
-                }
-            }
-            self.request_redraw();
+        if self.selecting.is_some() {
+            self.extend_selection();
         } else if moved
             && (self.mouse_button.is_some() || self.over_text() && self.program_takes_mouse())
         {
             // Dragging in the program, or just moving if it asked for every move.
             self.report_mouse(mouse::Event::Move(self.mouse_button));
+        }
+    }
+
+    /// The left button is held in the terminal: the selection goes on to the
+    /// cell under the mouse. After the mouse moved, or the view scrolled under it.
+    fn extend_selection(&mut self) {
+        let Some(Selecting { from, by }) = self.selecting else {
+            return;
+        };
+        let (row, col) = self.mouse_cell;
+        let selection = {
+            let grid = &self.tab().terminal.lock().unwrap().grid;
+            let top = grid.first_visible_row();
+            match by {
+                // Off the pressed cell: the selection starts. Back on it later:
+                // it stays, one cell, chosen on purpose.
+                By::Cell => match self.selection {
+                    None if (top + row, col) == from => None,
+                    _ => Some(Selection {
+                        start: from,
+                        end: (top + row, col),
+                    }),
+                },
+                // Word by word, line by line.
+                By::Word(clicked) => Some(clicked.joined(lasting(top, grid.word_at(row, col)))),
+                By::Line(clicked) => Some(clicked.joined(lasting(top, grid.line_at(row)))),
+            }
+        };
+        if selection != self.selection {
+            self.selection = selection;
+            self.request_redraw();
         }
     }
 
@@ -589,25 +603,36 @@ impl App {
                     _ => 1,
                 };
                 self.text_click = Some((now, cell, clicks));
-                let by = if clicks == 1 {
-                    By::Cell
-                } else {
+                // The selection is kept by lasting rows: the view's top row's
+                // number is added to the view's rows.
+                let (top, by) = {
                     let grid = &self.tab().terminal.lock().unwrap().grid;
-                    let (start, end) = match clicks {
-                        2 => grid.word_at(cell.0, cell.1),
-                        _ => grid.line_at(cell.0),
+                    let top = grid.first_visible_row();
+                    let by = match clicks {
+                        1 => By::Cell,
+                        _ => {
+                            let (start, end) = lasting(
+                                top,
+                                match clicks {
+                                    2 => grid.word_at(cell.0, cell.1),
+                                    _ => grid.line_at(cell.0),
+                                },
+                            );
+                            let clicked = Selection { start, end };
+                            match clicks {
+                                2 => By::Word(clicked),
+                                _ => By::Line(clicked),
+                            }
+                        }
                     };
-                    let clicked = Selection { start, end };
-                    match clicks {
-                        2 => By::Word(clicked),
-                        _ => By::Line(clicked),
-                    }
+                    (top, by)
                 };
                 self.selection = match by {
                     By::Cell => None,
                     By::Word(clicked) | By::Line(clicked) => Some(clicked),
                 };
-                self.selecting = Some(Selecting { from: cell, by });
+                let from = (top + cell.0, cell.1);
+                self.selecting = Some(Selecting { from, by });
                 self.request_redraw();
             }
             // A selection made with this press: copied now, with `copy_on_select`.

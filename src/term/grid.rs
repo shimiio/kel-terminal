@@ -743,21 +743,39 @@ impl Grid {
         line.get(col).copied().unwrap_or_default()
     }
 
-    /// The text on screen from `start` to `end` (row, col), in reading order.
+    /// The row with this lasting number (see `dropped`), in the scrollback or
+    /// on the screen. None: thrown away, or not there yet.
+    fn lasting_line(&self, row: usize) -> Option<&Line> {
+        let index = row.checked_sub(self.dropped)?;
+        let on_screen = || self.lines.get(index.checked_sub(self.scrollback.len())?);
+        self.scrollback.get(index).or_else(on_screen)
+    }
+
+    /// The text from `start` to `end` (row, col), in reading order. The rows
+    /// are lasting ones (see `dropped`), so the text can be out of view: a
+    /// selection stays on its text when the view scrolls. Rows thrown away
+    /// since are left out.
     /// Trailing spaces are removed from each line, and lines are joined with "\r\n".
     /// A line cut at the window's edge (`wrapped`) comes out whole: a long URL
     /// copied from two rows is one URL.
     pub fn text_between(&self, start: (usize, usize), end: (usize, usize)) -> String {
         let mut text = String::new();
-        for row in start.0..=end.0 {
+        // Below the screen's last row (the mouse in the space under the text):
+        // it ends with that row.
+        let last = self.dropped + self.scrollback.len() + self.lines.len() - 1;
+        let end = end.min((last, self.cols - 1));
+        for row in start.0.max(self.dropped)..=end.0 {
+            let Some(cells) = self.lasting_line(row) else {
+                break;
+            };
             let first_col = if row == start.0 { start.1 } else { 0 };
             let last_col = if row == end.0 { end.1 } else { self.cols - 1 };
             let line: String = (first_col..=last_col)
-                .map(|col| self.visible_cell(row, col))
+                .map(|col| cells.cells.get(col).copied().unwrap_or_default())
                 .filter(|cell| cell.width != Width::Spacer) // not "中 b" for "中b"
                 .map(|cell| cell.ch)
                 .collect();
-            if row < end.0 && self.visible_line(row).wrapped {
+            if row < end.0 && cells.wrapped {
                 text.push_str(&line);
             } else {
                 text.push_str(line.trim_end());
@@ -1720,5 +1738,19 @@ mod tests {
     fn a_wrapped_line_is_copied_whole() {
         let g = grid(3, 10, "0123456789ab\nnext");
         assert_eq!(g.text_between((0, 0), (2, 9)), "0123456789ab\r\nnext");
+    }
+
+    #[test]
+    fn copied_text_is_found_by_lasting_rows() {
+        // 2 rows on screen, 4 lines: "a" and "b" are in the scrollback.
+        let mut g = grid(2, 10, "a\nb\nc\nd");
+        assert_eq!(g.first_visible_row(), 2);
+        // The same rows give the same text, wherever the view is.
+        assert_eq!(g.text_between((1, 0), (2, 9)), "b\r\nc");
+        g.scroll_view(2);
+        assert_eq!(g.first_visible_row(), 0);
+        assert_eq!(g.text_between((1, 0), (2, 9)), "b\r\nc");
+        // Past the screen's last row: what's there is copied.
+        assert_eq!(g.text_between((3, 0), (9, 9)), "d");
     }
 }

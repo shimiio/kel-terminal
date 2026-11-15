@@ -285,6 +285,10 @@ impl App {
         if self.minimized() {
             return; // nothing to see
         }
+        // What's under the mouse can change without the mouse moving (new
+        // output, a scroll, the start screen coming up): the link is looked
+        // for again, so the hand never stays over what's no link anymore.
+        self.update_link();
         // What's going on in each project, now: a few tabs looked at.
         if let Some(mut sidebar) = self.sidebar.take() {
             sidebar.update_live(|name| self.live_of(name));

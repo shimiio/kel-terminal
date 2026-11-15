@@ -194,7 +194,7 @@ impl App {
                 };
                 self.palette = None;
                 self.search = None;
-                self.link = None;
+                self.update_link(); // none under the sidebar: the hand goes too
                 self.request_redraw();
             }
             Action::Palette => {

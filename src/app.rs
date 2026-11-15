@@ -56,6 +56,8 @@ const BLINK_INTERVAL: Duration = Duration::from_millis(500);
 const PEEK_DELAY: Duration = Duration::from_millis(400);
 
 /// The selected area, from where the mouse was pressed to where it is now. (row, col)
+/// The rows are lasting ones (see `Grid::dropped`), not the view's: the
+/// selection stays on its text when the view scrolls, or new output pushes it up.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Selection {
     pub start: (usize, usize),
@@ -93,7 +95,7 @@ impl Selection {
 /// The left button, held in the terminal (see `on_left_button`).
 #[derive(Clone, Copy)]
 struct Selecting {
-    /// The cell it was pressed on.
+    /// The cell it was pressed on, by lasting row (as a `Selection`'s).
     from: (usize, usize),
     by: By,
 }
@@ -218,7 +220,7 @@ pub struct App {
     /// The mouse is over the window (else `mouse_pos` is where it left).
     mouse_inside: bool,
     mouse_cell: (usize, usize),
-    /// The mouse selection, if any. Screen positions, so it doesn't follow scrolling.
+    /// The mouse selection, if any. By lasting rows, so it follows its text.
     selection: Option<Selection>,
     /// While the left button is held: the cell it was pressed on. After one
     /// click, a selection starts only once the mouse leaves that cell: a click

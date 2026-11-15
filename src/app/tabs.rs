@@ -128,12 +128,14 @@ impl App {
         // other tab.
         self.selection = None;
         self.search = None;
-        self.link = None;
         self.scroll_rest = 0.0;
         // Another tab (a new one, a click on one): the shell, not the start screen,
         // and not a card of the tab before.
         self.start = None;
         self.card = None;
+        // The link under the mouse was the other tab's: this tab's, if one is
+        // there, else the hand goes with it.
+        self.update_link();
         self.update_focus();
         self.request_redraw();
     }

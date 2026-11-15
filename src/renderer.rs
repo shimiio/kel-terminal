@@ -524,7 +524,7 @@ impl Renderer {
                 for col in 0..grid.cols() {
                     let x = text.x + col * cell_w;
 
-                    let selected = selection.is_some_and(|s| s.contains(row, col));
+                    let selected = selection.is_some_and(|s| s.contains(top + row, col));
                     let cell = grid.visible_cell(row, col);
                     // Is the cursor drawn on this cell right now?
                     let is_cursor = grid.cursor_visible
