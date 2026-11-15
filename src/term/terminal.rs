@@ -89,6 +89,7 @@ impl Terminal {
                     self.grid.fg = Color::Default;
                     self.grid.bg = Color::Default;
                     self.grid.bold = false;
+                    self.grid.dim = false;
                     self.grid.italic = false;
                     self.grid.underline = Underline::None;
                     self.grid.underline_color = Color::Default;
@@ -97,7 +98,12 @@ impl Terminal {
 
                 // text style
                 1 => self.grid.bold = true,
-                22 => self.grid.bold = false,
+                2 => self.grid.dim = true,
+                // One code for both: "neither bold nor dim".
+                22 => {
+                    self.grid.bold = false;
+                    self.grid.dim = false;
+                }
                 3 => self.grid.italic = true,
                 23 => self.grid.italic = false,
                 // `4` alone, or `4:n` for the kind (nvim's LSP errors: `4:3`, curly).
@@ -706,6 +712,16 @@ mod tests {
         assert!(t.grid.cell(0, 1).bold && t.grid.cell(0, 1).italic); // I: both
         assert!(!t.grid.cell(0, 2).bold && t.grid.cell(0, 2).italic); // i: bold off, italic stays
         assert!(!t.grid.cell(0, 3).italic); // x: everything reset
+    }
+
+    #[test]
+    fn dim() {
+        let t = feed("[2mD[1mB[22mn[2md[0mx");
+        assert!(t.grid.cell(0, 0).dim); // D: dim
+        assert!(t.grid.cell(0, 1).dim && t.grid.cell(0, 1).bold); // B: both
+        assert!(!t.grid.cell(0, 2).dim && !t.grid.cell(0, 2).bold); // n: 22 ends both
+        assert!(t.grid.cell(0, 3).dim); // d: dim again
+        assert!(!t.grid.cell(0, 4).dim); // x: everything reset
     }
 
     #[test]

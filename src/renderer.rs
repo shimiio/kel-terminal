@@ -596,6 +596,9 @@ impl Renderer {
                         false => bg,
                     };
                     let (fg, bg) = if cell.inverse { (bg, fg) } else { (fg, bg) };
+                    // Dim text (`ESC[2m`, a shell's ghost suggestion): half way
+                    // to its background.
+                    let fg = if cell.dim { blend(bg, fg, 128) } else { fg };
                     // The chosen match: dark letters on bright yellow; the others,
                     // a yellow tint over their background. Both from the theme.
                     let (fg, bg) = match search::mark_at(&marks, top + row, col) {

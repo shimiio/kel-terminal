@@ -28,6 +28,8 @@ pub struct Cell {
     pub fg: Color,
     pub bg: Color,
     pub bold: bool,
+    /// Fainter than the rest (`ESC[2m`): its color, half way to the background.
+    pub dim: bool,
     pub italic: bool,
     pub underline: Underline,
     /// The underline's own color; `Default`: the text's.
@@ -134,6 +136,7 @@ impl Default for Cell {
             fg: Color::Default,
             bg: Color::Default,
             bold: false,
+            dim: false,
             italic: false,
             underline: Underline::None,
             underline_color: Color::Default,
@@ -183,6 +186,7 @@ pub struct Grid {
     pub fg: Color,
     pub bg: Color,
     pub bold: bool,
+    pub dim: bool,
     pub italic: bool,
     pub underline: Underline,
     pub underline_color: Color,
@@ -218,6 +222,7 @@ struct SavedCursor {
     fg: Color,
     bg: Color,
     bold: bool,
+    dim: bool,
     italic: bool,
     underline: Underline,
     underline_color: Color,
@@ -253,6 +258,7 @@ impl Grid {
             fg: Color::Default,
             bg: Color::Default,
             bold: false,
+            dim: false,
             italic: false,
             underline: Underline::None,
             underline_color: Color::Default,
@@ -578,6 +584,7 @@ impl Grid {
             fg: self.fg,
             bg: self.bg,
             bold: self.bold,
+            dim: self.dim,
             italic: self.italic,
             underline: self.underline,
             underline_color: self.underline_color,
@@ -594,6 +601,7 @@ impl Grid {
             fg: Color::Default,
             bg: Color::Default,
             bold: false,
+            dim: false,
             italic: false,
             underline: Underline::None,
             underline_color: Color::Default,
@@ -604,6 +612,7 @@ impl Grid {
         self.fg = saved.fg;
         self.bg = saved.bg;
         self.bold = saved.bold;
+        self.dim = saved.dim;
         self.italic = saved.italic;
         self.underline = saved.underline;
         self.underline_color = saved.underline_color;
@@ -681,6 +690,7 @@ impl Grid {
             fg: self.fg,
             bg: self.bg,
             bold: self.bold,
+            dim: self.dim,
             italic: self.italic,
             underline: self.underline,
             underline_color: self.underline_color,
