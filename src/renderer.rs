@@ -28,7 +28,7 @@ use crate::font::{self, Font, Fonts, Metrics};
 use crate::glass::Glass;
 use crate::help::Help;
 use crate::icons::Icons;
-use crate::layout::{Layout, Rect, TitleHit, scaled};
+use crate::layout::{Bar, Layout, Rect, TitleHit, scaled};
 use crate::palette::Palette;
 use crate::search::{self, Search};
 use crate::sidebar::Sidebar;
@@ -36,8 +36,8 @@ use crate::start::Start;
 use crate::term::{CursorShape, Found, Grid, Underline, Width};
 use crate::theme::{Color, Theme};
 use bar::{
-    draw_bar_buttons, draw_status, draw_tab_bar, draw_window_buttons, project_name_shown,
-    project_name_width,
+    draw_bar_buttons, draw_status, draw_tab_bar, draw_title, draw_window_buttons,
+    project_name_shown, project_name_width,
 };
 use overlays::{draw_card, draw_palette, draw_search, draw_sidebar};
 use screens::{draw_help, draw_start};
@@ -73,6 +73,8 @@ const CLOSE_HOVER: u32 = 0xc42b1c;
 const PROJECT_NAME_LEFT: usize = 4;
 const PROJECT_NAME_GAP: usize = 14;
 const PROJECT_NAME_CHARS: usize = 16;
+/// The tab's name in a title (`tab_bar = "title"`): at most this many letters.
+const TITLE_CHARS: usize = 40;
 
 /// How dark the window gets behind the open sidebar: this much black (of 255).
 const SIDEBAR_DIM: u32 = 120;
@@ -464,7 +466,20 @@ impl Renderer {
         fill_round(&mut buffer, width, inside, inner, theme.background);
         // After the panel: the tab on screen covers a piece of the panel's top line.
         let font = &self.ui_font; // all of the UI below: the built-in font
-        if chrome.bar_up {
+        let titled = layout.bar_shows == Bar::Title;
+        if titled {
+            draw_title(
+                &mut buffer,
+                width,
+                theme,
+                layout,
+                chrome,
+                font,
+                &mut self.ui,
+            );
+            draw_window_buttons(&mut buffer, width, theme, layout, chrome);
+            draw_bar_buttons(&mut buffer, width, theme, layout, chrome);
+        } else if chrome.bar_up {
             draw_tab_bar(
                 &mut buffer,
                 width,
@@ -665,6 +680,8 @@ impl Renderer {
 
         // On top of the terminal, whatever the terminal shows. A logo's cursor
         // blinks where the keys go; one under something else stands, on.
+        // What's over the text leaves a title in sight.
+        let body = &layout.body();
         let over_start = chrome.sidebar.is_some()
             || chrome.palette.is_some()
             || chrome.search.is_some()
@@ -678,7 +695,7 @@ impl Renderer {
                 &mut buffer,
                 width,
                 theme,
-                layout,
+                body,
                 start,
                 on,
                 font,
@@ -686,15 +703,7 @@ impl Renderer {
             );
         }
         if let Some(search) = chrome.search {
-            draw_search(
-                &mut buffer,
-                width,
-                theme,
-                layout,
-                search,
-                font,
-                &mut self.ui,
-            );
+            draw_search(&mut buffer, width, theme, body, search, font, &mut self.ui);
         }
         if let Some(sidebar) = chrome.sidebar {
             draw_sidebar(
@@ -729,7 +738,7 @@ impl Renderer {
                 &mut buffer,
                 width,
                 theme,
-                layout,
+                body,
                 (palette, color),
                 font,
                 &mut self.ui,
@@ -737,7 +746,7 @@ impl Renderer {
         }
         // Except the help, which closes the others when it opens.
         if let Some(help) = chrome.help {
-            draw_help(&mut buffer, width, theme, layout, help, font, &mut self.ui);
+            draw_help(&mut buffer, width, theme, body, help, font, &mut self.ui);
         }
 
         if self.glass.on() {

@@ -21,6 +21,10 @@
 //! too: a plain terminal, nothing above it. The bar then comes over the panel's
 //! top when it's wanted (see `Layout::drawn`), and the text doesn't move.
 //!
+//! With `tab_bar = "title"` the panel takes the bar's place as well, and its
+//! top is a title: one sheet, the text below a line that says where you are
+//! (`myapp/nvim`), with no tabs.
+//!
 //! All sizes are for a 100% display. The layout multiplies them by the UI's scale
 //! (see `scaled`): at Windows' 150%, a 32-pixel tab bar is 48 pixels tall.
 
@@ -76,6 +80,44 @@ pub enum TitleHit {
         index: usize,
         close: bool,
     },
+    /// The title, where there are no tabs (`tab_bar = "title"`): the tab on
+    /// screen's. It moves the window like the empty bar; a right click: its card.
+    Title,
+}
+
+/// What's above the terminal: `tab_bar` in the config.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Bar {
+    /// The tabs, above the panel.
+    #[default]
+    Always,
+    /// No tabs: the panel's own top is a title, the project and the tab on
+    /// screen in its middle (`myapp/nvim`). One sheet, and it moves the window.
+    Title,
+    /// Nothing. The tabs come over the panel's top while the mouse is at the
+    /// window's top, for a moment as the tab on screen changes, and while Kel
+    /// says something there.
+    Hover,
+    /// Nothing. The tabs come only for what Kel says.
+    Never,
+}
+
+impl Bar {
+    /// As the config names it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Bar::Always => "always",
+            Bar::Title => "title",
+            Bar::Hover => "hover",
+            Bar::Never => "never",
+        }
+    }
+
+    /// The bar comes and goes, over the panel's top.
+    fn hidden(self) -> bool {
+        matches!(self, Bar::Hover | Bar::Never)
+    }
 }
 
 /// When a group of title bar buttons shows: `sidebar_button`, `tab_buttons` and
@@ -147,11 +189,8 @@ pub struct Spacing {
     pub padding: usize,
     /// The tab bar's height.
     pub tab_height: usize,
-    /// When the tab bar shows. `Always`: above the panel. `Hover`: over the
-    /// panel's top, while the mouse is at the window's top, for a moment as the
-    /// tab on screen changes, and while Kel says something there. `Never`: only
-    /// for what Kel says.
-    pub tab_bar: Show,
+    /// What's above the terminal (see `Bar`).
+    pub tab_bar: Bar,
     /// A tab's width. With many tabs, they get narrower to fit.
     pub tab_width: usize,
     /// The button before the tabs.
@@ -171,7 +210,7 @@ impl Default for Spacing {
             border: 0,
             padding: 6,
             tab_height: 32,
-            tab_bar: Show::Always,
+            tab_bar: Bar::Always,
             tab_width: 180,
             sidebar_button: Show::Hover,
             tab_buttons: Show::Hover,
@@ -209,9 +248,10 @@ pub struct Layout {
     pub text: Rect,
     /// The panel's border line, in pixels (the active tab draws its own the same).
     pub border: usize,
-    /// When the tab bar shows (see `Spacing::tab_bar`). Not `Always`: the panel
-    /// is under it, and `title_bar` and `tab_bar` are where it comes.
-    pub bar_shows: Show,
+    /// What's above the terminal (see `Bar`). Not `Always`: the panel is under
+    /// `title_bar` and `tab_bar` too, which are where the tabs come, or the
+    /// title is.
+    pub bar_shows: Bar,
     /// When each group of buttons shows (see `Show`).
     pub sidebar_shows: Show,
     pub tab_buttons_show: Show,
@@ -260,13 +300,17 @@ impl Spacing {
             h: tab_height.min(area.h),
             ..area
         };
-        // A tab bar that comes and goes is over the panel: the panel has its room.
+        // A tab bar that comes and goes is over the panel: the panel has its
+        // room. A title is the panel's own top: the text starts below it.
         let panel = match self.tab_bar {
-            Show::Always => below(area, tab_bar.h),
+            Bar::Always => below(area, tab_bar.h),
             _ => area,
         };
         let inside = panel.shrink(border);
-        let text = inside.shrink(padding);
+        let text = match self.tab_bar {
+            Bar::Title => below(inside, tab_bar.h).shrink(padding),
+            _ => inside.shrink(padding),
+        };
         let sidebar_button = Rect {
             w: self.sidebar_button.room(s(BAR_BUTTON_WIDTH)).min(tab_bar.w),
             ..tab_bar
@@ -290,7 +334,11 @@ impl Spacing {
             window_buttons_show: self.window_buttons,
             radius: s(self.corner_radius),
             tab_width: s(self.tab_width),
-            bar_button_w: self.tab_buttons.room(s(BAR_BUTTON_WIDTH)),
+            // No tabs, no `+` and `⌄` after them.
+            bar_button_w: match self.tab_bar {
+                Bar::Title => 0,
+                _ => self.tab_buttons.room(s(BAR_BUTTON_WIDTH)),
+            },
             lead: 0,
         }
     }
@@ -300,7 +348,7 @@ impl Spacing {
         let s = |n: usize| scaled(n, scale);
         let edge = s(self.margin) + s(self.border) + s(self.padding);
         let bar = match self.tab_bar {
-            Show::Always => s(self.tab_height),
+            Bar::Always | Bar::Title => s(self.tab_height),
             _ => 0, // over the panel
         };
         (text_w + 2 * edge, text_h + 2 * edge + bar)
@@ -352,7 +400,7 @@ impl Layout {
     /// always there, so the two look the same. The text stays where it is (no
     /// program has to draw again): its rows under the bar aren't drawn.
     pub fn drawn(&self, bar_up: bool) -> Layout {
-        if self.bar_shows == Show::Always || !bar_up {
+        if !self.bar_shows.hidden() || !bar_up {
             return *self;
         }
         let panel = below(self.panel, self.tab_bar.h);
@@ -361,6 +409,42 @@ impl Layout {
             inside: panel.shrink(self.border),
             ..*self
         }
+    }
+
+    /// The layout for what's over the terminal's text (the start screen, the
+    /// search, the palette): under a title, `inside` starts below it, so the
+    /// title stays in sight.
+    pub fn body(&self) -> Layout {
+        match self.bar_shows {
+            Bar::Title => Layout {
+                inside: below(self.inside, self.tab_bar.h),
+                ..*self
+            },
+            _ => *self,
+        }
+    }
+
+    /// Where the title is (`tab_bar = "title"`): a tab's width, in the middle
+    /// of the panel. What's written can be longer; this much of it takes the
+    /// right click, and a tab's card hangs from it.
+    pub fn title(&self) -> Rect {
+        let w = self.tab_width.min(self.tab_bar.w);
+        let middle = self.panel.x + self.panel.w / 2;
+        let last = (self.tab_bar.x + self.tab_bar.w).saturating_sub(w);
+        Rect {
+            x: middle
+                .saturating_sub(w / 2)
+                .clamp(self.tab_bar.x, last.max(self.tab_bar.x)),
+            w,
+            ..self.tab_bar
+        }
+    }
+
+    /// What the card of the tab at `index` (of `count`) hangs from: its tab, or
+    /// the title where there are no tabs.
+    pub fn tab_anchor(&self, index: usize, count: usize) -> Rect {
+        let tabs = self.tabs(count);
+        tabs.get(index).copied().unwrap_or_else(|| self.title())
     }
 
     /// The mouse at height `y` calls a hidden tab bar: above the text, where
@@ -415,6 +499,9 @@ impl Layout {
     /// 846-pixel bar: 3 tabs are 180 wide each; 10 tabs get (846 - 3 x 28) / 10
     /// = 76 each.
     pub fn tabs(&self, count: usize) -> Vec<Rect> {
+        if self.bar_shows == Bar::Title {
+            return Vec::new(); // a title, no tabs
+        }
         let w = self.tab_w(count);
         (0..count)
             .map(|i| Rect {
@@ -477,6 +564,9 @@ impl Layout {
         if self.sidebar_button.contains(x, y) {
             return Some(TitleHit::Sidebar);
         }
+        if self.bar_shows == Bar::Title {
+            return self.title().contains(x, y).then_some(TitleHit::Title);
+        }
         let tabs = self.tabs(count);
         if let Some(index) = tabs.iter().position(|tab| tab.contains(x, y)) {
             let close = self.tab_close(tabs[index]).contains(x, y);
@@ -529,7 +619,7 @@ mod tests {
     #[test]
     fn a_tab_bar_that_comes_and_goes() {
         let spacing = Spacing {
-            tab_bar: Show::Hover,
+            tab_bar: Bar::Hover,
             ..Spacing::default()
         };
         let layout = spacing.layout(1000, 700, 1.0);
@@ -562,6 +652,42 @@ mod tests {
         // The window is as tall as the text and its spaces: no bar's height.
         let (w, h) = spacing.window_size(800, 480, 1.0);
         assert_eq!((w, h), (800 + 28, 480 + 28));
+    }
+
+    #[test]
+    fn a_title_in_place_of_the_tabs() {
+        let spacing = Spacing {
+            tab_bar: Bar::Title,
+            ..Spacing::default()
+        };
+        let layout = spacing.layout(1000, 700, 1.0);
+        let tabs = Spacing::default().layout(1000, 700, 1.0);
+        // The panel is the whole sheet; the text is where it is with tabs.
+        assert_eq!((layout.panel.y, layout.panel.h), (8, 684));
+        assert_eq!(layout.text, tabs.text);
+        assert_eq!(
+            spacing.window_size(800, 480, 1.0),
+            Spacing::default().window_size(800, 480, 1.0)
+        );
+        // Never over the panel: it's there.
+        assert_eq!(layout.drawn(true), layout);
+        // What's over the text starts below the title.
+        assert_eq!(layout.body().inside.y, 40);
+        assert_eq!(tabs.body(), tabs);
+        // No tabs, no + and ⌄: the title in the middle (180 wide, around 500),
+        // the empty bar beside it, the sidebar's and the window's buttons.
+        assert!(layout.tabs(3).is_empty());
+        assert_eq!(layout.title_hit(500, 20, 3), Some(TitleHit::Title));
+        assert_eq!(layout.title_hit(100, 20, 3), None);
+        assert_eq!(layout.title_hit(700, 20, 3), None);
+        assert_eq!(layout.title_hit(20, 20, 3), Some(TitleHit::Sidebar));
+        assert_eq!(
+            layout.title_hit(990, 20, 3),
+            Some(TitleHit::Window(WindowButton::Close))
+        );
+        // A tab's card hangs from the title; with tabs, from its tab.
+        assert_eq!(layout.tab_anchor(2, 3), layout.title());
+        assert_eq!(tabs.tab_anchor(2, 3), tabs.tabs(3)[2]);
     }
 
     #[test]

@@ -263,6 +263,13 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       or a command ends in another tab, while a tab is dragged or its card is open, and
       while Kel says something there (a problem, a question). `"never"`: only for what Kel
       says. So the window still moves, the marks are still seen, the messages still read
+- [x] One sheet with a title: `tab_bar = "title"`. No tabs: the panel's own top says where
+      you are, in its middle: `myapp/nvim` (the project in its color, the tab on screen in
+      the text's), `2/3` with more tabs than one, and one mark for the other tabs' news (a
+      command failed, ended well, new output; else a ring while one runs here). It moves
+      the window; a right click on it: the tab's card
+- [ ] With a title: Ctrl+Tab shows the tabs in a list (icons, marks) while Ctrl is held, in
+      their places' order; there, a tab's card and moving it up and down
 
 ## 10. Before the release
 

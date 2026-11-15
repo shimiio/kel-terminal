@@ -58,7 +58,7 @@ impl App {
         let anchor = match &card.target {
             Target::Tab(id) => {
                 let index = self.tabs.iter().position(|tab| tab.id == *id)?;
-                self.layout.tabs(self.tabs.len())[index]
+                self.layout.tab_anchor(index, self.tabs.len())
             }
             // Under its row in the sidebar (row 0 is home).
             Target::Project(name) => {

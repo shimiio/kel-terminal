@@ -8,7 +8,7 @@ use super::{
 };
 use crate::card::Target;
 use crate::keys::{self, Action};
-use crate::layout::{Show, TitleHit, WindowButton};
+use crate::layout::{Bar, TitleHit, WindowButton};
 use crate::mouse::{self, Tracking};
 use crate::sidebar::Row;
 use crate::{links, open};
@@ -306,20 +306,20 @@ impl App {
     ///   tab is dragged, and for `BAR_TIME` by itself (see `show_bar`).
     pub(super) fn bar_up(&self) -> bool {
         let mode = self.config.layout.tab_bar;
-        if mode == Show::Always {
+        if matches!(mode, Bar::Always | Bar::Title) {
             return true;
         }
         let says = self.status.is_some() || self.pending_close.is_some() || self.notice.is_some();
         let card = matches!(&self.card, Some(card) if matches!(card.target, Target::Tab(_)));
         let wanted = self.bar_peek || self.tab_drag.is_some() || self.bar_until.is_some();
-        says || card || mode == Show::Hover && wanted
+        says || card || mode == Bar::Hover && wanted
     }
 
     /// A hidden tab bar (`tab_bar = "hover"`) shows for `BAR_TIME`: the tab on
     /// screen changed, or a command ended in another one. Where you are, and
     /// what's new, then the plain terminal again.
     pub(super) fn show_bar(&mut self) {
-        if self.config.layout.tab_bar == Show::Hover {
+        if self.config.layout.tab_bar == Bar::Hover {
             self.bar_until = Some(Instant::now() + BAR_TIME);
             self.request_redraw();
         }
@@ -444,6 +444,11 @@ impl App {
                 self.open_tab_card(index);
                 return;
             }
+            // On the title: the card of the tab on screen.
+            if hit == Some(TitleHit::Title) {
+                self.open_tab_card(self.active);
+                return;
+            }
         }
         // A middle click on a tab closes it, as in a browser.
         if button == MouseButton::Middle && state == ElementState::Pressed {
@@ -497,7 +502,7 @@ impl App {
         // calls it, and it stays while the mouse is on it. Not with a button
         // held: a selection dragged to the top is still a selection.
         let held = self.selecting.is_some() || self.mouse_button.is_some();
-        let peek = self.config.layout.tab_bar == Show::Hover
+        let peek = self.config.layout.tab_bar == Bar::Hover
             && self.mouse_inside
             && !held
             && match self.bar_up() {
@@ -603,7 +608,8 @@ impl App {
                     moving: false,
                 });
             }
-            None => self.on_empty_bar_click(&window),
+            // The title moves the window too.
+            Some(TitleHit::Title) | None => self.on_empty_bar_click(&window),
         }
     }
 

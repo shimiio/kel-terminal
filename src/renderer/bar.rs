@@ -5,10 +5,10 @@ use super::shapes::{blend, draw_icon, fill_circle, fill_rect, fill_round, outlin
 use super::text::draw_ui_text;
 use super::{
     CLOSE_HOVER, Chrome, DOT_RADIUS, ICON_GAP, PROJECT_NAME_CHARS, PROJECT_NAME_LEFT, RING_WIDTH,
-    TAB_TEXT_PADDING, Ui,
+    TAB_TEXT_PADDING, TITLE_CHARS, Ui,
 };
 use crate::font::Font;
-use crate::layout::{Layout, Rect, Show, TitleHit, WindowButton, scaled};
+use crate::layout::{Bar, Layout, Rect, Show, TitleHit, WindowButton, scaled};
 use crate::logo;
 use crate::theme::Theme;
 
@@ -149,6 +149,91 @@ pub(super) fn draw_tab_bar(
     }
 }
 
+/// The title, where there are no tabs (`tab_bar = "title"`): in the middle of
+/// the panel's top, on the panel's own color, `myapp/nvim`: the project in its
+/// color, the tab on screen in the text's. With more tabs than one, which one
+/// it is (`2/3`), dim, and one mark for what the others have to say: a command
+/// failed, or ended well, or new output; else a ring while a command runs here.
+pub(super) fn draw_title(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    chrome: &Chrome,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    let Chrome { tabs, active, .. } = *chrome;
+    let Some(here) = tabs.get(active) else {
+        return;
+    };
+    let dim = blend(theme.background, theme.foreground, 128);
+    let accent = theme.accent_for(chrome.project.and_then(|(_, color)| color));
+    // A long title (a program's own) is cut: the rest of the line has to fit.
+    let name: String = match here.title.chars().count() > TITLE_CHARS {
+        true => here
+            .title
+            .chars()
+            .take(TITLE_CHARS - 1)
+            .chain(['…'])
+            .collect(),
+        false => here.title.to_string(),
+    };
+    let mut parts: Vec<(String, u32)> = Vec::new();
+    if let Some((project, _)) = chrome.project {
+        parts.push((project_name_shown(project), accent));
+        parts.push(("/".to_string(), dim));
+    }
+    parts.push((name, theme.foreground));
+    if tabs.len() > 1 {
+        parts.push((format!("  {}/{}", active + 1, tabs.len()), dim));
+    }
+    // The others' news, the worst first; a ring for a command running here.
+    let others = || tabs.iter().enumerate().filter(|(i, _)| *i != active);
+    let mark = if others().any(|(_, tab)| tab.done == Some(false)) {
+        Some((theme.failed, 0.0))
+    } else if others().any(|(_, tab)| tab.done == Some(true)) {
+        Some((theme.done, 0.0))
+    } else if others().any(|(_, tab)| tab.activity) {
+        Some((theme.foreground, 0.0))
+    } else if here.busy {
+        Some((theme.foreground, RING_WIDTH))
+    } else {
+        None
+    };
+    let radius = DOT_RADIUS * ui.scale;
+    let gap = ui.advance;
+    let mark_w = mark.map_or(0, |_| gap + (2.0 * radius).ceil() as usize);
+
+    let bar = layout.tab_bar;
+    let chars: usize = parts.iter().map(|(text, _)| text.chars().count()).sum();
+    let w = chars * ui.advance + mark_w;
+    // In the panel's middle; a line too long for that starts after the
+    // sidebar's button.
+    let first = layout.sidebar_button.x + layout.sidebar_button.w;
+    let middle = layout.panel.x + layout.panel.w / 2;
+    let mut x = middle.saturating_sub(w / 2).max(first);
+    let end = bar.x + bar.w;
+    let y = bar.y + bar.h.saturating_sub(ui.line_h) / 2;
+    for (text, color) in &parts {
+        let max_w = end.saturating_sub(x);
+        draw_ui_text(pixels, width, font, ui, text, (x, y), max_w, *color);
+        x += text.chars().count() * ui.advance;
+    }
+    if let Some((color, ring)) = mark
+        && x + mark_w <= end
+    {
+        let cx = (x + gap) as f32 + radius;
+        let cy = bar.y as f32 + bar.h as f32 / 2.0;
+        let hole = if ring > 0.0 {
+            radius - ring * ui.scale
+        } else {
+            0.0
+        };
+        fill_circle(pixels, width, cx, cy, radius, hole, color);
+    }
+}
+
 /// Minimize, maximize and close, top right. Plain icons in the window's colors;
 /// the one under the mouse gets a lighter background, close gets red.
 pub(super) fn draw_window_buttons(
@@ -174,7 +259,11 @@ pub(super) fn draw_window_buttons(
             (_, true) => (lit, theme.foreground),
             (_, false) => (theme.frame, dim),
         };
-        fill_rect(pixels, width, rect.x, rect.y, rect.w, rect.h, bg);
+        // Not lit: nothing behind it. It's on the window's color already, or
+        // (under a title) over the panel's corner, which stays as it is.
+        if lit_now {
+            fill_rect(pixels, width, rect.x, rect.y, rect.w, rect.h, bg);
+        }
 
         // The icon: 10x10 pixels at 100%, in the middle of the button, with
         // lines `t` thick (1 pixel at 100%, 2 at 200%).
@@ -222,7 +311,8 @@ pub(super) fn draw_bar_buttons(
     // The sidebar's stays while its sidebar is open: it's lit then.
     let sidebar_shown = layout.sidebar_shows.shown(on_bar)
         || layout.sidebar_shows == Show::Hover && chrome.sidebar.is_some();
-    let tab_buttons_shown = layout.tab_buttons_show.shown(on_bar);
+    // No `+` and `⌄` without tabs.
+    let tab_buttons_shown = layout.tab_buttons_show.shown(on_bar) && layout.bar_shows != Bar::Title;
     let buttons = [
         (layout.sidebar_button, TitleHit::Sidebar, sidebar_shown),
         (new_tab, TitleHit::NewTab, tab_buttons_shown),
@@ -311,9 +401,14 @@ pub(super) fn draw_status(
     let text_w = shown.chars().count() * ui.advance;
     let end = bar.x + bar.w;
     let x = end.saturating_sub(text_w);
-    // The window's color behind it, so tabs under it don't show through.
+    // The bar's color behind it (the window's; the panel's under a title), so
+    // what's under it doesn't show through.
+    let color_behind = match layout.bar_shows {
+        Bar::Title => theme.background,
+        _ => theme.frame,
+    };
     let back = x.saturating_sub(ui.px(TAB_TEXT_PADDING));
-    fill_rect(pixels, width, back, bar.y, end - back, bar.h, theme.frame);
+    fill_rect(pixels, width, back, bar.y, end - back, bar.h, color_behind);
     let y = bar.y + bar.h.saturating_sub(ui.line_h) / 2;
     draw_ui_text(pixels, width, font, ui, &shown, (x, y), text_w, color);
 }
