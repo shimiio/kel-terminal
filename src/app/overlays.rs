@@ -51,6 +51,34 @@ impl App {
         self.request_redraw();
     }
 
+    /// A key while the list of tabs shows (Ctrl is held, see `switcher`): what
+    /// the tab bar's mouse does where there's no tab bar. ↑ ↓ go to the tab
+    /// above or below, with Shift they move the tab on screen there; E or
+    /// Enter opens its card (its name, its command). `false`: not the list's key.
+    pub(super) fn switcher_key(&mut self, event: &KeyEvent) -> bool {
+        let PhysicalKey::Code(code) = event.physical_key else {
+            return false;
+        };
+        let step: isize = match code {
+            KeyCode::ArrowUp => -1,
+            KeyCode::ArrowDown => 1,
+            KeyCode::KeyE | KeyCode::Enter => {
+                self.close_switcher();
+                self.open_tab_card(self.active);
+                return true;
+            }
+            _ => return false,
+        };
+        if self.modifiers.shift_key() {
+            // Not past the ends: `move_tab` does nothing there.
+            let to = self.active.saturating_add_signed(step);
+            self.move_tab(self.active, to);
+        } else {
+            self.next_tab(step);
+        }
+        true
+    }
+
     /// Where the open card is: under its tab.
     pub(super) fn card_rect(&self) -> Option<Rect> {
         let card = self.card.as_ref()?;

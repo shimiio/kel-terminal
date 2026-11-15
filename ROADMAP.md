@@ -276,7 +276,9 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       tab_height, corner_radius), in use while `tab_bar = "title"`: one line changes the look,
       both keep their numbers. Its bar is 26 tall unless it says. Home's title is `~/nvim`.
       The sidebar is at least 8 pixels from the window's edges, with no margin too
-- [ ] In that list: a tab's card (its name, its command) and moving it up and down
+- [x] In that list, what the mouse does on a tab bar: ↑ ↓ go to the tab above or below,
+      Shift+↑ ↓ move the tab on screen there, E or Enter opens its card (its name, its
+      command). Ctrl is held all along; the list says its keys in its last line
 
 ## 10. Before the release
 

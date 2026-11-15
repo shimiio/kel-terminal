@@ -23,8 +23,11 @@ use crate::theme::Theme;
 /// │ ▪ nvim                       │
 /// │ ▪ claude                   ○ │  the tab on screen: the chosen line
 /// │ ▪ server                   ● │  its mark: running, ended, new output
+/// │ ↑↓ go  Shift+↑↓ move  E edit │  its keys, dim
 /// └──────────────────────────────┘
 /// ```
+const SWITCHER_KEYS: &str = "↑↓ go   Shift+↑↓ move   E edit";
+
 pub(super) fn draw_switcher(
     pixels: &mut [u32],
     width: usize,
@@ -43,6 +46,8 @@ pub(super) fn draw_switcher(
     if box_w < 10 * ui.advance || tabs.is_empty() {
         return; // a window too narrow for it
     }
+    // The chosen line is as far from the box's top as from its sides.
+    let gap = if layout.radius > 0 { ui.px(2) } else { 0 };
     // The lines on screen: the chosen one is always among them.
     let lines = tabs.len().min(SWITCHER_LINES);
     let first = (active + 1).saturating_sub(lines);
@@ -50,7 +55,7 @@ pub(super) fn draw_switcher(
         x: area.x + (area.w - box_w) / 2,
         y: area.y + 2 * pad,
         w: box_w,
-        h: lines * line_h + 2 * b,
+        h: (lines + 1) * line_h + 2 * (b + gap), // and the line of keys
     };
     let back = pane(theme, layout);
     let dim = blend(back, theme.foreground, 128);
@@ -61,7 +66,7 @@ pub(super) fn draw_switcher(
     let text_x = r.x + b + pad;
     let text_end = r.x + r.w - b - pad;
     for (row, (i, tab)) in tabs.iter().enumerate().skip(first).take(lines).enumerate() {
-        let line_y = r.y + b + row * line_h;
+        let line_y = r.y + b + gap + row * line_h;
         let on_screen = i == active;
         // The chosen line, as the palette's: a tint of the project's color.
         if on_screen {
@@ -117,6 +122,10 @@ pub(super) fn draw_switcher(
             color,
         );
     }
+    // What the keys do here (see `App::switcher_key`).
+    let at = (text_x, r.y + b + gap + lines * line_h + pad);
+    let max_w = text_end.saturating_sub(text_x);
+    draw_ui_hint(pixels, width, ui, SWITCHER_KEYS, at, max_w, dim);
 }
 
 /// The command palette, at the top of the terminal panel, in the middle:
@@ -155,7 +164,9 @@ pub(super) fn draw_palette(
     let shown: Vec<_> = palette.shown().collect();
     let first = (palette.selected() + 1).saturating_sub(PALETTE_LINES);
     let lines = shown.len().clamp(1, PALETTE_LINES); // "nothing found" takes a line too
-    let box_h = line_h + b + lines * line_h + 2 * b;
+    // The last line, chosen, is as far from the box's bottom as from its sides.
+    let gap = if layout.radius > 0 { ui.px(2) } else { 0 };
+    let box_h = line_h + b + lines * line_h + 2 * b + gap;
 
     let back = pane(theme, layout);
     let dim = blend(back, theme.foreground, 128);

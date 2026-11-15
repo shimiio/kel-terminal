@@ -8,7 +8,7 @@ use super::{
     TAB_TEXT_PADDING, TITLE_CHARS, Ui,
 };
 use crate::font::Font;
-use crate::layout::{Bar, Layout, Rect, Show, TitleHit, WindowButton, scaled};
+use crate::layout::{Bar, Layout, Rect, TitleHit, WindowButton, scaled};
 use crate::logo;
 use crate::theme::Theme;
 
@@ -311,9 +311,9 @@ pub(super) fn draw_bar_buttons(
     let (new_tab, palette) = layout.bar_buttons(chrome.tabs.len());
     let s = |n: usize| scaled(n, layout.scale);
     let on_bar = chrome.mouse_on_bar;
-    // The sidebar's stays while its sidebar is open: it's lit then.
-    let sidebar_shown = layout.sidebar_shows.shown(on_bar)
-        || layout.sidebar_shows == Show::Hover && chrome.sidebar.is_some();
+    // Not while its sidebar is open: the sidebar is over it, or (with no
+    // margin, the sidebar a bit further in) beside it, and says so itself.
+    let sidebar_shown = layout.sidebar_shows.shown(on_bar) && chrome.sidebar.is_none();
     // No `+` and `⌄` without tabs.
     let tab_buttons_shown = layout.tab_buttons_show.shown(on_bar) && layout.bar_shows != Bar::Title;
     let buttons = [
@@ -325,9 +325,7 @@ pub(super) fn draw_bar_buttons(
         // A square in the middle of the button's place, 24 x 24 at 100%.
         let side = s(24).min(r.w).min(r.h);
         let (bx, by) = (r.x + (r.w - side) / 2, r.y + (r.h - side) / 2);
-        // The sidebar's button stays lit while its sidebar is open.
-        let open = hit == TitleHit::Sidebar && chrome.sidebar.is_some();
-        let fg = if chrome.hovered == Some(hit) || open {
+        let fg = if chrome.hovered == Some(hit) {
             let spot = Rect {
                 x: bx,
                 y: by,

@@ -497,6 +497,10 @@ impl App {
             self.card_key(&event);
             return;
         }
+        // The list of tabs is up (Ctrl held after Ctrl+Tab): its keys first.
+        if matches!(self.switcher, Some((_, true))) && self.switcher_key(&event) {
+            return;
+        }
         let shortcut = keys::shortcut(event.physical_key, self.modifiers);
         if self.help.is_some() {
             self.help_key(&event, shortcut);
