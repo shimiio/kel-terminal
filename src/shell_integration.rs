@@ -11,6 +11,10 @@
 //! | `ESC]133;C ESC\` | Enter, a command starts | knows the tab is busy |
 //! | `ESC]133;D;<0 or 1> ESC\` | before the next prompt: it ended, 0 if it worked | not busy |
 //!
+//! And one thing Kel tells the shell: `KEL_HISTORY`, the file for its history of
+//! commands, a project's tab's own (see `history`). PowerShell, bash and zsh
+//! take it; without it, and in any other shell, the history is the usual one.
+//!
 //! The same codes as Windows Terminal and VS Code (`633;E` is VS Code's). In the
 //! command's text, `\`, `;` and anything below a space are written `\xNN`
 //! (`;` is `\x3b`): a real ESC or BEL would end the code early.
@@ -45,9 +49,19 @@ use std::path::{Path, PathBuf};
 /// (Enter, and the input is whole: no `{` left open), the command's text, then
 /// "the command starts". Not for an empty line: nothing starts.
 ///
+/// The history: PSReadLine (it reads the line, and keeps what ↑ brings back)
+/// reads its file at the first prompt, so naming another one here, before it,
+/// is enough. Not without PSReadLine (PowerShell 5 on an old Windows): there's
+/// no file at all then. The variable goes, so a shell started in the tab
+/// doesn't find it.
+///
 /// No `"` anywhere: Windows hands the script over inside `"..."`, and PowerShell 5
 /// mixes up `"` inside it. Hence `[char]27` (ESC) and single quotes.
-const POWERSHELL: &str = r"$global:__kel_prompt = $function:prompt
+const POWERSHELL: &str = r"if ($env:KEL_HISTORY) {
+  if (Get-Command Set-PSReadLineOption -ErrorAction Ignore) { Set-PSReadLineOption -HistorySavePath $env:KEL_HISTORY }
+  Remove-Item Env:KEL_HISTORY
+}
+$global:__kel_prompt = $function:prompt
 function global:prompt {
   $ok = $global:?
   $e = [string][char]27
@@ -99,6 +113,9 @@ if (Test-Path Function:\PSConsoleHostReadLine) {
 /// `KEL_BASH_LOGIN` this file reads the profile as a login bash would: the first
 /// of `~/.bash_profile`, `~/.bash_login`, `~/.profile` (which mostly reads
 /// `~/.bashrc` in turn).
+///
+/// The history: `HISTFILE` named after your files (one of them may name its
+/// own), before bash reads it, which it does once this file is done.
 const BASH: &str = r#"# Kel's shell integration for bash. Kel writes this file at each start: a change
 # here doesn't stay. bash reads it instead of ~/.bashrc, so yours first; for a
 # login shell (KEL_BASH_LOGIN), the files a login bash reads.
@@ -111,6 +128,8 @@ if [ -n "${KEL_BASH_LOGIN-}" ]; then
   fi
 elif [ -f ~/.bashrc ]; then . ~/.bashrc
 fi
+if [ -n "${KEL_HISTORY-}" ]; then HISTFILE=$KEL_HISTORY; fi
+unset KEL_HISTORY
 
 __kel_prompt() {
   local status=$?
@@ -159,6 +178,11 @@ fi
 /// - `__kel_preexec`, on Enter: zsh gives it the line as typed, its text then
 ///   "the command starts". zsh doesn't call it for an empty line.
 ///
+/// - `__kel_history`, before the first prompt only: the history. zsh has read
+///   its usual file by then (your `.zshrc`, or macOS' `/etc/zshrc`, named it
+///   after this file was read), so `fc -p` puts that list away and starts one
+///   from Kel's file, as long as yours were (`HISTSIZE`, `SAVEHIST`).
+///
 /// `'\'` in quotes for the same reason as in `BASH`; `code`, not `status`,
 /// which zsh keeps for itself.
 const ZSH: &str = r#"# Kel's shell integration for zsh. Kel writes this file at each start: a change
@@ -188,6 +212,15 @@ if [[ -o interactive ]]; then
   autoload -Uz add-zsh-hook
   add-zsh-hook precmd __kel_precmd
   add-zsh-hook preexec __kel_preexec
+
+  if [[ -n "${KEL_HISTORY-}" ]]; then
+    __kel_history() {
+      add-zsh-hook -d precmd __kel_history
+      fc -p "$KEL_HISTORY" "$HISTSIZE" "$SAVEHIST"
+      unset KEL_HISTORY
+    }
+    add-zsh-hook precmd __kel_history
+  fi
 fi
 "#;
 
@@ -195,8 +228,9 @@ fi
 const CMD_PROMPT: &str = "$e]9;9;$P$e\\";
 
 /// Adds shell integration to the command that starts `shell`, and the shell's
-/// own arguments from the config, `args`, where they go with it.
-pub fn add(cmd: &mut CommandBuilder, shell: &str, args: &[String]) {
+/// own arguments from the config, `args`, where they go with it. `history`:
+/// the file for the shell's history, if not its usual one (see `history`).
+pub fn add(cmd: &mut CommandBuilder, shell: &str, args: &[String], history: Option<&Path>) {
     match name(shell).as_deref() {
         Some("powershell" | "pwsh") => {
             cmd.args(args);
@@ -236,6 +270,11 @@ pub fn add(cmd: &mut CommandBuilder, shell: &str, args: &[String]) {
         _ => cmd.args(args),
     }
     cmd.env("PROMPT", cmd_prompt(std::env::var("PROMPT").ok()));
+    // Not the one Kel itself got, started from a tab of another Kel.
+    match history {
+        Some(file) => cmd.env("KEL_HISTORY", file),
+        None => cmd.env_remove("KEL_HISTORY"),
+    }
 }
 
 /// The file `name` in Kel's folder's `shell`, e.g. `~/.config/kel/shell/kel.bash`,
@@ -444,6 +483,93 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
         check_reports(&out);
         assert!(out.contains("yes-yes-none-from"), "{out:?}");
+    }
+
+    /// `KEL_HISTORY` in a real bash: ↑ has what the file had, what's typed goes
+    /// there, and not to the file your `~/.bashrc` names.
+    #[cfg(unix)]
+    #[test]
+    fn bash_keeps_its_history_where_kel_says() {
+        let home = test_home("bash-history");
+        std::fs::write(home.join(".bashrc"), "HISTFILE=~/mine\n").unwrap();
+        let history = home.join("tab-server.txt");
+        std::fs::write(&history, "echo from_last_time\n").unwrap();
+        let file = home.join("kel.bash");
+        std::fs::write(&file, BASH).unwrap();
+        let mut cmd = CommandBuilder::new("bash");
+        cmd.arg("--rcfile");
+        cmd.arg(&file);
+        cmd.arg("-i");
+        cmd.env("HOME", &home);
+        cmd.env("KEL_HISTORY", &history);
+        cmd.cwd(&home);
+        let input = b"history\necho typed-${KEL_HISTORY-gone}\nexit\n";
+        let out = run_in_pty(cmd, input);
+        let kept = std::fs::read_to_string(&history).unwrap_or_default();
+        let mine = home.join("mine").exists() || home.join(".bash_history").exists();
+        let _ = std::fs::remove_dir_all(&home);
+        assert!(out.contains("1  echo from_last_time"), "{out:?}");
+        // A shell started in the tab doesn't get the variable.
+        assert!(out.contains("typed-gone"), "{out:?}");
+        assert!(kept.contains("echo from_last_time\n"), "{kept:?}");
+        assert!(kept.contains("echo typed-"), "{kept:?}");
+        assert!(!mine);
+    }
+
+    /// The same in a real zsh, whose `.zshrc` names its own file after Kel's
+    /// `.zshenv` was read, as macOS' `/etc/zshrc` does. Without `KEL_HISTORY`
+    /// (home's tabs): yours, as it was.
+    #[cfg(unix)]
+    #[test]
+    fn zsh_keeps_its_history_where_kel_says() {
+        if std::process::Command::new("zsh")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let run = |name: &str, kel_history: bool| {
+            let home = test_home(name);
+            let zshrc = "HISTFILE=~/mine\nHISTSIZE=100\nSAVEHIST=100\n";
+            std::fs::write(home.join(".zshrc"), zshrc).unwrap();
+            std::fs::write(home.join("mine"), "echo from_anywhere\n").unwrap();
+            let history = home.join("tab-server.txt");
+            std::fs::write(&history, "echo from_last_time\n").unwrap();
+            let kel = home.join("kel");
+            std::fs::create_dir_all(&kel).unwrap();
+            std::fs::write(kel.join(".zshenv"), ZSH).unwrap();
+            let mut cmd = CommandBuilder::new("zsh");
+            cmd.arg("-i");
+            cmd.env("HOME", &home);
+            cmd.env("ZDOTDIR", &kel);
+            cmd.env_remove("KEL_ZDOTDIR");
+            if kel_history {
+                cmd.env("KEL_HISTORY", &history);
+            } else {
+                cmd.env_remove("KEL_HISTORY");
+            }
+            cmd.cwd(&home);
+            let input = b"fc -l 1\necho typed-${KEL_HISTORY-gone}-$HISTSIZE-$SAVEHIST\nexit\n";
+            let out = run_in_pty(cmd, input);
+            let kept = std::fs::read_to_string(&history).unwrap_or_default();
+            let mine = std::fs::read_to_string(home.join("mine")).unwrap_or_default();
+            let _ = std::fs::remove_dir_all(&home);
+            (out, kept, mine)
+        };
+        let (out, kept, mine) = run("zsh-history", true);
+        assert!(out.contains("1  echo from_last_time"), "{out:?}");
+        assert!(!out.contains("echo from_anywhere"), "{out:?}");
+        // As long as yours; and the variable is gone.
+        assert!(out.contains("typed-gone-100-100"), "{out:?}");
+        assert!(kept.contains("echo from_last_time\n"), "{kept:?}");
+        assert!(kept.contains("echo typed-"), "{kept:?}");
+        assert_eq!(mine, "echo from_anywhere\n");
+
+        let (out, kept, mine) = run("zsh-history-home", false);
+        assert!(out.contains("1  echo from_anywhere"), "{out:?}");
+        assert_eq!(kept, "echo from_last_time\n");
+        assert!(mine.contains("echo typed-"), "{mine:?}");
     }
 
     #[test]

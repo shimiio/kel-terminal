@@ -16,6 +16,7 @@
 //! - `fallback`: fonts for the letters the terminal's font lacks (emoji, Chinese).
 //! - `font`: finds a font, and turns its letters into pixels.
 //! - `frames`: `KEL_FRAMES=1`, how long frames take.
+//! - `history`: a project's tabs keep their own history of commands (↑).
 //! - `icons`: the tab icons, 8 x 8 pixel grids in code, like the logo.
 //! - `layout`: where the terminal panel goes in the window.
 //! - `mouse`: the bytes that tell a program (nvim) what the mouse does, if it asked.
@@ -49,6 +50,7 @@ pub mod font;
 pub mod frames;
 pub mod glass;
 pub mod help;
+pub mod history;
 pub mod icons;
 pub mod keys;
 pub mod layout;

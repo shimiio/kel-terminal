@@ -3,6 +3,7 @@
 
 use super::{App, CONFIRM_TIME, Closing, FLASH_TIME, PendingClose, TAB_DRAG_START};
 use crate::config;
+use crate::history;
 use crate::keys::{self, Action};
 use crate::tab::{Tab, TabId};
 use std::time::Instant;
@@ -42,10 +43,14 @@ impl App {
         self.next_id += 1;
         let screen = self.screen(rows, cols);
         let cwd = self.tab().cwd();
+        // It has no name yet: the project's history (see `history`).
+        let project = self.project.as_ref();
+        let history = project.and_then(|project| history::file(&project.name, None));
         match Tab::spawn(
             id,
             &self.shell(),
             cwd.as_deref(),
+            history.as_deref(),
             screen,
             self.proxy.clone(),
         ) {

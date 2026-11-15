@@ -3,6 +3,7 @@
 
 use super::{App, actions::clipboard_text};
 use crate::card::{self, Card, Target};
+use crate::history;
 use crate::keys::{self, Action};
 use crate::layout::Rect;
 use crate::project;
@@ -150,10 +151,20 @@ impl App {
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
             return;
         };
-        tab.name = card.value("Name");
+        let old = std::mem::replace(&mut tab.name, card.value("Name"));
+        let new = tab.name.clone();
         if card.has("Command") {
             tab.start_command = card.value("Command");
             tab.start = card.start();
+        }
+        // A project's tab renamed: its history of commands goes with the name,
+        // unless another tab still has the old one. The shell running in it
+        // writes to the old file until it starts again (see `history`).
+        if let (Some(project), Some(old), Some(new)) = (&self.project, &old, &new)
+            && old != new
+            && !self.tabs.iter().any(|tab| tab.name.as_ref() == Some(old))
+        {
+            history::rename_tab(&project.name, old, new);
         }
         if let Err(e) = self.save_project() {
             self.set_status(Some(format!("{e:#}")));

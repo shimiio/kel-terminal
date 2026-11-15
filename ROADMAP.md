@@ -332,9 +332,14 @@ Settled:
 ## After the release
 
 - [ ] Sessions that come back: a tab's output from last time, above its new prompt
-- [ ] A history per tab: ↑ shows the commands typed in this tab of this project (PowerShell's
-      `HistorySavePath` per tab, set by the shell integration). Ghost suggestions from it
-      (PSReadLine's `PredictionSource History`, PSReadLine 2.1+)
+- [x] A history per tab: ↑ shows the commands typed in this tab of this project, not all
+      typed anywhere. A tab with a name has its own, the project's tabs without one share
+      the project's, home keeps the shell's usual one. A file per tab in Kel's folder
+      (`history\myapp\tab-server.txt`), which the shell integration names to PowerShell
+      (PSReadLine's `HistorySavePath`), bash and zsh (`HISTFILE`); a tab or a project
+      renamed keeps it, a project deleted takes it along
+- [ ] Ghost suggestions from a tab's history (PSReadLine's `PredictionSource History`,
+      PSReadLine 2.1+)
 - [ ] A small local AI (Ollama): reads the tab's output, suggests a command into the input
       line, never runs it. Try first whether a small model is good enough
 - [ ] Split panes, like tmux inside Kel (tabs and nvim's own windows do for now)

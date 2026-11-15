@@ -133,16 +133,18 @@ pub struct Tab {
 impl Tab {
     /// Starts `shell` in a new tab, in the folder `cwd` (or where Kel runs), as big
     /// as `terminal`'s grid. `terminal` can already hold text (Kel's error messages
-    /// at start); the shell starts below it.
+    /// at start); the shell starts below it. `history`: the file for its history
+    /// of commands, a project's tab's own (see `history`); `None`: the shell's.
     pub fn spawn(
         id: TabId,
         shell: &str,
         cwd: Option<&Path>,
+        history: Option<&Path>,
         terminal: Terminal,
         proxy: EventLoopProxy<UserEvent>,
     ) -> anyhow::Result<Tab> {
         let (rows, cols) = (terminal.grid.rows() as u16, terminal.grid.cols() as u16);
-        let (master, child) = pty::spawn_shell(shell, cwd, rows, cols)?;
+        let (master, child) = pty::spawn_shell(shell, cwd, history, rows, cols)?;
         let reader = master.try_clone_reader()?; // shell output comes out here
         // Our keys go in here. At start, ConPTY asks "where is the cursor?" (`ESC[6n`)
         // and shows nothing until the answer comes back through it (see `UserEvent::Reply`).

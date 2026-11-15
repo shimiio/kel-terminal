@@ -26,6 +26,7 @@ use crate::card::Card;
 use crate::config::{self, Config};
 use crate::font::{self, Fonts};
 use crate::help::Help;
+use crate::history;
 use crate::layout::{Layout, TitleHit};
 use crate::palette::Palette;
 use crate::project::{self, Project, TabRecipe};
@@ -378,14 +379,21 @@ impl App {
             Some(project) => project.shell_of(recipe, || config.shell()),
             None => config.shell(),
         };
+        // Each tab's history of commands: a project's own, home's the shell's.
+        let history_of = |recipe: &TabRecipe| {
+            let name = project.as_ref().and(project_name.as_deref())?;
+            history::file(name, recipe.name.as_deref())
+        };
         // The first tab shows the problems. A shell that doesn't start is one more,
         // and the tab gets the system's shell instead.
         let shell = shell_of(&recipes[0]);
         let folder = folder_of(&recipes[0]);
+        let history = history_of(&recipes[0]);
         let first = match Tab::spawn(
             0,
             &shell,
             folder.as_deref(),
+            history.as_deref(),
             screen(&problems),
             proxy.clone(),
         ) {
@@ -396,6 +404,7 @@ impl App {
                     0,
                     &crate::shell::system(),
                     folder.as_deref(),
+                    history.as_deref(),
                     screen(&problems),
                     proxy.clone(),
                 )?
@@ -405,10 +414,12 @@ impl App {
         let mut status = None;
         for (id, recipe) in (1..).zip(&recipes[1..]) {
             let (shell, folder) = (shell_of(recipe), folder_of(recipe));
+            let history = history_of(recipe);
             let spawn = |shell: &str| {
                 let mut screen = Terminal::new(ROWS, COLS);
                 screen.grid.set_scrollback_limit(config.scrollback);
-                Tab::spawn(id, shell, folder.as_deref(), screen, proxy.clone())
+                let (folder, history) = (folder.as_deref(), history.as_deref());
+                Tab::spawn(id, shell, folder, history, screen, proxy.clone())
             };
             // The others say it in the tab bar, and get the system's shell too.
             let tab = spawn(&shell).or_else(|e| {

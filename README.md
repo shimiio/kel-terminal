@@ -113,7 +113,10 @@ type in the palette: `Save the tabs as project: myapp`. Then:
 - `kel myapp` in any shell opens it, or the sidebar, or the palette's `Open project`;
 - "Open in Kel" on its folder in Explorer opens it too;
 - double-click a tab to name it, give it a command, and say when that starts; F2 on a
-  project in the sidebar for its name and color.
+  project in the sidebar for its name and color;
+- ↑ in a project's tab brings back the commands typed in that tab, not all you typed
+  anywhere: a tab with a name has its own history, the project's other tabs share one.
+  Home keeps the shell's usual history. (PowerShell, bash, zsh.)
 
 A project is a file in `%APPDATA%\kel\projects`, `myapp.toml`. You can write one by hand:
 

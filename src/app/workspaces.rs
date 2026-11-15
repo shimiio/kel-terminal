@@ -2,6 +2,7 @@
 //! starting, saving, closing, deleting one.
 
 use super::{App, COLS, Closing, OpenProject, ROWS, Workspace};
+use crate::history;
 use crate::project::{self, Project, TabRecipe, When};
 use crate::sidebar::Live;
 use crate::start::{self, Start};
@@ -169,8 +170,10 @@ impl App {
         if open && !self.end_project(name) {
             return;
         }
-        if let Err(e) = project::delete(name) {
-            self.set_status(Some(format!("{e:#}")));
+        match project::delete(name) {
+            // The commands typed in it go with it.
+            Ok(()) => history::delete_project(name),
+            Err(e) => self.set_status(Some(format!("{e:#}"))),
         }
         // Home's start screen was made before the file went: again, without it.
         if self.start.is_some() {
@@ -310,7 +313,9 @@ impl App {
             let id = self.next_id;
             self.next_id += 1;
             let screen = self.screen(rows, cols);
-            match Tab::spawn(id, &shell, folder.as_deref(), screen, self.proxy.clone()) {
+            let history = name.and_then(|name| history::file(name, recipe.name.as_deref()));
+            let (folder, history) = (folder.as_deref(), history.as_deref());
+            match Tab::spawn(id, &shell, folder, history, screen, self.proxy.clone()) {
                 Ok(mut tab) => {
                     tab.name = recipe.name.clone();
                     tab.own_shell = recipe.shell.clone();
@@ -387,6 +392,7 @@ impl App {
     ) -> anyhow::Result<()> {
         if new != old {
             project::rename(old, new)?;
+            history::rename_project(old, new);
             let parked = self.parked.iter_mut().filter_map(|w| w.project.as_mut());
             for open in self.project.iter_mut().chain(parked) {
                 if open.name == old {
