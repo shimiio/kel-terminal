@@ -39,7 +39,7 @@ use bar::{
     draw_bar_buttons, draw_status, draw_tab_bar, draw_title, draw_window_buttons,
     project_name_shown, project_name_width,
 };
-use overlays::{draw_card, draw_palette, draw_search, draw_sidebar, draw_switcher};
+use overlays::{draw_card, draw_palette, draw_search, draw_sidebar, draw_switcher, switcher_place};
 use screens::{draw_help, draw_start};
 use shapes::{blend, fill_rect, fill_round, invisible, outline, solid};
 use std::collections::HashMap;
@@ -334,6 +334,19 @@ impl Renderer {
             cursor_shape: CursorShape::default(),
             ui,
         })
+    }
+
+    /// The tab whose line in the list of tabs (see `draw_switcher`) is at
+    /// (x, y), with `count` tabs and the one at `active` on screen. `layout`:
+    /// as it's drawn now.
+    pub fn switcher_tab_at(
+        &self,
+        layout: &Layout,
+        (count, active): (usize, usize),
+        (x, y): (usize, usize),
+    ) -> Option<usize> {
+        let place = switcher_place(&layout.body(), &self.ui, count, active)?;
+        place.tab_at(layout.border, x, y)
     }
 
     pub fn cell_size(&self) -> (usize, usize) {

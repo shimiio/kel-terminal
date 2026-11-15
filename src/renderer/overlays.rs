@@ -26,6 +26,67 @@ use crate::theme::Theme;
 /// │ ↑↓ go  Shift+↑↓ move  E edit │  its keys, dim
 /// └──────────────────────────────┘
 /// ```
+///
+/// A click on a line shows its tab (see `SwitcherPlace::tab_at`).
+/// Where the list of tabs is, for `count` tabs with the one at `active` on
+/// screen: for drawing it, and for finding the line under a click.
+pub(super) struct SwitcherPlace {
+    /// The box.
+    r: Rect,
+    line_h: usize,
+    /// Between the box's top and its first line.
+    gap: usize,
+    /// How many tabs show, from the one at `first`.
+    lines: usize,
+    first: usize,
+}
+
+/// None: no tabs, or a window too narrow for the list.
+pub(super) fn switcher_place(
+    layout: &Layout,
+    ui: &Ui,
+    count: usize,
+    active: usize,
+) -> Option<SwitcherPlace> {
+    let area = layout.inside;
+    let pad = ui.px(PALETTE_PADDING);
+    let b = layout.border;
+    let line_h = ui.line_h + 2 * pad;
+    let box_w = (SWITCHER_CHARS * ui.advance + 2 * pad).min(area.w.saturating_sub(4 * pad));
+    if box_w < 10 * ui.advance || count == 0 {
+        return None;
+    }
+    // The chosen line is as far from the box's top as from its sides.
+    let gap = if layout.radius > 0 { ui.px(2) } else { 0 };
+    // The lines on screen: the chosen one is always among them.
+    let lines = count.min(SWITCHER_LINES);
+    let r = Rect {
+        x: area.x + (area.w - box_w) / 2,
+        y: area.y + 2 * pad,
+        w: box_w,
+        h: (lines + 1) * line_h + 2 * (b + gap), // and the line of keys
+    };
+    Some(SwitcherPlace {
+        r,
+        line_h,
+        gap,
+        lines,
+        first: (active + 1).saturating_sub(lines),
+    })
+}
+
+impl SwitcherPlace {
+    /// The tab whose line is at (x, y): its place among the tabs.
+    pub(super) fn tab_at(&self, border: usize, x: usize, y: usize) -> Option<usize> {
+        let top = self.r.y + border + self.gap;
+        if !self.r.contains(x, y) || y < top {
+            return None;
+        }
+        let row = (y - top) / self.line_h;
+        (row < self.lines).then_some(self.first + row)
+    }
+}
+
 const SWITCHER_KEYS: &str = "↑↓ go   Shift+↑↓ move   E edit";
 
 pub(super) fn draw_switcher(
@@ -38,25 +99,18 @@ pub(super) fn draw_switcher(
     ui: &mut Ui,
 ) {
     let Chrome { tabs, active, .. } = *chrome;
-    let area = layout.inside;
+    let Some(place) = switcher_place(layout, ui, tabs.len(), active) else {
+        return;
+    };
+    let SwitcherPlace {
+        r,
+        line_h,
+        gap,
+        lines,
+        first,
+    } = place;
     let pad = ui.px(PALETTE_PADDING);
     let b = layout.border;
-    let line_h = ui.line_h + 2 * pad;
-    let box_w = (SWITCHER_CHARS * ui.advance + 2 * pad).min(area.w.saturating_sub(4 * pad));
-    if box_w < 10 * ui.advance || tabs.is_empty() {
-        return; // a window too narrow for it
-    }
-    // The chosen line is as far from the box's top as from its sides.
-    let gap = if layout.radius > 0 { ui.px(2) } else { 0 };
-    // The lines on screen: the chosen one is always among them.
-    let lines = tabs.len().min(SWITCHER_LINES);
-    let first = (active + 1).saturating_sub(lines);
-    let r = Rect {
-        x: area.x + (area.w - box_w) / 2,
-        y: area.y + 2 * pad,
-        w: box_w,
-        h: (lines + 1) * line_h + 2 * (b + gap), // and the line of keys
-    };
     let back = pane(theme, layout);
     let dim = blend(back, theme.foreground, 128);
     draw_box(pixels, width, theme, layout, r, back);
@@ -669,4 +723,33 @@ pub(super) fn draw_search(
         ui.line_h,
         theme.cursor,
     );
+}
+
+#[cfg(test)]
+mod switcher_tests {
+    use super::*;
+
+    #[test]
+    fn the_tab_under_a_click() {
+        // 20 tabs, the 15th on screen: 12 lines show, from the 4th tab.
+        let place = SwitcherPlace {
+            r: Rect {
+                x: 100,
+                y: 50,
+                w: 300,
+                h: 13 * 30 + 4,
+            },
+            line_h: 30,
+            gap: 2,
+            lines: 12,
+            first: 3,
+        };
+        assert_eq!(place.tab_at(0, 150, 52), Some(3));
+        assert_eq!(place.tab_at(0, 150, 52 + 30), Some(4));
+        assert_eq!(place.tab_at(0, 150, 52 + 12 * 30 - 1), Some(14));
+        // The gap above the first line, the line of keys, beside the box: none.
+        assert_eq!(place.tab_at(0, 150, 51), None);
+        assert_eq!(place.tab_at(0, 150, 52 + 12 * 30), None);
+        assert_eq!(place.tab_at(0, 99, 60), None);
+    }
 }

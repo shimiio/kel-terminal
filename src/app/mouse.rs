@@ -362,6 +362,20 @@ impl App {
             self.request_redraw();
             return;
         }
+        // The list of tabs is up (Ctrl held after Ctrl+Tab): a click on a
+        // line shows its tab. The list stays, Ctrl is still held.
+        if matches!(self.switcher, Some((_, true)))
+            && state == ElementState::Pressed
+            && button == MouseButton::Left
+            && let Some(renderer) = &self.renderer
+        {
+            let layout = self.layout.drawn(self.bar_up());
+            let tabs = (self.tabs.len(), self.active);
+            if let Some(index) = renderer.switcher_tab_at(&layout, tabs, self.mouse_pos) {
+                self.show_tab(index);
+                return;
+            }
+        }
         // A click anywhere closes the help, or the palette, and does nothing else.
         if self.help.is_some() && state == ElementState::Pressed {
             self.help = None;
