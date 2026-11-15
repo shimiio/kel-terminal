@@ -84,7 +84,7 @@ pub enum TitleHit {
         close: bool,
     },
     /// The title, where there are no tabs (`tab_bar = "title"`): the tab on
-    /// screen's. It moves the window like the empty bar; a right click: its card.
+    /// screen's. A click: the list of tabs; a right click: the tab's card.
     Title,
 }
 

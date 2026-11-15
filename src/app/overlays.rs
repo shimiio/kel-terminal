@@ -51,23 +51,43 @@ impl App {
         self.request_redraw();
     }
 
-    /// A key while the list of tabs shows (Ctrl is held, see `switcher`): what
-    /// the tab bar's mouse does where there's no tab bar. ↑ ↓ go to the tab
-    /// above or below, with Shift they move the tab on screen there; E or
-    /// Enter opens its card (its name, its command). `false`: not the list's key.
+    /// A key while the list of tabs shows (see `Switcher`): what the tab bar's
+    /// mouse does where there's no tab bar. ↑ ↓ go to the tab above or below,
+    /// with Shift they move the tab on screen there; E opens its card (its
+    /// name, its command). A pinned list: Esc or Enter puts it away, and so
+    /// does any other key, which then does what it always does. One that came
+    /// with Ctrl+Tab: Enter is the card too. `false`: not the list's key.
     pub(super) fn switcher_key(&mut self, event: &KeyEvent) -> bool {
+        let pinned = self.switcher.is_some_and(|switcher| switcher.pinned);
         let PhysicalKey::Code(code) = event.physical_key else {
             return false;
         };
         let step: isize = match code {
             KeyCode::ArrowUp => -1,
             KeyCode::ArrowDown => 1,
+            KeyCode::Escape | KeyCode::Enter if pinned => {
+                self.close_switcher();
+                return true;
+            }
             KeyCode::KeyE | KeyCode::Enter => {
                 self.close_switcher();
                 self.open_tab_card(self.active);
                 return true;
             }
-            _ => return false,
+            // Shift on its way to Shift+↑ isn't a key elsewhere.
+            _ if matches!(
+                event.logical_key,
+                Key::Named(NamedKey::Shift | NamedKey::Control | NamedKey::Alt | NamedKey::Super)
+            ) =>
+            {
+                return false;
+            }
+            _ => {
+                if pinned {
+                    self.close_switcher();
+                }
+                return false;
+            }
         };
         if self.modifiers.shift_key() {
             // Not past the ends: `move_tab` does nothing there.

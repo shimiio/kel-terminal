@@ -279,6 +279,10 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] In that list, what the mouse does on a tab bar: ↑ ↓ go to the tab above or below,
       Shift+↑ ↓ move the tab on screen there, E or Enter opens its card (its name, its
       command). Ctrl is held all along; the list says its keys in its last line
+- [x] The list of tabs by the mouse alone: a click on the title (a hand over it, a little
+      lighter) or the palette's "Tabs: the list" shows it to stay, with no Ctrl held: a
+      click on a line shows the tab and puts the list away, as do Esc, Enter, a click or a
+      key elsewhere. The bar around the title moves the window
 
 ## 10. Before the release
 

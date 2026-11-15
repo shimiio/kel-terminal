@@ -212,6 +212,11 @@ impl App {
                         // Kel's actions first, then the projects, then the install scripts.
                         let current = self.project.as_ref().map(|p| p.name.as_str());
                         let mut items = keys::palette_items();
+                        items.push(Item {
+                            label: "Tabs: the list".to_string(),
+                            hint: "click the title".to_string(),
+                            action: Action::TabList,
+                        });
                         // The project on screen can be changed, and closed.
                         if let Some(name) = current {
                             items.push(Item {
@@ -267,6 +272,7 @@ impl App {
             Action::NextProject => self.step_project(1),
             Action::PreviousProject => self.step_project(-1),
             Action::EditTab => self.open_tab_card(self.active),
+            Action::TabList => self.toggle_tab_list(),
             Action::EditProject => {
                 if let Some(name) = self.project.as_ref().map(|p| p.name.clone()) {
                     self.open_project_card(&name);

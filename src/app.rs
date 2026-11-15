@@ -42,7 +42,7 @@ use std::time::{Duration, Instant, SystemTime};
 use vte::Parser;
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::ModifiersState;
-use winit::window::{ResizeDirection, Window};
+use winit::window::{CursorIcon, ResizeDirection, Window};
 
 // Starting size, in cells. After that, the size comes from the window (`on_resize`).
 const ROWS: usize = 24;
@@ -97,6 +97,21 @@ impl Selection {
             end: last.max(end),
         }
     }
+}
+
+/// The list of tabs: which tabs there are, and which one is on screen. Two
+/// ways in:
+/// - Ctrl held after Ctrl+Tab, where the tabs aren't in sight (`tab_bar` is
+///   `"title"` or `"never"`): it goes when Ctrl is let go;
+/// - a click on the title, or the palette's line: `pinned`, it stays until a
+///   tab is clicked in it, Esc, Enter, or a click or a key elsewhere.
+#[derive(Clone, Copy)]
+struct Switcher {
+    /// When it shows: `SWITCHER_DELAY` after the first Ctrl+Tab.
+    at: Instant,
+    /// It shows already.
+    shown: bool,
+    pinned: bool,
 }
 
 /// The left button, held in the terminal (see `on_left_button`).
@@ -270,11 +285,10 @@ pub struct App {
     bar_peek: bool,
     /// A hidden tab bar shows by itself until then (see `show_bar`).
     bar_until: Option<Instant>,
-    /// The list of tabs, while Ctrl is held after Ctrl+Tab, where the tabs
-    /// aren't in sight (`tab_bar` is `"title"` or `"never"`): which tabs there
-    /// are, and which one is on screen. When it shows (`SWITCHER_DELAY` after
-    /// the first Ctrl+Tab), and whether it does already.
-    switcher: Option<(Instant, bool)>,
+    /// The list of tabs (see `Switcher`), while it's open.
+    switcher: Option<Switcher>,
+    /// The mouse's shape as last set (see `update_cursor`).
+    cursor_icon: CursorIcon,
     /// When the empty title bar was last clicked, to notice a double click.
     last_click: Option<Instant>,
     /// The window is closing (see `close_window`): `about_to_wait` ends the event loop.
@@ -503,6 +517,7 @@ impl App {
             bar_peek: false,
             bar_until: None,
             switcher: None,
+            cursor_icon: CursorIcon::Default,
             last_click: None,
             quit: false,
             frames: crate::frames::FrameLog::from_env(),

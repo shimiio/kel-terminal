@@ -1,7 +1,9 @@
 //! The tabs on screen: a new one, closing, showing, moving, and the window's
 //! own close.
 
-use super::{App, CONFIRM_TIME, Closing, FLASH_TIME, PendingClose, SWITCHER_DELAY, TAB_DRAG_START};
+use super::{
+    App, CONFIRM_TIME, Closing, FLASH_TIME, PendingClose, SWITCHER_DELAY, Switcher, TAB_DRAG_START,
+};
 use crate::config;
 use crate::history;
 use crate::keys::{self, Action};
@@ -284,15 +286,48 @@ impl App {
         let hidden = matches!(self.config.layout.tab_bar, Bar::Title | Bar::Never);
         let held = self.modifiers.control_key();
         if hidden && held && self.tabs.len() > 1 && self.switcher.is_none() {
-            self.switcher = Some((Instant::now() + SWITCHER_DELAY, false));
+            self.switcher = Some(Switcher {
+                at: Instant::now() + SWITCHER_DELAY,
+                shown: false,
+                pinned: false,
+            });
         }
     }
 
-    /// Ctrl let go, or the window left: the list of tabs goes.
+    /// The list of tabs goes: the window left, a tab chosen, Esc.
     pub(super) fn close_switcher(&mut self) {
-        if self.switcher.take().is_some_and(|(_, shown)| shown) {
+        if self.switcher.take().is_some_and(|switcher| switcher.shown) {
             self.request_redraw();
         }
+    }
+
+    /// Ctrl let go: the list that came with Ctrl+Tab goes; a pinned one stays.
+    pub(super) fn release_switcher(&mut self) {
+        if self.switcher.is_some_and(|switcher| !switcher.pinned) {
+            self.close_switcher();
+        }
+    }
+
+    /// The list of tabs shows.
+    pub(super) fn switcher_up(&self) -> bool {
+        self.switcher.is_some_and(|switcher| switcher.shown)
+    }
+
+    /// A click on the title, or the palette's line: the list of tabs comes
+    /// and stays (see `Switcher`), with any `tab_bar`; again, it goes.
+    pub(super) fn toggle_tab_list(&mut self) {
+        self.switcher = match self.switcher {
+            Some(switcher) if switcher.pinned => None,
+            _ => Some(Switcher {
+                at: Instant::now(),
+                shown: true,
+                pinned: true,
+            }),
+        };
+        self.palette = None;
+        self.search = None;
+        self.sidebar = None;
+        self.request_redraw();
     }
 
     pub(super) fn next_tab(&mut self, step: isize) {

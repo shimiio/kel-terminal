@@ -218,6 +218,19 @@ pub(super) fn draw_title(
     let mut x = middle.saturating_sub(w / 2).max(first);
     let end = bar.x + bar.w;
     let y = bar.y + bar.h.saturating_sub(ui.line_h) / 2;
+    // Under the mouse: a little lighter behind it, as a button. A click
+    // shows the list of tabs.
+    if chrome.hovered == Some(TitleHit::Title) {
+        let (px, py) = (ui.px(TAB_TEXT_PADDING), ui.px(2));
+        let spot = Rect {
+            x: x.saturating_sub(px),
+            y: y.saturating_sub(py),
+            w: (w + 2 * px).min(end.saturating_sub(x.saturating_sub(px))),
+            h: ui.line_h + 2 * py,
+        };
+        let lit = blend(theme.background, theme.foreground, 24);
+        fill_round(pixels, width, spot, [layout.small_radius(); 4], lit);
+    }
     for (text, color) in &parts {
         let max_w = end.saturating_sub(x);
         draw_ui_text(pixels, width, font, ui, text, (x, y), max_w, *color);

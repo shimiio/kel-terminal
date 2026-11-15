@@ -136,9 +136,7 @@ impl App {
         };
         if edge != self.resize_edge {
             self.resize_edge = edge;
-            if let Some(window) = &self.window {
-                window.set_cursor(edge.map_or(CursorIcon::Default, CursorIcon::from));
-            }
+            self.update_cursor();
         }
         self.update_hovered();
         self.leave_peek();
@@ -241,21 +239,30 @@ impl App {
         if link == self.link {
             return;
         }
-        if link.is_some() != self.link.is_some()
-            && let Some(window) = &self.window
-        {
-            // Off a link: back to what the mouse was (resize arrows at an edge).
-            let off = self
-                .resize_edge
-                .map_or(CursorIcon::Default, CursorIcon::from);
-            window.set_cursor(if link.is_some() {
-                CursorIcon::Pointer
-            } else {
-                off
-            });
-        }
         self.link = link;
+        self.update_cursor();
         self.request_redraw();
+    }
+
+    /// The mouse's shape, for where it is now: resize arrows at the window's
+    /// edge; a hand over what a click opens (a link with Ctrl held, the title
+    /// where there are no tabs: its click shows the list of tabs); else the
+    /// arrow. Worked out here from what's under the mouse, in one place, so a
+    /// shape can't stay after its reason went. Set only when it changes.
+    pub(super) fn update_cursor(&mut self) {
+        let icon = match self.resize_edge {
+            Some(edge) => CursorIcon::from(edge),
+            None if self.link.is_some() || self.hovered == Some(TitleHit::Title) => {
+                CursorIcon::Pointer
+            }
+            None => CursorIcon::Default,
+        };
+        if icon != self.cursor_icon {
+            self.cursor_icon = icon;
+            if let Some(window) = &self.window {
+                window.set_cursor(icon);
+            }
+        }
     }
 
     /// Opens a link (see `links::target`): a web page in the default browser,
@@ -362,17 +369,25 @@ impl App {
             self.request_redraw();
             return;
         }
-        // The list of tabs is up (Ctrl held after Ctrl+Tab): a click on a
-        // line shows its tab. The list stays, Ctrl is still held.
-        if matches!(self.switcher, Some((_, true)))
-            && state == ElementState::Pressed
-            && button == MouseButton::Left
-            && let Some(renderer) = &self.renderer
-        {
+        // The list of tabs is up: a click on a line shows its tab. One that
+        // came with Ctrl+Tab stays, Ctrl is still held. A pinned one goes, and
+        // a click anywhere else puts it away and does nothing else.
+        if self.switcher_up() && state == ElementState::Pressed {
+            let pinned = self.switcher.is_some_and(|switcher| switcher.pinned);
             let layout = self.layout.drawn(self.bar_up());
             let tabs = (self.tabs.len(), self.active);
-            if let Some(index) = renderer.switcher_tab_at(&layout, tabs, self.mouse_pos) {
+            let line = self
+                .renderer
+                .as_ref()
+                .filter(|_| button == MouseButton::Left)
+                .and_then(|renderer| renderer.switcher_tab_at(&layout, tabs, self.mouse_pos));
+            if pinned {
+                self.close_switcher();
+            }
+            if let Some(index) = line {
                 self.show_tab(index);
+            }
+            if pinned || line.is_some() {
                 return;
             }
         }
@@ -545,6 +560,7 @@ impl App {
     fn set_hovered(&mut self, hit: Option<TitleHit>) {
         if self.hovered != hit {
             self.hovered = hit;
+            self.update_cursor();
             self.request_redraw();
             let nothing_open = self.sidebar.is_none()
                 && self.palette.is_none()
@@ -625,8 +641,9 @@ impl App {
                     moving: false,
                 });
             }
-            // The title moves the window too.
-            Some(TitleHit::Title) | None => self.on_empty_bar_click(&window),
+            // The title: the list of tabs. The bar around it moves the window.
+            Some(TitleHit::Title) => self.toggle_tab_list(),
+            None => self.on_empty_bar_click(&window),
         }
     }
 

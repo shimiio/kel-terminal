@@ -142,7 +142,7 @@ impl ApplicationHandler<UserEvent> for App {
                 self.modifiers = m.state();
                 self.update_link(); // Ctrl pressed or let go over a link
                 if !self.modifiers.control_key() {
-                    self.close_switcher();
+                    self.release_switcher();
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
@@ -219,10 +219,11 @@ impl ApplicationHandler<UserEvent> for App {
         }
         self.peek();
         // Ctrl held long enough after Ctrl+Tab: the list of tabs shows.
-        if let Some((at, shown @ false)) = &mut self.switcher
-            && Instant::now() >= *at
+        if let Some(switcher) = &mut self.switcher
+            && !switcher.shown
+            && Instant::now() >= switcher.at
         {
-            *shown = true;
+            switcher.shown = true;
             self.request_redraw();
         }
         // A hidden tab bar has shown long enough.
@@ -245,7 +246,7 @@ impl ApplicationHandler<UserEvent> for App {
             self.burger_since.map(|since| since + PEEK_DELAY),
             self.flash_until,
             self.bar_until,
-            self.switcher.filter(|(_, shown)| !shown).map(|(at, _)| at),
+            self.switcher.filter(|s| !s.shown).map(|s| s.at),
         ]
         .into_iter()
         .flatten()
@@ -357,7 +358,7 @@ impl App {
             hovered: self.hovered,
             mouse_on_bar: self.mouse_on_bar,
             bar_up: self.bar_up(),
-            switcher: matches!(self.switcher, Some((_, true))),
+            switcher: self.switcher_up(),
             maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),
             status: self.status.as_deref(),
             question: self
@@ -497,8 +498,8 @@ impl App {
             self.card_key(&event);
             return;
         }
-        // The list of tabs is up (Ctrl held after Ctrl+Tab): its keys first.
-        if matches!(self.switcher, Some((_, true))) && self.switcher_key(&event) {
+        // The list of tabs is up: its keys first.
+        if self.switcher_up() && self.switcher_key(&event) {
             return;
         }
         let shortcut = keys::shortcut(event.physical_key, self.modifiers);
