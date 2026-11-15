@@ -239,6 +239,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             "copied as you let go",
         ),
         row(
+            "suggestions",
+            &config.suggestions.to_string(),
+            "PowerShell's, from the tab's history",
+        ),
+        row(
             "option_as_alt",
             &config.option_as_alt.to_string(),
             "macOS: Option is Alt",

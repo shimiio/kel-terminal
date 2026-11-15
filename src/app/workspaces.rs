@@ -316,7 +316,16 @@ impl App {
             let screen = self.screen(rows, cols);
             let history = name.and_then(|name| history::file(name, recipe.name.as_deref()));
             let (folder, history) = (folder.as_deref(), history.as_deref());
-            match Tab::spawn(id, &shell, folder, history, screen, self.proxy.clone()) {
+            let suggest = self.config.suggestions;
+            match Tab::spawn(
+                id,
+                &shell,
+                folder,
+                history,
+                suggest,
+                screen,
+                self.proxy.clone(),
+            ) {
                 Ok(mut tab) => {
                     tab.name = recipe.name.clone();
                     tab.own_shell = recipe.shell.clone();

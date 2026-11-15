@@ -13,11 +13,13 @@ use std::path::Path;
 /// too, see `shell::split`) in a new PTY of `rows` x `cols` cells,
 /// in the folder `cwd` if it's given and still there (else where Kel runs).
 /// `history`: the file for its history of commands, if not its usual one.
+/// `suggestions`: the config's, whether it shows ghost suggestions.
 /// Returns our (master) end and the shell process.
 pub fn spawn_shell(
     shell: &str,
     cwd: Option<&Path>,
     history: Option<&Path>,
+    suggestions: bool,
     rows: u16,
     cols: u16,
 ) -> anyhow::Result<(Box<dyn MasterPty + Send>, Box<dyn Child + Send + Sync>)> {
@@ -30,7 +32,7 @@ pub fn spawn_shell(
     let (program, args) = crate::shell::split(shell);
     let mut cmd = CommandBuilder::new(program);
     introduce_kel(&mut cmd);
-    shell_integration::add(&mut cmd, shell, &args, history);
+    shell_integration::add(&mut cmd, shell, &args, history, suggestions);
     // A deleted folder would make the start fail.
     if let Some(cwd) = cwd.filter(|cwd| cwd.is_dir()) {
         cmd.cwd(cwd);

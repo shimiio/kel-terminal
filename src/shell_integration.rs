@@ -14,8 +14,8 @@
 //! And one thing Kel tells the shell: `KEL_HISTORY`, the file for its history of
 //! commands, a project's tab's own (see `history`). PowerShell, bash and zsh
 //! take it; without it, and in any other shell, the history is the usual one.
-//! PowerShell is also asked for ghost suggestions from that history (see
-//! `POWERSHELL`).
+//! And `KEL_SUGGESTIONS`, the config's `suggestions`: 1, PowerShell shows ghost
+//! suggestions from that history; 0, none (see `POWERSHELL`).
 //!
 //! The same codes as Windows Terminal and VS Code (`633;E` is VS Code's). In the
 //! command's text, `\`, `;` and anything below a space are written `\xNN`
@@ -61,13 +61,15 @@ use std::path::{Path, PathBuf};
 /// rest of the last command in its history that starts so (→ takes it, Ctrl+→
 /// a word of it). The history is the tab's own, so are the suggestions. Only a
 /// PSReadLine that knows them (2.1 or newer; Windows' own PowerShell 5 comes
-/// with 2.0) has `-PredictionSource`. Turned on where they're off, which is
-/// how they come before 2.2.6; a newer one has them on already, and what you
-/// chose there stays (its plugins too). The older ones draw them in a dark gray
-/// (color 238) that can't be read on a dark background: the newer ones' dim
-/// italic instead, unless the color is one you picked. Inside `& { }`, so its
-/// variables don't stay in your session; in `try`, since it's nothing to stop
-/// a shell for.
+/// with 2.0) has `-PredictionSource`. By `KEL_SUGGESTIONS`, the config's word:
+/// 1, turned on where they're off, which is how they come before 2.2.6; a newer
+/// one has them on already, and what you chose there stays (its plugins too).
+/// 0, turned off: a profile can't say so itself, off is also how they come.
+/// The older ones draw them in a dark gray (color 238) that can't be read on a
+/// dark background: the newer ones' dim italic instead, unless the color is
+/// one you picked. Inside `& { }`, so its variables don't stay in your session;
+/// in `try`, since it's nothing to stop a shell for. The variable goes, like
+/// the history's.
 ///
 /// No `"` anywhere: Windows hands the script over inside `"..."`, and PowerShell 5
 /// mixes up `"` inside it. Hence `[char]27` (ESC) and single quotes.
@@ -75,16 +77,20 @@ const POWERSHELL: &str = r"if ($env:KEL_HISTORY) {
   if (Get-Command Set-PSReadLineOption -ErrorAction Ignore) { Set-PSReadLineOption -HistorySavePath $env:KEL_HISTORY }
   Remove-Item Env:KEL_HISTORY
 }
-& {
-  $set = Get-Command Set-PSReadLineOption -ErrorAction Ignore
-  if ($set -and $set.Parameters.ContainsKey('PredictionSource')) {
-    try {
-      $now = Get-PSReadLineOption
-      $e = [string][char]27
-      if ([string]$now.PredictionSource -eq 'None') { Set-PSReadLineOption -PredictionSource History }
-      if ($now.InlinePredictionColor -eq $e + '[38;5;238m') { Set-PSReadLineOption -Colors @{ InlinePrediction = $e + '[97;2;3m' } }
-    } catch {}
+if ($env:KEL_SUGGESTIONS) {
+  & {
+    $set = Get-Command Set-PSReadLineOption -ErrorAction Ignore
+    if ($set -and $set.Parameters.ContainsKey('PredictionSource')) {
+      try {
+        $now = Get-PSReadLineOption
+        $e = [string][char]27
+        if ($env:KEL_SUGGESTIONS -eq '0') { Set-PSReadLineOption -PredictionSource None }
+        elseif ([string]$now.PredictionSource -eq 'None') { Set-PSReadLineOption -PredictionSource History }
+        if ($now.InlinePredictionColor -eq $e + '[38;5;238m') { Set-PSReadLineOption -Colors @{ InlinePrediction = $e + '[97;2;3m' } }
+      } catch {}
+    }
   }
+  Remove-Item Env:KEL_SUGGESTIONS
 }
 $global:__kel_prompt = $function:prompt
 function global:prompt {
@@ -255,7 +261,14 @@ const CMD_PROMPT: &str = "$e]9;9;$P$e\\";
 /// Adds shell integration to the command that starts `shell`, and the shell's
 /// own arguments from the config, `args`, where they go with it. `history`:
 /// the file for the shell's history, if not its usual one (see `history`).
-pub fn add(cmd: &mut CommandBuilder, shell: &str, args: &[String], history: Option<&Path>) {
+/// `suggestions`: the config's, whether the shell shows ghost suggestions.
+pub fn add(
+    cmd: &mut CommandBuilder,
+    shell: &str,
+    args: &[String],
+    history: Option<&Path>,
+    suggestions: bool,
+) {
     match name(shell).as_deref() {
         Some("powershell" | "pwsh") => {
             cmd.args(args);
@@ -300,6 +313,7 @@ pub fn add(cmd: &mut CommandBuilder, shell: &str, args: &[String], history: Opti
         Some(file) => cmd.env("KEL_HISTORY", file),
         None => cmd.env_remove("KEL_HISTORY"),
     }
+    cmd.env("KEL_SUGGESTIONS", if suggestions { "1" } else { "0" });
 }
 
 /// The file `name` in Kel's folder's `shell`, e.g. `~/.config/kel/shell/kel.bash`,

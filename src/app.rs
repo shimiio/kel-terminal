@@ -427,6 +427,7 @@ impl App {
             &shell,
             folder.as_deref(),
             history.as_deref(),
+            config.suggestions,
             screen(&problems),
             proxy.clone(),
         ) {
@@ -438,6 +439,7 @@ impl App {
                     &crate::shell::system(),
                     folder.as_deref(),
                     history.as_deref(),
+                    config.suggestions,
                     screen(&problems),
                     proxy.clone(),
                 )?
@@ -452,7 +454,15 @@ impl App {
                 let mut screen = Terminal::new(ROWS, COLS);
                 screen.grid.set_scrollback_limit(config.scrollback);
                 let (folder, history) = (folder.as_deref(), history.as_deref());
-                Tab::spawn(id, shell, folder, history, screen, proxy.clone())
+                Tab::spawn(
+                    id,
+                    shell,
+                    folder,
+                    history,
+                    config.suggestions,
+                    screen,
+                    proxy.clone(),
+                )
             };
             // The others say it in the tab bar, and get the system's shell too.
             let tab = spawn(&shell).or_else(|e| {

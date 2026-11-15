@@ -121,6 +121,7 @@ type in the palette: `Save the tabs as project: myapp`. Then:
 - as you type, PowerShell shows the rest of a command from that history, dim: → takes
   it, Ctrl+→ a word of it. It takes PSReadLine 2.1 or newer; Windows' own PowerShell
   comes with 2.0 (`Install-Module PSReadLine -Scope CurrentUser -Force` gets the newest).
+  `suggestions = false` in the config: none.
 
 A project is a file in `%APPDATA%\kel\projects`, `myapp.toml`. You can write one by hand:
 

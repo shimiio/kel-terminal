@@ -63,6 +63,12 @@ copy_on_select = false
 # { on German and other layouts are Option+letter).
 option_as_alt = false
 
+# As you type, PowerShell shows the rest of a command typed before in this tab,
+# dim: → takes it, Ctrl+→ a word of it. It takes PSReadLine 2.1 or newer (Windows'
+# own PowerShell comes with 2.0: `Install-Module PSReadLine` gets the newest).
+# false: none. Applies to new tabs.
+suggestions = true
+
 # How many lines of output each tab keeps to scroll back to. Older ones go.
 # 10 000 lines take a few MB per tab. A smaller number applies at once.
 scrollback = 10000
@@ -197,6 +203,7 @@ pub struct Config {
     pub copy_on_select: bool,
     /// macOS only: Option is Alt, not a key for letters (see `keys::mac_key_to_bytes`).
     pub option_as_alt: bool,
+    pub suggestions: bool,
     pub scrollback: usize,
     pub bell: Bell,
     pub start_screen: bool,
@@ -219,6 +226,7 @@ impl Default for Config {
             cursor_blink: true,
             copy_on_select: false,
             option_as_alt: false,
+            suggestions: true,
             scrollback: crate::term::SCROLLBACK_LIMIT,
             bell: Bell::Taskbar,
             start_screen: true,
@@ -434,6 +442,13 @@ project_colors = [\"#112233\", \"blue\"]";
         let config: Config = toml::from_str("scrollback = 50000").unwrap();
         assert_eq!(config.scrollback, 50_000);
         assert!(toml::from_str::<Config>("scrollback = -1").is_err());
+    }
+
+    #[test]
+    fn suggestions() {
+        assert!(Config::default().suggestions);
+        let config: Config = toml::from_str("suggestions = false").unwrap();
+        assert!(!config.suggestions);
     }
 
     #[test]

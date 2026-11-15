@@ -54,6 +54,7 @@ impl App {
             &self.shell(),
             cwd.as_deref(),
             history.as_deref(),
+            self.config.suggestions,
             screen,
             self.proxy.clone(),
         ) {
