@@ -171,6 +171,7 @@ fn pc_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
         (KeyCode::KeyB, true) => Action::Sidebar, // like VS Code's Ctrl+B
         (KeyCode::KeyH, true) => Action::OpenHome,
         (KeyCode::KeyR, true) => Action::RunTabCommand,
+        (KeyCode::KeyE, true) => Action::EditTab,
         // Ctrl+? : the question mark's key. Not F1, which programs have (htop,
         // mc, nvim: their own help); not Ctrl+/ alone, which nvim plugins use.
         (KeyCode::Slash, true) => Action::Help,
@@ -233,6 +234,7 @@ fn mac_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
         // Cmd+H alone hides, on every Mac.
         (KeyCode::KeyH, true) => Action::OpenHome,
         (KeyCode::KeyR, false) => Action::RunTabCommand,
+        (KeyCode::KeyE, false) => Action::EditTab,
         // Cmd+?, as the Help menu of Mac apps.
         (KeyCode::Slash, true) => Action::Help,
         (KeyCode::KeyQ, false) => Action::Quit,
@@ -291,6 +293,12 @@ fn palette_items_on(mac: bool) -> Vec<Item> {
             "Ctrl+Shift+PageDown",
             "Cmd+Shift+→",
             Action::MoveTabRight,
+        ),
+        item(
+            "Edit tab: name and command",
+            "Ctrl+Shift+E",
+            "Cmd+E",
+            Action::EditTab,
         ),
         item("Paste", "Ctrl+Shift+V", "Cmd+V", Action::Paste),
         item("Copy the selection", "Ctrl+Shift+C", "Cmd+C", Action::Copy),
@@ -730,6 +738,12 @@ mod tests {
             Some(Action::NewTab)
         );
         assert_eq!(shortcut(key(KeyCode::Tab), CTRL), Some(Action::NextTab));
+        // The card of the tab on screen; Ctrl+E alone is the shell's (the line's end).
+        assert_eq!(
+            shortcut(key(KeyCode::KeyE), CTRL_SHIFT),
+            Some(Action::EditTab)
+        );
+        assert_eq!(shortcut(key(KeyCode::KeyE), CTRL), None);
         assert_eq!(
             shortcut(key(KeyCode::Tab), CTRL_SHIFT),
             Some(Action::PreviousTab)
@@ -799,6 +813,7 @@ mod tests {
             "]" => KeyCode::BracketRight,
             "B" => KeyCode::KeyB,
             "C" => KeyCode::KeyC,
+            "E" => KeyCode::KeyE,
             "F" => KeyCode::KeyF,
             "H" => KeyCode::KeyH,
             "R" => KeyCode::KeyR,

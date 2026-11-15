@@ -95,6 +95,7 @@ Option types its letters, as on any Mac; `option_as_alt = true` makes it Alt.
 | Ctrl+Shift+B | The sidebar of projects |
 | Ctrl+Alt+→ / ← | The next / previous open project |
 | Ctrl+Shift+H | Home |
+| Ctrl+Shift+E | The tab's card: its name and its command (or double-click the tab) |
 | Ctrl+Shift+R | Run the tab's command: when its turn comes, when you want it (`start = "key"`), or again after it ended |
 | Ctrl+Shift+P | The command palette: all Kel does, found by a few letters (`ntb`: New tab) |
 | Ctrl+Shift+C / Ctrl+Shift+V | Copy / paste. Ctrl+C and Ctrl+V go to the program, as nvim wants them |

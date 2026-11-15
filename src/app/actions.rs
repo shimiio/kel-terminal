@@ -212,11 +212,6 @@ impl App {
                         // Kel's actions first, then the projects, then the install scripts.
                         let current = self.project.as_ref().map(|p| p.name.as_str());
                         let mut items = keys::palette_items();
-                        items.push(Item {
-                            label: "Edit tab: name and command".to_string(),
-                            hint: "double-click a tab".to_string(),
-                            action: Action::EditTab,
-                        });
                         // The project on screen can be changed, and closed.
                         if let Some(name) = current {
                             items.push(Item {
