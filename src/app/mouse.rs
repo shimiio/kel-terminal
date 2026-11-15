@@ -560,7 +560,10 @@ impl App {
     /// a click or a key kept it.
     pub(super) fn leave_peek(&mut self) {
         let (x, y) = self.mouse_pos;
-        let inside = self.mouse_inside && self.layout.sidebar().contains(x, y);
+        // Its button counts: with no margin the sidebar starts a bit further in.
+        let on_sidebar =
+            self.layout.sidebar().contains(x, y) || self.layout.sidebar_button.contains(x, y);
+        let inside = self.mouse_inside && on_sidebar;
         if self.sidebar_peek && self.sidebar.is_some() && !inside {
             self.sidebar = None;
             self.sidebar_peek = false;

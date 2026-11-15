@@ -93,7 +93,7 @@ border = 0
 padding = 6
 tab_height = 32   # the tab bar above the panel
 # The tab bar: "always"; "title": no tabs, one sheet with a title in its top's
-# middle, the project and the tab on screen (myapp/nvim), and 2/3 with more tabs
+# middle, the project and the tab on screen (myapp/nvim, home is ~), and 2/3 with more tabs
 # than one; it moves the window; "hover": a plain terminal, nothing above it. The bar comes
 # over its top while the mouse is at the window's top edge, for a moment when you
 # change tabs or a command ends in another one, and when Kel has something to say;
@@ -107,6 +107,13 @@ sidebar_button = "hover"
 tab_buttons = "hover"       # + and ⌄ after the tabs
 window_buttons = "hover"    # minimize, maximize, close
 corner_radius = 6   # round corners of the panel, the tab, the boxes: 0 square, 8 soft
+
+# The look with a title's own spaces: while tab_bar = "title", what's set here
+# replaces the same setting above (margin, border, padding, tab_height,
+# corner_radius). So one line changes the look, and both keep their numbers.
+[layout.title]
+tab_height = 26   # a line of text needs less than a tab
+# margin = 0      # one sheet, edge to edge
 
 # Glass: Kel see-through, Windows blurring what's behind it.
 # effect: "acrylic" (what's behind, blurred), "mica" (a faint tint of the

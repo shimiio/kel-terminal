@@ -272,6 +272,10 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       them in a list, in their order, each with its icon and its mark, the one on screen
       chosen. Each Ctrl+Tab changes the tab at once, the list only shows where you are; it
       comes 150 ms after the first one, so a quick Ctrl+Tab shows nothing
+- [x] `[layout.title]`: the look with a title's own spaces (margin, border, padding,
+      tab_height, corner_radius), in use while `tab_bar = "title"`: one line changes the look,
+      both keep their numbers. Its bar is 26 tall unless it says. Home's title is `~/nvim`.
+      The sidebar is at least 8 pixels from the window's edges, with no margin too
 - [ ] In that list: a tab's card (its name, its command) and moving it up and down
 
 ## 10. Before the release

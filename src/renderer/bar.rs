@@ -151,7 +151,7 @@ pub(super) fn draw_tab_bar(
 
 /// The title, where there are no tabs (`tab_bar = "title"`): in the middle of
 /// the panel's top, on the panel's own color, `myapp/nvim`: the project in its
-/// color, the tab on screen in the text's. With more tabs than one, which one
+/// color (home: `~`), the tab on screen in the text's. With more tabs than one, which one
 /// it is (`2/3`), dim, and one mark for what the others have to say: a command
 /// failed, or ended well, or new output; else a ring while a command runs here.
 pub(super) fn draw_title(
@@ -180,10 +180,13 @@ pub(super) fn draw_title(
         false => here.title.to_string(),
     };
     let mut parts: Vec<(String, u32)> = Vec::new();
-    if let Some((project, _)) = chrome.project {
-        parts.push((project_name_shown(project), accent));
-        parts.push(("/".to_string(), dim));
-    }
+    // Home is `~`, as a shell names it: `~/nvim`, `myapp/nvim`.
+    let place = match chrome.project {
+        Some((project, _)) => project_name_shown(project),
+        None => "~".to_string(),
+    };
+    parts.push((place, accent));
+    parts.push(("/".to_string(), dim));
     parts.push((name, theme.foreground));
     if tabs.len() > 1 {
         parts.push((format!("  {}/{}", active + 1, tabs.len()), dim));

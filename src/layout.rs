@@ -44,6 +44,9 @@ const BUTTONS_GAP: usize = 8;
 const BAR_BUTTON_WIDTH: usize = 28;
 /// The sidebar: this wide, from the tab bar's top-left corner down.
 const SIDEBAR_WIDTH: usize = 280;
+/// The sidebar is at least this far from the window's edges: with no `margin`
+/// it still floats over the window, it doesn't stick to its corner.
+const SIDEBAR_INSET: usize = 8;
 /// A tab's `×`: a square this big, this far from the tab's right end.
 const TAB_CLOSE_SIZE: usize = 18;
 const TAB_CLOSE_INSET: usize = 7;
@@ -177,6 +180,33 @@ impl Rect {
     }
 }
 
+/// `[layout.title]` in the config: the spaces of the look with a title. While
+/// `tab_bar = "title"`, each one set here replaces `[layout]`'s. So one line
+/// changes the look, and both looks keep their numbers: a sheet with a title
+/// wants no `margin` and a thinner bar, the tabs want theirs.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct TitleLook {
+    pub margin: Option<usize>,
+    pub border: Option<usize>,
+    pub padding: Option<usize>,
+    pub tab_height: Option<usize>,
+    pub corner_radius: Option<usize>,
+}
+
+impl Default for TitleLook {
+    fn default() -> Self {
+        TitleLook {
+            margin: None,
+            border: None,
+            padding: None,
+            // A line of text needs less room than a tab around its name.
+            tab_height: Some(26),
+            corner_radius: None,
+        }
+    }
+}
+
 /// The spaces around the terminal, in pixels: the `[layout]` part of the config.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default)]
@@ -201,6 +231,8 @@ pub struct Spacing {
     pub window_buttons: Show,
     /// How round the corners are: the panel's, the tab's, the boxes over them.
     pub corner_radius: usize,
+    /// The look with a title's own spaces (see `TitleLook`).
+    pub title: TitleLook,
 }
 
 impl Default for Spacing {
@@ -216,6 +248,7 @@ impl Default for Spacing {
             tab_buttons: Show::Hover,
             window_buttons: Show::Hover,
             corner_radius: 6,
+            title: TitleLook::default(),
         }
     }
 }
@@ -266,8 +299,33 @@ pub struct Layout {
 }
 
 impl Spacing {
+    /// The spaces in use: with `tab_bar = "title"`, `[layout.title]`'s where
+    /// it sets one.
+    fn in_use(&self) -> Spacing {
+        let mut spacing = self.clone();
+        if self.tab_bar == Bar::Title {
+            let look = &self.title;
+            spacing.margin = look.margin.unwrap_or(self.margin);
+            spacing.border = look.border.unwrap_or(self.border);
+            spacing.padding = look.padding.unwrap_or(self.padding);
+            spacing.tab_height = look.tab_height.unwrap_or(self.tab_height);
+            spacing.corner_radius = look.corner_radius.unwrap_or(self.corner_radius);
+        }
+        spacing
+    }
+
     /// The layout for a window of `width` x `height` pixels, at `scale`.
     pub fn layout(&self, width: usize, height: usize, scale: f32) -> Layout {
+        self.in_use().layout_of(width, height, scale)
+    }
+
+    /// The window size that leaves exactly `text_w` x `text_h` pixels for the text.
+    pub fn window_size(&self, text_w: usize, text_h: usize, scale: f32) -> (usize, usize) {
+        self.in_use().window_size_of(text_w, text_h, scale)
+    }
+
+    /// `layout`, with these spaces as they are.
+    fn layout_of(&self, width: usize, height: usize, scale: f32) -> Layout {
         let s = |n: usize| scaled(n, scale);
         let (margin, border, padding) = (s(self.margin), s(self.border), s(self.padding));
         let tab_height = s(self.tab_height);
@@ -343,8 +401,8 @@ impl Spacing {
         }
     }
 
-    /// The window size that leaves exactly `text_w` x `text_h` pixels for the text.
-    pub fn window_size(&self, text_w: usize, text_h: usize, scale: f32) -> (usize, usize) {
+    /// `window_size`, with these spaces as they are.
+    fn window_size_of(&self, text_w: usize, text_h: usize, scale: f32) -> (usize, usize) {
         let s = |n: usize| scaled(n, scale);
         let edge = s(self.margin) + s(self.border) + s(self.padding);
         let bar = match self.tab_bar {
@@ -480,12 +538,13 @@ impl Layout {
     /// The sidebar's panel: over the left of the window, from the tab bar's top
     /// to as far from the bottom, `SIDEBAR_WIDTH` wide (less in a narrow window).
     pub fn sidebar(&self) -> Rect {
-        let (x, y) = (self.tab_bar.x, self.tab_bar.y);
+        // The margin, or its own few pixels where there's less of one.
+        let inset = self.tab_bar.x.max(scaled(SIDEBAR_INSET, self.scale));
         Rect {
-            x,
-            y,
-            w: scaled(SIDEBAR_WIDTH, self.scale).min(self.window.w.saturating_sub(2 * x)),
-            h: self.window.h.saturating_sub(2 * y),
+            x: inset,
+            y: inset,
+            w: scaled(SIDEBAR_WIDTH, self.scale).min(self.window.w.saturating_sub(2 * inset)),
+            h: self.window.h.saturating_sub(2 * inset),
         }
     }
 
@@ -656,10 +715,12 @@ mod tests {
 
     #[test]
     fn a_title_in_place_of_the_tabs() {
-        let spacing = Spacing {
+        // As tall as the tabs here, to see them in the same places.
+        let mut spacing = Spacing {
             tab_bar: Bar::Title,
             ..Spacing::default()
         };
+        spacing.title.tab_height = None;
         let layout = spacing.layout(1000, 700, 1.0);
         let tabs = Spacing::default().layout(1000, 700, 1.0);
         // The panel is the whole sheet; the text is where it is with tabs.
@@ -688,6 +749,36 @@ mod tests {
         // A tab's card hangs from the title; with tabs, from its tab.
         assert_eq!(layout.tab_anchor(2, 3), layout.title());
         assert_eq!(tabs.tab_anchor(2, 3), tabs.tabs(3)[2]);
+    }
+
+    #[test]
+    fn the_title_s_own_spaces() {
+        // With a title: its own margin, and the bar 26 tall unless it says.
+        let mut spacing = Spacing {
+            tab_bar: Bar::Title,
+            ..Spacing::default()
+        };
+        spacing.title.margin = Some(0);
+        let layout = spacing.layout(1000, 700, 1.0);
+        assert_eq!(
+            (layout.panel.x, layout.panel.y, layout.panel.w),
+            (0, 0, 1000)
+        );
+        assert_eq!(layout.tab_bar.h, 26);
+        assert_eq!(layout.text.y, 26 + 6); // padding: `[layout]`'s, not set here
+        // The window fits the text with them.
+        let (w, h) = spacing.window_size(800, 480, 1.0);
+        let text = spacing.layout(w, h, 1.0).text;
+        assert_eq!((text.w, text.h), (800, 480));
+        // With no margin the sidebar still floats, 8 from the edges.
+        let panel = layout.sidebar();
+        assert_eq!((panel.x, panel.y, panel.h), (8, 8, 684));
+        // The tabs back: `[layout]`'s own numbers, as if nothing was set.
+        spacing.tab_bar = Bar::Always;
+        assert_eq!(
+            spacing.layout(1000, 700, 1.0),
+            Spacing::default().layout(1000, 700, 1.0)
+        );
     }
 
     #[test]
