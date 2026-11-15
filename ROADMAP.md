@@ -268,8 +268,11 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
       the text's), `2/3` with more tabs than one, and one mark for the other tabs' news (a
       command failed, ended well, new output; else a ring while one runs here). It moves
       the window; a right click on it: the tab's card
-- [ ] With a title: Ctrl+Tab shows the tabs in a list (icons, marks) while Ctrl is held, in
-      their places' order; there, a tab's card and moving it up and down
+- [x] Where the tabs aren't in sight (`"title"`, `"never"`): Ctrl held after Ctrl+Tab shows
+      them in a list, in their order, each with its icon and its mark, the one on screen
+      chosen. Each Ctrl+Tab changes the tab at once, the list only shows where you are; it
+      comes 150 ms after the first one, so a quick Ctrl+Tab shows nothing
+- [ ] In that list: a tab's card (its name, its command) and moving it up and down
 
 ## 10. Before the release
 

@@ -269,6 +269,7 @@ impl App {
         // other project's.
         self.pending_close = None;
         self.tab_drag = None;
+        self.switcher = None;
         self.set_status(None);
         self.on_resize(); // room for this project's name before the tabs
         self.show_tab(self.active);

@@ -1,11 +1,11 @@
 //! What opens over the terminal: the palette, the sidebar, a card, the search.
 
 use super::screens::draw_logo;
-use super::shapes::{blend, draw_box, fill_circle, fill_rect, fill_round, pane};
+use super::shapes::{blend, draw_box, draw_icon, fill_circle, fill_rect, fill_round, pane};
 use super::text::{draw_ui_hint, draw_ui_text, keep_end};
 use super::{
-    Chrome, DOT_RADIUS, PALETTE_CHARS, PALETTE_LINES, PALETTE_PADDING, RING_WIDTH, SEARCH_CHARS,
-    SIDEBAR_DIM, Ui,
+    Chrome, DOT_RADIUS, ICON_GAP, PALETTE_CHARS, PALETTE_LINES, PALETTE_PADDING, RING_WIDTH,
+    SEARCH_CHARS, SIDEBAR_DIM, SWITCHER_CHARS, SWITCHER_LINES, Ui,
 };
 use crate::card::{self, Card};
 use crate::font::Font;
@@ -14,6 +14,110 @@ use crate::palette::Palette;
 use crate::search::Search;
 use crate::sidebar::{self, Entry, Live, Row, Sidebar};
 use crate::theme::Theme;
+
+/// The list of tabs, while Ctrl is held after Ctrl+Tab, where the palette is:
+/// each tab as the tab bar would show it, top to bottom in the tabs' order.
+///
+/// ```text
+/// ┌──────────────────────────────┐
+/// │ ▪ nvim                       │
+/// │ ▪ claude                   ○ │  the tab on screen: the chosen line
+/// │ ▪ server                   ● │  its mark: running, ended, new output
+/// └──────────────────────────────┘
+/// ```
+pub(super) fn draw_switcher(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    chrome: &Chrome,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    let Chrome { tabs, active, .. } = *chrome;
+    let area = layout.inside;
+    let pad = ui.px(PALETTE_PADDING);
+    let b = layout.border;
+    let line_h = ui.line_h + 2 * pad;
+    let box_w = (SWITCHER_CHARS * ui.advance + 2 * pad).min(area.w.saturating_sub(4 * pad));
+    if box_w < 10 * ui.advance || tabs.is_empty() {
+        return; // a window too narrow for it
+    }
+    // The lines on screen: the chosen one is always among them.
+    let lines = tabs.len().min(SWITCHER_LINES);
+    let first = (active + 1).saturating_sub(lines);
+    let r = Rect {
+        x: area.x + (area.w - box_w) / 2,
+        y: area.y + 2 * pad,
+        w: box_w,
+        h: lines * line_h + 2 * b,
+    };
+    let back = pane(theme, layout);
+    let dim = blend(back, theme.foreground, 128);
+    draw_box(pixels, width, theme, layout, r, back);
+    // The project's color, as on its tab; home: none, the text's gray.
+    let project = chrome.project.and_then(|(_, color)| color);
+    let accent = theme.accent_for(project);
+    let text_x = r.x + b + pad;
+    let text_end = r.x + r.w - b - pad;
+    for (row, (i, tab)) in tabs.iter().enumerate().skip(first).take(lines).enumerate() {
+        let line_y = r.y + b + row * line_h;
+        let on_screen = i == active;
+        // The chosen line, as the palette's: a tint of the project's color.
+        if on_screen {
+            let fill = match project.or(theme.accent) {
+                Some(color) => blend(back, color, 60),
+                None => theme.selection,
+            };
+            let inset = if layout.radius > 0 { ui.px(2) } else { 0 };
+            let line = Rect {
+                x: r.x + b + inset,
+                y: line_y,
+                w: r.w - 2 * (b + inset),
+                h: line_h,
+            };
+            fill_round(pixels, width, line, [layout.small_radius(); 4], fill);
+        }
+        let color = if on_screen { theme.foreground } else { dim };
+        let icon = ui.icons.get(tab.icon);
+        let (icon_w, icon_h) = (icon.w * ui.icon_scale, icon.h * ui.icon_scale);
+        let icon_y = line_y + line_h.saturating_sub(icon_h) / 2;
+        let tint = if on_screen { accent } else { dim };
+        draw_icon(pixels, width, icon, ui.icon_scale, tint, text_x, icon_y);
+        // The mark at the right end, as on a tab: a running command's ring,
+        // then how one ended, then plain new output.
+        let mark = match (tab.busy, tab.done) {
+            (true, _) => Some((theme.foreground, RING_WIDTH)),
+            (false, Some(true)) => Some((theme.done, 0.0)),
+            (false, Some(false)) => Some((theme.failed, 0.0)),
+            (false, None) if tab.activity => Some((theme.foreground, 0.0)),
+            _ => None,
+        };
+        let radius = DOT_RADIUS * ui.scale;
+        if let Some((mark_color, ring)) = mark {
+            let cx = text_end as f32 - radius;
+            let cy = line_y as f32 + line_h as f32 / 2.0;
+            let hole = if ring > 0.0 {
+                radius - ring * ui.scale
+            } else {
+                0.0
+            };
+            fill_circle(pixels, width, cx, cy, radius, hole, mark_color);
+        }
+        let x = text_x + icon_w + ui.px(ICON_GAP);
+        let max_w = text_end.saturating_sub(x + (4.0 * radius) as usize);
+        draw_ui_text(
+            pixels,
+            width,
+            font,
+            ui,
+            tab.title,
+            (x, line_y + pad),
+            max_w,
+            color,
+        );
+    }
+}
 
 /// The command palette, at the top of the terminal panel, in the middle:
 ///

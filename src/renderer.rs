@@ -39,7 +39,7 @@ use bar::{
     draw_bar_buttons, draw_status, draw_tab_bar, draw_title, draw_window_buttons,
     project_name_shown, project_name_width,
 };
-use overlays::{draw_card, draw_palette, draw_search, draw_sidebar};
+use overlays::{draw_card, draw_palette, draw_search, draw_sidebar, draw_switcher};
 use screens::{draw_help, draw_start};
 use shapes::{blend, fill_rect, fill_round, invisible, outline, solid};
 use std::collections::HashMap;
@@ -93,6 +93,10 @@ const FLASH: u32 = 40;
 
 /// The command palette: at most this wide (in letters) and this many lines.
 const PALETTE_CHARS: usize = 64;
+/// The list of tabs (Ctrl+Tab): as wide as this many letters, and at most this
+/// many tabs at a time.
+const SWITCHER_CHARS: usize = 36;
+const SWITCHER_LINES: usize = 12;
 const PALETTE_LINES: usize = 10;
 /// Space above and below a palette line's text, and at its sides, at 100%.
 const PALETTE_PADDING: usize = 6;
@@ -161,6 +165,9 @@ pub struct Chrome<'a> {
     pub solid: bool,
     /// The mouse is over the title bar: the buttons set to `hover` show.
     pub mouse_on_bar: bool,
+    /// The list of tabs shows (Ctrl held after Ctrl+Tab, where the tabs aren't
+    /// in sight): `tabs`, the one on screen chosen.
+    pub switcher: bool,
     /// The tab bar shows. Always, unless the config hides it (`tab_bar`): then
     /// only while it's wanted, over the panel's top (see `Layout::drawn`).
     pub bar_up: bool,
@@ -729,6 +736,9 @@ impl Renderer {
                 font,
                 &mut self.ui,
             );
+        }
+        if chrome.switcher {
+            draw_switcher(&mut buffer, width, theme, body, chrome, font, &mut self.ui);
         }
         // Last: the palette is on top of everything.
         if let Some(palette) = chrome.palette {

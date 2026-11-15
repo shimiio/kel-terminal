@@ -141,6 +141,9 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::ModifiersChanged(m) => {
                 self.modifiers = m.state();
                 self.update_link(); // Ctrl pressed or let go over a link
+                if !self.modifiers.control_key() {
+                    self.close_switcher();
+                }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 self.on_key(event)
@@ -161,6 +164,9 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::MouseInput { state, button, .. } => self.on_mouse_button(state, button),
             WindowEvent::Focused(focused) => {
                 self.focused = focused;
+                if !focused {
+                    self.close_switcher(); // Ctrl's release won't come here
+                }
                 self.update_focus();
                 self.restart_blink();
                 self.request_redraw(); // the cursor: hollow, or not
@@ -212,6 +218,13 @@ impl ApplicationHandler<UserEvent> for App {
             }
         }
         self.peek();
+        // Ctrl held long enough after Ctrl+Tab: the list of tabs shows.
+        if let Some((at, shown @ false)) = &mut self.switcher
+            && Instant::now() >= *at
+        {
+            *shown = true;
+            self.request_redraw();
+        }
         // A hidden tab bar has shown long enough.
         if self.bar_until.is_some_and(|until| Instant::now() >= until) {
             self.bar_until = None;
@@ -232,6 +245,7 @@ impl ApplicationHandler<UserEvent> for App {
             self.burger_since.map(|since| since + PEEK_DELAY),
             self.flash_until,
             self.bar_until,
+            self.switcher.filter(|(_, shown)| !shown).map(|(at, _)| at),
         ]
         .into_iter()
         .flatten()
@@ -343,6 +357,7 @@ impl App {
             hovered: self.hovered,
             mouse_on_bar: self.mouse_on_bar,
             bar_up: self.bar_up(),
+            switcher: matches!(self.switcher, Some((_, true))),
             maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),
             status: self.status.as_deref(),
             question: self

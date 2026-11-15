@@ -1,10 +1,11 @@
 //! The tabs on screen: a new one, closing, showing, moving, and the window's
 //! own close.
 
-use super::{App, CONFIRM_TIME, Closing, FLASH_TIME, PendingClose, TAB_DRAG_START};
+use super::{App, CONFIRM_TIME, Closing, FLASH_TIME, PendingClose, SWITCHER_DELAY, TAB_DRAG_START};
 use crate::config;
 use crate::history;
 use crate::keys::{self, Action};
+use crate::layout::Bar;
 use crate::tab::{Tab, TabId};
 use std::time::Instant;
 use winit::event_loop::ActiveEventLoop;
@@ -275,6 +276,25 @@ impl App {
 
     /// The tab after (`step` = 1) or before (-1) the one on screen,
     /// going round from the last to the first.
+    /// After Ctrl+Tab, where the tabs aren't in sight: the list of them comes
+    /// if Ctrl stays held (see `switcher`). Each Ctrl+Tab has changed the tab
+    /// already; the list only shows where you are among them. It goes when
+    /// Ctrl is let go (see `close_switcher`).
+    pub(super) fn open_switcher(&mut self) {
+        let hidden = matches!(self.config.layout.tab_bar, Bar::Title | Bar::Never);
+        let held = self.modifiers.control_key();
+        if hidden && held && self.tabs.len() > 1 && self.switcher.is_none() {
+            self.switcher = Some((Instant::now() + SWITCHER_DELAY, false));
+        }
+    }
+
+    /// Ctrl let go, or the window left: the list of tabs goes.
+    pub(super) fn close_switcher(&mut self) {
+        if self.switcher.take().is_some_and(|(_, shown)| shown) {
+            self.request_redraw();
+        }
+    }
+
     pub(super) fn next_tab(&mut self, step: isize) {
         let count = self.tabs.len() as isize;
         let index = (self.active as isize + step).rem_euclid(count);

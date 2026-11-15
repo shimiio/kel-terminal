@@ -156,8 +156,14 @@ impl App {
         match action {
             Action::NewTab => self.new_tab(),
             Action::CloseTab => self.close_tab(),
-            Action::NextTab => self.next_tab(1),
-            Action::PreviousTab => self.next_tab(-1),
+            Action::NextTab => {
+                self.next_tab(1);
+                self.open_switcher();
+            }
+            Action::PreviousTab => {
+                self.next_tab(-1);
+                self.open_switcher();
+            }
             Action::GoToTab(n) => self.show_tab(n - 1), // tab 1 is at index 0
             Action::LastTab => self.show_tab(self.tabs.len() - 1),
             Action::MoveTabLeft => self.move_tab(self.active, self.active.saturating_sub(1)),

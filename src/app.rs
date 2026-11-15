@@ -55,6 +55,9 @@ const BLINK_INTERVAL: Duration = Duration::from_millis(500);
 /// on screen changes or a command in another tab ends: long enough to read
 /// where you are.
 const BAR_TIME: Duration = Duration::from_millis(1500);
+/// How long Ctrl is held after Ctrl+Tab before the list of tabs shows (see
+/// `App::switcher`): a quick Ctrl+Tab only changes the tab, nothing flickers.
+const SWITCHER_DELAY: Duration = Duration::from_millis(150);
 /// How long the mouse rests on the sidebar button before the sidebar opens by itself: long
 /// enough that passing over it on the way to a tab doesn't.
 const PEEK_DELAY: Duration = Duration::from_millis(400);
@@ -267,6 +270,11 @@ pub struct App {
     bar_peek: bool,
     /// A hidden tab bar shows by itself until then (see `show_bar`).
     bar_until: Option<Instant>,
+    /// The list of tabs, while Ctrl is held after Ctrl+Tab, where the tabs
+    /// aren't in sight (`tab_bar` is `"title"` or `"never"`): which tabs there
+    /// are, and which one is on screen. When it shows (`SWITCHER_DELAY` after
+    /// the first Ctrl+Tab), and whether it does already.
+    switcher: Option<(Instant, bool)>,
     /// When the empty title bar was last clicked, to notice a double click.
     last_click: Option<Instant>,
     /// The window is closing (see `close_window`): `about_to_wait` ends the event loop.
@@ -494,6 +502,7 @@ impl App {
             mouse_on_bar: false,
             bar_peek: false,
             bar_until: None,
+            switcher: None,
             last_click: None,
             quit: false,
             frames: crate::frames::FrameLog::from_env(),
