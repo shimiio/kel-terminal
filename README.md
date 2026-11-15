@@ -118,6 +118,9 @@ type in the palette: `Save the tabs as project: myapp`. Then:
 - ↑ in a project's tab brings back the commands typed in that tab, not all you typed
   anywhere: a tab with a name has its own history, the project's other tabs share one.
   Home keeps the shell's usual history. (PowerShell, bash, zsh.)
+- as you type, PowerShell shows the rest of a command from that history, dim: → takes
+  it, Ctrl+→ a word of it. It takes PSReadLine 2.1 or newer; Windows' own PowerShell
+  comes with 2.0 (`Install-Module PSReadLine -Scope CurrentUser -Force` gets the newest).
 
 A project is a file in `%APPDATA%\kel\projects`, `myapp.toml`. You can write one by hand:
 

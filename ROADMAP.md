@@ -13,7 +13,7 @@ Stages go in order; items inside a stage can move around.
 - Window, font rendering, shell through ConPTY
 - Keys, Ctrl+C, arrows with modifiers, paste (Ctrl+Shift+V), copy a mouse selection (Ctrl+Shift+C)
 - Resize, scrollback (mouse wheel, smooth touchpad)
-- 16 / 256 / truecolor, bold, italic, underline, reverse video
+- 16 / 256 / truecolor, bold, dim, italic, underline, reverse video
 - Cursor: blinking, show/hide, block / underline / bar
 - Alternate screen (vim, less)
 
@@ -361,8 +361,11 @@ Settled:
       (`history\myapp\tab-server.txt`), which the shell integration names to PowerShell
       (PSReadLine's `HistorySavePath`), bash and zsh (`HISTFILE`); a tab or a project
       renamed keeps it, a project deleted takes it along
-- [ ] Ghost suggestions from a tab's history (PSReadLine's `PredictionSource History`,
-      PSReadLine 2.1+)
+- [x] Ghost suggestions from a tab's history (PSReadLine's `PredictionSource History`,
+      PSReadLine 2.1+): the shell draws them, dim (`ESC[2m`, which Kel draws now), → takes
+      one. Windows' own PowerShell 5 has PSReadLine 2.0: `Install-Module PSReadLine` first
+- [ ] Ghost suggestions drawn by Kel, where the shell has none (cmd, bash, an old
+      PSReadLine): needs where the prompt ends (OSC 133;B) and the line read off the grid
 - [ ] A small local AI (Ollama): reads the tab's output, suggests a command into the input
       line, never runs it. Try first whether a small model is good enough
 - [ ] Split panes, like tmux inside Kel (tabs and nvim's own windows do for now)
