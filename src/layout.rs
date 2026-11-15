@@ -17,6 +17,10 @@
 //! The sizes come from the `[layout]` part of the config, so trying another look
 //! means changing numbers there.
 //!
+//! With `tab_bar = "hover"` (or `"never"`) the panel takes the tab bar's place
+//! too: a plain terminal, nothing above it. The bar then comes over the panel's
+//! top when it's wanted (see `Layout::drawn`), and the text doesn't move.
+//!
 //! All sizes are for a 100% display. The layout multiplies them by the UI's scale
 //! (see `scaled`): at Windows' 150%, a 32-pixel tab bar is 48 pixels tall.
 
@@ -143,6 +147,11 @@ pub struct Spacing {
     pub padding: usize,
     /// The tab bar's height.
     pub tab_height: usize,
+    /// When the tab bar shows. `Always`: above the panel. `Hover`: over the
+    /// panel's top, while the mouse is at the window's top, for a moment as the
+    /// tab on screen changes, and while Kel says something there. `Never`: only
+    /// for what Kel says.
+    pub tab_bar: Show,
     /// A tab's width. With many tabs, they get narrower to fit.
     pub tab_width: usize,
     /// The button before the tabs.
@@ -162,6 +171,7 @@ impl Default for Spacing {
             border: 0,
             padding: 6,
             tab_height: 32,
+            tab_bar: Show::Always,
             tab_width: 180,
             sidebar_button: Show::Hover,
             tab_buttons: Show::Hover,
@@ -199,6 +209,9 @@ pub struct Layout {
     pub text: Rect,
     /// The panel's border line, in pixels (the active tab draws its own the same).
     pub border: usize,
+    /// When the tab bar shows (see `Spacing::tab_bar`). Not `Always`: the panel
+    /// is under it, and `title_bar` and `tab_bar` are where it comes.
+    pub bar_shows: Show,
     /// When each group of buttons shows (see `Show`).
     pub sidebar_shows: Show,
     pub tab_buttons_show: Show,
@@ -247,10 +260,10 @@ impl Spacing {
             h: tab_height.min(area.h),
             ..area
         };
-        let panel = Rect {
-            y: area.y + tab_bar.h,
-            h: area.h - tab_bar.h,
-            ..area
+        // A tab bar that comes and goes is over the panel: the panel has its room.
+        let panel = match self.tab_bar {
+            Show::Always => below(area, tab_bar.h),
+            _ => area,
         };
         let inside = panel.shrink(border);
         let text = inside.shrink(padding);
@@ -271,6 +284,7 @@ impl Spacing {
             inside,
             text,
             border,
+            bar_shows: self.tab_bar,
             sidebar_shows: self.sidebar_button,
             tab_buttons_show: self.tab_buttons,
             window_buttons_show: self.window_buttons,
@@ -285,7 +299,21 @@ impl Spacing {
     pub fn window_size(&self, text_w: usize, text_h: usize, scale: f32) -> (usize, usize) {
         let s = |n: usize| scaled(n, scale);
         let edge = s(self.margin) + s(self.border) + s(self.padding);
-        (text_w + 2 * edge, text_h + 2 * edge + s(self.tab_height))
+        let bar = match self.tab_bar {
+            Show::Always => s(self.tab_height),
+            _ => 0, // over the panel
+        };
+        (text_w + 2 * edge, text_h + 2 * edge + bar)
+    }
+}
+
+/// `rect` without its top `h` pixels.
+fn below(rect: Rect, h: usize) -> Rect {
+    let h = h.min(rect.h);
+    Rect {
+        y: rect.y + h,
+        h: rect.h - h,
+        ..rect
     }
 }
 
@@ -317,6 +345,29 @@ impl Layout {
             _ if right < edge => East,
             _ => return None,
         })
+    }
+
+    /// The layout as it's drawn now. A tab bar that comes and goes (`bar_shows`
+    /// isn't `Always`), up: the panel starts below it, as with a bar that's
+    /// always there, so the two look the same. The text stays where it is (no
+    /// program has to draw again): its rows under the bar aren't drawn.
+    pub fn drawn(&self, bar_up: bool) -> Layout {
+        if self.bar_shows == Show::Always || !bar_up {
+            return *self;
+        }
+        let panel = below(self.panel, self.tab_bar.h);
+        Layout {
+            panel,
+            inside: panel.shrink(self.border),
+            ..*self
+        }
+    }
+
+    /// The mouse at height `y` calls a hidden tab bar: above the text, where
+    /// there's nothing to click or select. Without spaces around the text
+    /// (`margin` and `padding` 0): the window's top few pixels.
+    pub fn calls_bar(&self, y: usize) -> bool {
+        y < self.text.y.max(scaled(4, self.scale))
     }
 
     /// The window button at (x, y), if there is one.
@@ -473,6 +524,44 @@ mod tests {
         assert_eq!(layout.tab_bar.w, 1000 - 8 - 8);
         assert_eq!(layout.title_hit(995, 20, 1), None);
         assert_eq!(layout.title_hit(190, 20, 1), None); // where + would be
+    }
+
+    #[test]
+    fn a_tab_bar_that_comes_and_goes() {
+        let spacing = Spacing {
+            tab_bar: Show::Hover,
+            ..Spacing::default()
+        };
+        let layout = spacing.layout(1000, 700, 1.0);
+        // The panel has the bar's room: it starts at the margin, 8.
+        assert_eq!((layout.panel.y, layout.panel.h), (8, 684));
+        assert_eq!(layout.text.y, 8 + 6);
+        // The bar's place is the same as ever: over the panel's top.
+        assert_eq!(
+            layout.tab_bar,
+            Spacing::default().layout(1000, 700, 1.0).tab_bar
+        );
+        // Down: drawn as it is. Up: the panel starts below the bar, the text stays.
+        assert_eq!(layout.drawn(false), layout);
+        let up = layout.drawn(true);
+        assert_eq!((up.panel.y, up.panel.h), (40, 652));
+        assert_eq!(up.inside.y, 40);
+        assert_eq!(up.text, layout.text);
+        // A bar that's always there is never over the panel.
+        let always = Spacing::default().layout(1000, 700, 1.0);
+        assert_eq!(always.drawn(true), always);
+        // The mouse above the text calls it: 14 pixels here, 4 with no spaces.
+        assert!(layout.calls_bar(13));
+        assert!(!layout.calls_bar(14));
+        let bare = Spacing {
+            margin: 0,
+            padding: 0,
+            ..spacing.clone()
+        };
+        assert!(bare.layout(1000, 700, 1.0).calls_bar(3));
+        // The window is as tall as the text and its spaces: no bar's height.
+        let (w, h) = spacing.window_size(800, 480, 1.0);
+        assert_eq!((w, h), (800 + 28, 480 + 28));
     }
 
     #[test]

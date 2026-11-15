@@ -266,6 +266,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
         row("padding", &layout.padding.to_string(), "line to text"),
         row("tab_height", &layout.tab_height.to_string(), ""),
         row(
+            "tab_bar",
+            &text(show(layout.tab_bar)),
+            "hover: a plain terminal",
+        ),
+        row(
             "tab_width",
             &layout.tab_width.to_string(),
             "less with many tabs",

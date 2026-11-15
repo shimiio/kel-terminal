@@ -159,6 +159,9 @@ pub struct Chrome<'a> {
     pub solid: bool,
     /// The mouse is over the title bar: the buttons set to `hover` show.
     pub mouse_on_bar: bool,
+    /// The tab bar shows. Always, unless the config hides it (`tab_bar`): then
+    /// only while it's wanted, over the panel's top (see `Layout::drawn`).
+    pub bar_up: bool,
     /// The bell just rang (`bell = "flash"`): the terminal a bit lighter.
     pub flash: bool,
     /// The help, if it's open: over everything.
@@ -423,6 +426,8 @@ impl Renderer {
             return;
         };
         self.surface.resize(w, h).unwrap();
+        // A tab bar that comes and goes, up: the panel starts below it.
+        let layout = &layout.drawn(chrome.bar_up);
         // The UI follows the layout's scale, which `App::on_resize` sets.
         if layout.scale != self.ui.scale {
             let _ = self.ui.set_scale(&self.ui_font, layout.scale);
@@ -447,9 +452,10 @@ impl Renderer {
         // corner stays square.
         let r = layout.radius;
         let tabs = layout.tabs(chrome.tabs.len());
-        let under_tab = tabs
-            .get(chrome.active)
-            .is_some_and(|tab| tab.x < panel.x + r);
+        let under_tab = chrome.bar_up
+            && tabs
+                .get(chrome.active)
+                .is_some_and(|tab| tab.x < panel.x + r);
         let corners = [if under_tab { 0 } else { r }, r, r, r];
         if layout.border > 0 {
             fill_round(&mut buffer, width, panel, corners, theme.border);
@@ -458,17 +464,19 @@ impl Renderer {
         fill_round(&mut buffer, width, inside, inner, theme.background);
         // After the panel: the tab on screen covers a piece of the panel's top line.
         let font = &self.ui_font; // all of the UI below: the built-in font
-        draw_tab_bar(
-            &mut buffer,
-            width,
-            theme,
-            layout,
-            chrome,
-            font,
-            &mut self.ui,
-        );
-        draw_window_buttons(&mut buffer, width, theme, layout, chrome);
-        draw_bar_buttons(&mut buffer, width, theme, layout, chrome);
+        if chrome.bar_up {
+            draw_tab_bar(
+                &mut buffer,
+                width,
+                theme,
+                layout,
+                chrome,
+                font,
+                &mut self.ui,
+            );
+            draw_window_buttons(&mut buffer, width, theme, layout, chrome);
+            draw_bar_buttons(&mut buffer, width, theme, layout, chrome);
+        }
         // A question waits for an answer now, so it comes before a problem. With
         // the sidebar open, it's at the sidebar's bottom instead: once is enough.
         let question = chrome.question.filter(|_| chrome.sidebar.is_none());
@@ -483,7 +491,9 @@ impl Renderer {
                 .as_deref()
                 .map(|url| (url, blend(theme.frame, theme.foreground, 150))),
         };
-        if let Some((text, color)) = message {
+        // No bar, nowhere to say it: a question or a problem brings the bar
+        // (see `App::bar_up`), a link's address doesn't.
+        if let Some((text, color)) = message.filter(|_| chrome.bar_up) {
             draw_status(
                 &mut buffer,
                 width,
@@ -521,6 +531,10 @@ impl Renderer {
         for backgrounds in [true, false] {
             for row in 0..grid.rows() {
                 let y = text.y + row * cell_h;
+                // Under a tab bar that came over the panel's top.
+                if y < inside.y {
+                    continue;
+                }
                 for col in 0..grid.cols() {
                     let x = text.x + col * cell_w;
 

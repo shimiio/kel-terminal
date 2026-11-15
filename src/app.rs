@@ -51,6 +51,10 @@ const COLS: usize = 80;
 const DOUBLE_CLICK: Duration = Duration::from_millis(500);
 /// How long the cursor stays on, then off.
 const BLINK_INTERVAL: Duration = Duration::from_millis(500);
+/// How long a hidden tab bar (`tab_bar = "hover"`) shows by itself, when the tab
+/// on screen changes or a command in another tab ends: long enough to read
+/// where you are.
+const BAR_TIME: Duration = Duration::from_millis(1500);
 /// How long the mouse rests on the sidebar button before the sidebar opens by itself: long
 /// enough that passing over it on the way to a tab doesn't.
 const PEEK_DELAY: Duration = Duration::from_millis(400);
@@ -258,6 +262,11 @@ pub struct App {
     hovered: Option<TitleHit>,
     /// The mouse is over the title bar: buttons set to `hover` show.
     mouse_on_bar: bool,
+    /// The mouse called a hidden tab bar (`tab_bar = "hover"`): it stays while
+    /// the mouse is on it (see `update_hovered`).
+    bar_peek: bool,
+    /// A hidden tab bar shows by itself until then (see `show_bar`).
+    bar_until: Option<Instant>,
     /// When the empty title bar was last clicked, to notice a double click.
     last_click: Option<Instant>,
     /// The window is closing (see `close_window`): `about_to_wait` ends the event loop.
@@ -483,6 +492,8 @@ impl App {
             layout,
             hovered: None,
             mouse_on_bar: false,
+            bar_peek: false,
+            bar_until: None,
             last_click: None,
             quit: false,
             frames: crate::frames::FrameLog::from_env(),

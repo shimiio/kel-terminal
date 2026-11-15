@@ -257,9 +257,12 @@ Each one gets tried on screen first. Alternates with stage 8: one feature, one l
 - [x] README: says that Kel's look can be changed in the config
 - [x] A colored background under `cells` half as clear as the glass (`opacity` 0.6 makes
       it 0.8), not solid: at a low opacity a diff's solid rows looked like plates on the glass
-- [ ] Later, an idea: a title bar with no tabs, or none at all, like Ghostty: `project/tab`
-      and `2/3` only. To solve first: moving the window, the marks on tabs (done, failed,
-      new output), the messages in the bar
+- [x] A plain terminal, nothing above it: `tab_bar = "hover"` in `[layout]`. The panel takes
+      the bar's place; the bar comes over its top (the text doesn't move, its top rows are
+      under it) while the mouse is above the text, for a moment as the tab on screen changes
+      or a command ends in another tab, while a tab is dragged or its card is open, and
+      while Kel says something there (a problem, a question). `"never"`: only for what Kel
+      says. So the window still moves, the marks are still seen, the messages still read
 
 ## 10. Before the release
 

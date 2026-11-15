@@ -3,10 +3,12 @@
 //! that asked for the mouse.
 
 use super::{
-    App, By, DOUBLE_CLICK, PEEK_DELAY, Selecting, Selection, SidebarDrag, TAB_DRAG_START, TabDrag,
+    App, BAR_TIME, By, DOUBLE_CLICK, PEEK_DELAY, Selecting, Selection, SidebarDrag, TAB_DRAG_START,
+    TabDrag,
 };
+use crate::card::Target;
 use crate::keys::{self, Action};
-use crate::layout::{TitleHit, WindowButton};
+use crate::layout::{Show, TitleHit, WindowButton};
 use crate::mouse::{self, Tracking};
 use crate::sidebar::Row;
 use crate::{links, open};
@@ -287,8 +289,40 @@ impl App {
 
     /// The mouse is over the terminal panel: not the title bar, not an edge.
     fn over_text(&self) -> bool {
+        self.resize_edge.is_none() && !self.over_bar()
+    }
+
+    /// The mouse's place is in the title bar, and the bar is there (see `bar_up`).
+    fn over_bar(&self) -> bool {
         let (x, y) = self.mouse_pos;
-        self.resize_edge.is_none() && !self.layout.title_bar.contains(x, y)
+        self.bar_up() && self.layout.title_bar.contains(x, y)
+    }
+
+    /// The tab bar shows. Always, unless the config hides it (`tab_bar` in
+    /// `[layout]`). Hidden, it comes over the panel's top:
+    /// - while Kel says something there: a problem, a question, why a key did
+    ///   nothing; and while a tab's card hangs from it;
+    /// - `"hover"` only: called by the mouse (see `update_hovered`), while a
+    ///   tab is dragged, and for `BAR_TIME` by itself (see `show_bar`).
+    pub(super) fn bar_up(&self) -> bool {
+        let mode = self.config.layout.tab_bar;
+        if mode == Show::Always {
+            return true;
+        }
+        let says = self.status.is_some() || self.pending_close.is_some() || self.notice.is_some();
+        let card = matches!(&self.card, Some(card) if matches!(card.target, Target::Tab(_)));
+        let wanted = self.bar_peek || self.tab_drag.is_some() || self.bar_until.is_some();
+        says || card || mode == Show::Hover && wanted
+    }
+
+    /// A hidden tab bar (`tab_bar = "hover"`) shows for `BAR_TIME`: the tab on
+    /// screen changed, or a command ended in another one. Where you are, and
+    /// what's new, then the plain terminal again.
+    pub(super) fn show_bar(&mut self) {
+        if self.config.layout.tab_bar == Show::Hover {
+            self.bar_until = Some(Instant::now() + BAR_TIME);
+            self.request_redraw();
+        }
     }
 
     /// Tells the program on screen about `event` at the mouse's cell, the way it asked.
@@ -404,6 +438,7 @@ impl App {
         if button == MouseButton::Right && state == ElementState::Pressed {
             let (x, y) = self.mouse_pos;
             let hit = self.layout.title_hit(x, y, self.tabs.len());
+            let hit = hit.filter(|_| self.over_bar()); // not a bar that's hidden
             if let Some(TitleHit::Tab { index, .. }) = hit {
                 self.show_tab(index);
                 self.open_tab_card(index);
@@ -414,6 +449,7 @@ impl App {
         if button == MouseButton::Middle && state == ElementState::Pressed {
             let (x, y) = self.mouse_pos;
             let hit = self.layout.title_hit(x, y, self.tabs.len());
+            let hit = hit.filter(|_| self.over_bar()); // not a bar that's hidden
             if let Some(TitleHit::Tab { index, .. }) = hit {
                 self.close_tab_at(index, "middle click");
                 return;
@@ -457,12 +493,27 @@ impl App {
     /// Nothing at the window's edge: the resize arrows are there.
     pub(super) fn update_hovered(&mut self) {
         let (x, y) = self.mouse_pos;
-        let on_bar = self.mouse_inside && self.layout.title_bar.contains(x, y);
+        // A hidden tab bar (`tab_bar = "hover"`): the mouse above the text
+        // calls it, and it stays while the mouse is on it. Not with a button
+        // held: a selection dragged to the top is still a selection.
+        let held = self.selecting.is_some() || self.mouse_button.is_some();
+        let peek = self.config.layout.tab_bar == Show::Hover
+            && self.mouse_inside
+            && !held
+            && match self.bar_up() {
+                true => self.layout.title_bar.contains(x, y),
+                false => self.layout.calls_bar(y),
+            };
+        if peek != self.bar_peek {
+            self.bar_peek = peek;
+            self.request_redraw();
+        }
+        let on_bar = self.mouse_inside && self.over_bar();
         if on_bar != self.mouse_on_bar {
             self.mouse_on_bar = on_bar;
             self.request_redraw();
         }
-        let hit = if !self.mouse_inside || self.resize_edge.is_some() {
+        let hit = if !on_bar || self.resize_edge.is_some() {
             None
         } else {
             self.layout.title_hit(x, y, self.tabs.len())
@@ -585,14 +636,7 @@ impl App {
                 }
             }
             // Above the panel: Kel's title bar. There's no text to select there.
-            ElementState::Pressed
-                if self
-                    .layout
-                    .title_bar
-                    .contains(self.mouse_pos.0, self.mouse_pos.1) =>
-            {
-                self.on_title_bar_click()
-            }
+            ElementState::Pressed if self.over_bar() => self.on_title_bar_click(),
             // The old selection goes; a new one starts when the mouse moves on.
             // Clicked again, on the same cell: the word, then the line.
             ElementState::Pressed => {

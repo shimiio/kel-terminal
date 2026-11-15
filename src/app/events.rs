@@ -98,8 +98,13 @@ impl ApplicationHandler<UserEvent> for App {
                 // And command marks (`ESC]133;...`).
                 let marked = tab.refresh_command(on_screen);
                 let lit = !on_screen && tab.mark_activity();
+                // A command ended in a tab out of sight: its mark is news.
+                let ended = marked && !on_screen && tab.command.done.is_some();
                 if tab.take_bell() {
                     self.ring(on_screen);
+                }
+                if ended && self.tabs.iter().any(|tab| tab.id == id) {
+                    self.show_bar();
                 }
                 if on_screen && renamed {
                     self.update_window_title();
@@ -195,6 +200,7 @@ impl ApplicationHandler<UserEvent> for App {
                 .is_some_and(|pending| Instant::now() >= pending.until)
             {
                 self.pending_close = None;
+                self.request_redraw(); // a hidden tab bar came for it: it goes
             }
             if self
                 .notice
@@ -206,6 +212,11 @@ impl ApplicationHandler<UserEvent> for App {
             }
         }
         self.peek();
+        // A hidden tab bar has shown long enough.
+        if self.bar_until.is_some_and(|until| Instant::now() >= until) {
+            self.bar_until = None;
+            self.request_redraw();
+        }
         // The bell's flash is over.
         if self
             .flash_until
@@ -220,6 +231,7 @@ impl ApplicationHandler<UserEvent> for App {
         let wake = [
             self.burger_since.map(|since| since + PEEK_DELAY),
             self.flash_until,
+            self.bar_until,
         ]
         .into_iter()
         .flatten()
@@ -289,6 +301,9 @@ impl App {
         // output, a scroll, the start screen coming up): the link is looked
         // for again, so the hand never stays over what's no link anymore.
         self.update_link();
+        // The same for the title bar: a hidden tab bar comes and goes under
+        // the mouse.
+        self.update_hovered();
         // What's going on in each project, now: a few tabs looked at.
         if let Some(mut sidebar) = self.sidebar.take() {
             sidebar.update_live(|name| self.live_of(name));
@@ -327,6 +342,7 @@ impl App {
             active: self.active,
             hovered: self.hovered,
             mouse_on_bar: self.mouse_on_bar,
+            bar_up: self.bar_up(),
             maximized: self.window.as_ref().is_some_and(|w| w.is_maximized()),
             status: self.status.as_deref(),
             question: self

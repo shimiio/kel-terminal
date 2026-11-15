@@ -122,6 +122,8 @@ impl App {
         self.tabs[index].activity = false;
         self.tabs[index].command.done = None;
         self.update_window_title();
+        // A hidden tab bar: which tab this is, for a moment.
+        self.show_bar();
         // A tab came or went: the tabs and the + moved, maybe under the mouse.
         self.update_hovered();
         // The selection, the search and the half-scrolled line belonged to the

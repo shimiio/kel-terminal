@@ -92,6 +92,11 @@ margin = 8
 border = 0
 padding = 6
 tab_height = 32   # the tab bar above the panel
+# The tab bar: "always"; "hover": a plain terminal, nothing above it. The bar comes
+# over its top while the mouse is at the window's top edge, for a moment when you
+# change tabs or a command ends in another one, and when Kel has something to say;
+# "never": only for what Kel says (no bar to drag the window by, or to click a tab on).
+tab_bar = "always"
 tab_width = 180   # narrower when there are many tabs
 # The title bar's buttons: "always", "hover" (while the mouse is on the title bar)
 # or "never" (their place goes to the tabs; their keys still work).
