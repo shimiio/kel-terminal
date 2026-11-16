@@ -345,6 +345,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
         title("[AI]"),
         row("model", &text(&config.ai.model), "Ollama's: ollama pull"),
         row("address", &text(&config.ai.address), "where Ollama answers"),
+        row(
+            "check",
+            &config.ai.check.to_string(),
+            "PowerShell: do its parts exist",
+        ),
     ]
 }
 

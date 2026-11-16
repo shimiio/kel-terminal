@@ -121,6 +121,15 @@ tab and which of them failed. So `build this project` is `cargo build` where the
 a `Cargo.toml`, and after `git log --oneline -5 main`, `the same for the branch dev`
 works. Each question is on its own: it doesn't remember the one before.
 
+In PowerShell the answer is looked at before it goes into the line, without running
+it: PowerShell itself says whether each command in it exists, and each parameter. A
+model writes `Remove-Item -Name x` as surely as a right command, and there's no
+`-Name`: it's told so, with the parameters there are, and asked once more. What still
+doesn't pass goes in as it was, and Kel says what to look at (a program that isn't
+installed, say). It finds about half of the wrong commands (8 of 15 measured), none
+of the right ones (0 of 19), and takes 0.3 s. `check = false` under `[ai]`: off.
+Not in bash or cmd, and not the flags of programs like `git`: nothing to ask there.
+
 Read it every time. A small model is right about four times in five (20 of 24 in
 `examples/probe_ai.rs`, which you can run on your own questions), and a wrong command
 looks as sure as a right one: a flag that doesn't exist, 1 GB where you said 100 MB.

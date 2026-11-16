@@ -177,6 +177,11 @@ palette = [
 [ai]
 model = "qwen2.5-coder:7b"    # any of `ollama list`
 address = "127.0.0.1:11434"   # where Ollama answers
+# In PowerShell, the answer is looked at before it goes into the line, without
+# running it: does each command exist, and each parameter? (A model writes
+# `Remove-Item -Name x`; there's no -Name.) If not, the model is told what
+# there is and asked once more. 0.3 s longer; false: the first answer, as it is.
+check = true
 "##;
 
 /// What the bell does: `bell` in the config.

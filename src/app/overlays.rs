@@ -2,7 +2,7 @@
 //! the search, the ask box, the palette, the start screen, the help.
 
 use super::{App, CONFIRM_TIME, UserEvent, actions::clipboard_text};
-use crate::ask::{self, Around, Ask};
+use crate::ask::{self, Answer, Around, Ask};
 use crate::card::{self, Card, Target};
 use crate::history;
 use crate::keys::{self, Action};
@@ -11,9 +11,13 @@ use crate::ollama;
 use crate::project;
 use crate::sidebar::{Row, Sidebar};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use winit::event::KeyEvent;
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+
+/// How long Kel says what's doubtful in a command it put in the line: time to
+/// read a sentence, and the command.
+const DOUBT_TIME: Duration = Duration::from_secs(10);
 
 impl App {
     /// A key while the sidebar is open: Up/Down choose a row, Enter does it, Esc
@@ -493,15 +497,16 @@ impl App {
     }
 
     /// The model's answer to question `number`. A command: the box closes, and
-    /// it's in the shell's line as if pasted, not run: Enter is yours. None:
-    /// the box says why. An answer nobody waits for anymore (Esc, another tab)
-    /// is dropped.
-    pub(super) fn on_answer(&mut self, number: u64, answer: Result<String, String>) {
+    /// it's in the shell's line as if pasted, not run: Enter is yours. One the
+    /// check still finds something in, after the second try: that's said where
+    /// Kel says things, for longer than a question waits. None: the box says
+    /// why. An answer nobody waits for anymore (Esc, another tab) is dropped.
+    pub(super) fn on_answer(&mut self, number: u64, answer: Result<Answer, String>) {
         let Some(ask) = self.ask.as_mut().filter(|ask| ask.waits_for(number)) else {
             return;
         };
         match answer {
-            Ok(command) => {
+            Ok(answer) => {
                 self.ask = None;
                 let bracketed = {
                     let mut terminal = self.tab().terminal.lock().unwrap();
@@ -509,7 +514,11 @@ impl App {
                     terminal.bracketed_paste
                 };
                 // One line (see `ask::command`): nothing in it runs it.
-                self.send_to_shell(&keys::paste_bytes(&command, bracketed));
+                self.send_to_shell(&keys::paste_bytes(&answer.command, bracketed));
+                if let Some(doubt) = answer.doubt {
+                    let until = Instant::now() + DOUBT_TIME;
+                    self.notice = Some((format!("Look at it: {doubt}"), until));
+                }
             }
             Err(why) => ask.failed(why),
         }

@@ -15,6 +15,8 @@
 //! - `ask`: ask for a command (Ctrl+Shift+A): the box, and the question as a
 //!   language model on this computer gets it.
 //! - `ollama`: the program that runs that model, asked over HTTP.
+//! - `check`: PowerShell says whether the commands and parameters of the
+//!   model's answer exist, before it goes into the line.
 //! - `clock`: the day and the time here, for a moment in the past.
 //! - `config`: the settings file, `%APPDATA%\kel\config.toml` (Linux, macOS: `~/.config/kel`).
 //! - `fallback`: fonts for the letters the terminal's font lacks (emoji, Chinese).
@@ -50,6 +52,7 @@ pub mod app;
 pub mod ask;
 pub mod backdrop;
 pub mod card;
+pub mod check;
 pub mod clock;
 pub mod config;
 pub mod fallback;

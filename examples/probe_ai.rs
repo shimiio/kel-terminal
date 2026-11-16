@@ -4,9 +4,12 @@
 //
 // Each question of examples/probe_ai.txt goes to each model as Kel asks it
 // (`ask::answer`), through Ollama: the shell told, this folder with its files,
-// and the commands the list says ran before. The command, and the time it
-// took. Whether it's right is for a person to say.
+// and the commands the list says ran before; the answer checked by PowerShell,
+// and asked once more if something in it isn't there. The command, the one it
+// was before the check refused it, and the time it took. Whether it's right is
+// for a person to say.
 // `--bare`: only the shell told, to see what the rest is worth.
+// `--no-check`: the first answer, as it is.
 //
 // Measured on 24 questions (2026-11-16, an RTX 4050 with 6 GB): qwen2.5-coder:7b
 // 19 to 20 right, ~1 s each; llama3.1:8b 16 to 19, ~1 s, with things nobody
@@ -17,6 +20,10 @@
 // questions about them ("build this project", "the same for the branch dev")
 // 8 right, 0 with `--bare`; of the first 24 one went wrong that was right
 // ("files changed in the last 2 days" became `git diff`, in a folder with .git).
+// With the check: `Select-String ... -Recurse` (no such parameter) came back
+// as `Get-ChildItem -Recurse -Filter *.rs | Select-String ...`; a PowerShell
+// answer takes 0.3 s longer. One question isn't the same each run, check or
+// not: "bigger than 100 MB" is `100MB` in some, `1GB` in others.
 use kel_terminal::ask::{self, Ai, Around};
 use std::time::{Duration, Instant};
 
@@ -53,7 +60,8 @@ fn questions(list: &str) -> Vec<Question> {
 fn main() {
     let mut models: Vec<String> = std::env::args().skip(1).collect();
     let bare = models.iter().any(|arg| arg == "--bare");
-    models.retain(|arg| arg != "--bare");
+    let check = !models.iter().any(|arg| arg == "--no-check");
+    models.retain(|arg| !arg.starts_with("--"));
     if models.is_empty() {
         models.push(Ai::default().model);
     }
@@ -65,9 +73,11 @@ fn main() {
         println!("\n== {model}{}", if bare { ", bare" } else { "" });
         let ai = Ai {
             model: model.clone(),
+            check,
             ..Ai::default()
         };
         let mut total = Duration::ZERO;
+        let (mut second, mut doubted) = (0, 0);
         for question in &questions {
             let around = if bare {
                 Around {
@@ -92,13 +102,23 @@ fn main() {
             }
             println!("{}: {}", question.shell, question.text);
             match answer {
-                Ok(command) => println!("  > {command}"),
+                Ok(answer) => {
+                    if let Some(was) = &answer.was {
+                        second += 1;
+                        println!("  was {was}");
+                    }
+                    println!("  > {}", answer.command);
+                    if let Some(doubt) = &answer.doubt {
+                        doubted += 1;
+                        println!("  ? {doubt}");
+                    }
+                }
                 Err(why) => println!("  ! {why}"),
             }
             println!("  {:.1} s", time.as_secs_f64());
         }
         println!(
-            "\n{model}: {} questions, {:.0} s",
+            "\n{model}: {} questions, {:.0} s; {second} asked twice, {doubted} still doubted",
             questions.len(),
             total.as_secs_f64()
         );

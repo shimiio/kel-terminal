@@ -22,7 +22,7 @@ mod overlays;
 mod tabs;
 mod workspaces;
 
-use crate::ask::Ask;
+use crate::ask::{Answer, Ask};
 use crate::card::Card;
 use crate::config::{self, Config};
 use crate::font::{self, Fonts};
@@ -145,7 +145,7 @@ pub enum UserEvent {
     PtyExited(TabId),
     /// The model answered the question of this number (see `ask`): a command,
     /// or why there's none.
-    Answer(u64, Result<String, String>),
+    Answer(u64, Result<Answer, String>),
 }
 
 /// How long the terminal flashes when the bell rings (`bell = "flash"`).

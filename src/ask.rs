@@ -11,10 +11,15 @@
 //! means something: what a chat in a browser has to be told each time. Each
 //! question is on its own: the one before isn't remembered.
 //!
+//! In PowerShell the answer is checked before it goes into the line (see
+//! `check`): a command or a parameter that isn't there goes back to the model,
+//! once.
+//!
 //! Here: the box's state, the question as the model gets it, and the command
 //! taken out of its answer. `App` sends the keys and asks on a thread of its
 //! own, `renderer` draws.
 
+use crate::check::{self, Finding};
 use crate::ollama;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -27,6 +32,8 @@ pub struct Ai {
     pub model: String,
     /// Where Ollama answers: this computer, its usual port.
     pub address: String,
+    /// PowerShell looks at a command before it goes into the line (see `check`).
+    pub check: bool,
 }
 
 impl Default for Ai {
@@ -35,6 +42,7 @@ impl Default for Ai {
             // The best of the three tried that fit a 6 GB graphics card.
             model: "qwen2.5-coder:7b".to_string(),
             address: "127.0.0.1:11434".to_string(),
+            check: true,
         }
     }
 }
@@ -148,18 +156,85 @@ fn files_in(folder: &Path) -> (Vec<String>, usize) {
     (names, more)
 }
 
-/// The command for `question`, from the model: asked, and taken out of what it
-/// said. It reads the folder and waits for the answer: seconds, so not on the
-/// main thread.
-pub fn answer(ai: &Ai, around: &Around, question: &str) -> Result<String, String> {
+/// What the model answered.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Answer {
+    /// The command for the shell's line.
+    pub command: String,
+    /// Its first answer, if the check refused it and `command` is the second,
+    /// which the check let through.
+    pub was: Option<String>,
+    /// What the check finds in `command`, the first answer, when the second
+    /// try was no better: it goes into the line all the same, with this said.
+    pub doubt: Option<String>,
+}
+
+/// The command for `question`, from the model: asked, taken out of what it
+/// said, and checked (see `check`); with something wrong in it, asked once
+/// more. It reads the folder and waits for the model and for PowerShell:
+/// seconds, so not on the main thread.
+pub fn answer(ai: &Ai, around: &Around, question: &str) -> Result<Answer, String> {
     let files = around.folder.as_deref().map(files_in).unwrap_or_default();
     let messages = messages(around, &files, question);
-    let messages: Vec<(&str, &str)> = messages
+    let chat = |messages: &[(&str, &str)]| ollama::chat(&ai.address, &ai.model, messages);
+    let check = |command: &str| match ai.check {
+        true => check::check(&around.shell, around.folder.as_deref(), command),
+        false => Vec::new(),
+    };
+    answer_with(chat, check, &messages)
+}
+
+/// `answer`, with `chat` the model and `check` the check. One second try, not
+/// more: a small model that's wrong twice doesn't get it the third time, and
+/// each try is a second of waiting.
+fn answer_with(
+    chat: impl Fn(&[(&str, &str)]) -> Result<String, String>,
+    check: impl Fn(&str) -> Vec<Finding>,
+    messages: &[(&'static str, String)],
+) -> Result<Answer, String> {
+    let nothing = || "the model gave no command".to_string();
+    let mut messages: Vec<(&str, &str)> = messages
         .iter()
         .map(|(role, text)| (*role, text.as_str()))
         .collect();
-    let said = ollama::chat(&ai.address, &ai.model, &messages)?;
-    command(&said).ok_or_else(|| "the model gave no command".to_string())
+    let first = command(&chat(&messages)?).ok_or_else(nothing)?;
+    let found = check(&first);
+    if found.is_empty() {
+        return Ok(Answer {
+            command: first,
+            was: None,
+            doubt: None,
+        });
+    }
+    // Its own answer, and what's wrong with it, with what there is instead.
+    let wrong: Vec<String> = found
+        .iter()
+        .map(|finding| format!("{}. {}", finding.what, finding.instead))
+        .collect();
+    let again = format!(
+        "That command doesn't work in this shell:\n{}\nAnswer with the command \
+         put right. Only the command.",
+        wrong.join("\n").trim(),
+    );
+    messages.push(("assistant", &first));
+    messages.push(("user", &again));
+    // The second answer only if nothing is found in it. Else the first, with
+    // what was found: a program that isn't installed (`ffmpeg`) is nothing the
+    // model can put right, and trying, it spoiled a right command (measured:
+    // `-t 00:00:30` became `-t 00:01:00`).
+    let second = chat(&messages).ok().and_then(|said| command(&said));
+    match second.filter(|second| *second != first && check(second).is_empty()) {
+        Some(second) => Ok(Answer {
+            command: second,
+            was: Some(first),
+            doubt: None,
+        }),
+        None => Ok(Answer {
+            doubt: Some(found[0].what.clone()),
+            command: first,
+            was: None,
+        }),
+    }
 }
 
 /// What a shell is to the model.
@@ -372,6 +447,88 @@ mod tests {
         assert_eq!(in_shell("bash")[3].1, "q");
     }
 
+    /// A model that says `answers` one after the other, and a check that
+    /// refuses any command with `-Name` in it: the answer, and what the model
+    /// was asked the last time.
+    fn asked(answers: &[&str]) -> (Result<Answer, String>, Vec<(String, String)>) {
+        use std::cell::RefCell;
+        let left = RefCell::new(answers.to_vec());
+        let last = RefCell::new(Vec::new());
+        let chat = |messages: &[(&str, &str)]| {
+            *last.borrow_mut() = messages
+                .iter()
+                .map(|(role, text)| (role.to_string(), text.to_string()))
+                .collect();
+            let mut left = left.borrow_mut();
+            match left.is_empty() {
+                true => Err("no Ollama".to_string()),
+                false => Ok(left.remove(0).to_string()),
+            }
+        };
+        let check = |command: &str| match command.contains("-Name") {
+            true => vec![Finding {
+                what: "Remove-Item has no parameter -Name".to_string(),
+                instead: "Its parameters: -Path, -Force".to_string(),
+            }],
+            false => Vec::new(),
+        };
+        let answer = answer_with(chat, check, &in_shell("powershell.exe"));
+        (answer, last.into_inner())
+    }
+
+    #[test]
+    fn a_right_answer_is_asked_once() {
+        let (answer, last) = asked(&["Remove-Item a.txt", "never asked for"]);
+        let answer = answer.unwrap();
+        assert_eq!(answer.command, "Remove-Item a.txt");
+        assert_eq!((answer.was, answer.doubt), (None, None));
+        assert_eq!(last.len(), 4);
+    }
+
+    #[test]
+    fn a_wrong_answer_gets_a_second_try() {
+        let (answer, last) = asked(&["Remove-Item -Name a.txt", "`Remove-Item -Path a.txt`"]);
+        let answer = answer.unwrap();
+        assert_eq!(answer.command, "Remove-Item -Path a.txt");
+        assert_eq!(answer.was.as_deref(), Some("Remove-Item -Name a.txt"));
+        assert_eq!(answer.doubt, None);
+        // The second time: its own answer, and what's wrong with it.
+        assert_eq!(last.len(), 6);
+        assert_eq!(
+            last[4],
+            ("assistant".into(), "Remove-Item -Name a.txt".into())
+        );
+        assert_eq!(
+            last[5].1,
+            "That command doesn't work in this shell:\nRemove-Item has no parameter \
+             -Name. Its parameters: -Path, -Force\nAnswer with the command put right. \
+             Only the command."
+        );
+    }
+
+    #[test]
+    fn wrong_twice_goes_in_with_what_s_wrong() {
+        // The first answer stays: the second is no better, and may be worse.
+        let doubt = Some("Remove-Item has no parameter -Name".to_string());
+        let twice = &["rm -Name a", "del -Name a.txt", "never"][..];
+        // The same again, or no second answer at all: the first too.
+        for answers in [
+            twice,
+            &["rm -Name a", "rm -Name a"][..],
+            &["rm -Name a"][..],
+        ] {
+            let answer = asked(answers).0.unwrap();
+            assert_eq!(answer.command, "rm -Name a");
+            assert_eq!((answer.was, answer.doubt), (None, doubt.clone()));
+        }
+        // No first answer: that's why there's none.
+        assert_eq!(asked(&[]).0, Err("no Ollama".to_string()));
+        assert_eq!(
+            asked(&["```\n```"]).0,
+            Err("the model gave no command".to_string())
+        );
+    }
+
     #[test]
     fn a_folder_s_files() {
         let dir = std::env::temp_dir().join(format!("kel-ask-{}", std::process::id()));
@@ -418,5 +575,8 @@ mod tests {
         let config: Config = toml::from_str("[ai]\nmodel = \"llama3.1:8b\"").unwrap();
         assert_eq!(config.ai.model, "llama3.1:8b");
         assert_eq!(config.ai.address, "127.0.0.1:11434");
+        assert!(config.ai.check);
+        let config: Config = toml::from_str("[ai]\ncheck = false").unwrap();
+        assert!(!config.ai.check);
     }
 }

@@ -393,6 +393,13 @@ Settled:
       questions about them ("build this project", "the same for the branch dev") 8 right,
       0 without; one of the 24 before went wrong for it. The commands go with the
       question, after the example: before it, "the same" meant the example's command
+- [x] Ask checks the answer in PowerShell before it goes into the line (`check`): a
+      PowerShell of the tab's kind, out of sight, parses it without running it and asks
+      `Get-Command` for each command and parameter. Something that isn't there: the model
+      is told, with the parameters there are, and asked once more; the second answer is
+      taken only if it passes, else the first with what was found said (a second try at a
+      program that isn't installed spoiled a right command, measured). On 34 commands the
+      models gave: 8 of 15 wrong ones found, 0 of 19 right ones, 0.3 s. `check = false`
 - [ ] Ask: more of what a terminal knows, each measured first: a project's scripts by
       name (`package.json`, a Makefile's targets), git's branch and whether there are
       changes, which programs are there (not `ss` where there's none)
