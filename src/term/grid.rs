@@ -174,6 +174,13 @@ pub struct Grid {
     dropped: usize,
     /// How many lines the view is scrolled up into the scrollback. 0 = the live screen.
     scroll_offset: usize,
+    /// How many rows of the scrollback the view shows above the screen, not
+    /// scrolled: a tab's output from last time, right above the new shell's
+    /// prompt (see `start_below`). The screen's rows at its bottom, still
+    /// empty, are out of view instead. e.g. 24 rows, 3 in use: 21 rows from
+    /// last time, then those 3. It only gets smaller, as the screen fills up
+    /// (`settle`); at 0, the view is the screen, as in any tab.
+    above: usize,
     /// How many lines the scrollback keeps (see `SCROLLBACK_LIMIT`).
     limit: usize,
     rows: usize,
@@ -250,6 +257,7 @@ impl Grid {
             scrollback_lines: 0,
             dropped: 0,
             scroll_offset: 0,
+            above: 0,
             limit: SCROLLBACK_LIMIT,
             rows,
             cols,
@@ -300,6 +308,64 @@ impl Grid {
         self.bottom = rows.saturating_sub(1);
     }
 
+    /// What's on the screen goes up into the scrollback, and stays in view
+    /// above the screen, now empty (see `above`): a shell that starts now has
+    /// its prompt right below a tab's output from last time.
+    ///
+    /// Left on the screen, that text would look the same, but ConPTY knows
+    /// nothing of it: its own copy of the screen is empty there. It draws its
+    /// copy over Kel's after a resize, and clears only the rows it knows after
+    /// `cls` (both measured, `examples/probe_restore.rs`): the shell's lines
+    /// came twice, the old ones stayed under a new prompt. In the scrollback,
+    /// the text is Kel's alone, and both screens are the same: empty.
+    pub fn start_below(&mut self) {
+        let used = self
+            .lines
+            .iter()
+            .rposition(|line| !line.is_blank())
+            .map_or(0, |last| last + 1);
+        let text: Vec<Line> = self.lines.drain(..used).collect();
+        self.scroll_offset = 0;
+        for line in text {
+            self.keep(line);
+        }
+        self.lines
+            .resize(self.rows, Line::blank(self.cols, Cell::default()));
+        (self.cursor_row, self.cursor_col) = (0, 0);
+        self.above = self.scrollback.len().min(self.rows - 1);
+    }
+
+    /// After new output: `above` gives way to the rows the screen uses now.
+    /// e.g. 24 rows, 21 shown above the prompt; a command prints 5 lines: 16.
+    pub fn settle(&mut self) {
+        if self.above > 0 && self.saved_screen.is_none() {
+            self.above = self.above.min(self.rows - self.used_rows());
+        }
+    }
+
+    /// See `above`: 0 on the alternate screen, which a program draws whole.
+    pub fn above(&self) -> usize {
+        match self.saved_screen {
+            Some(_) => 0,
+            None => self.above,
+        }
+    }
+
+    /// How many rows up the view is from the screen: scrolled, and `above`.
+    fn view_offset(&self) -> usize {
+        self.scroll_offset + self.above()
+    }
+
+    /// The screen's rows in use: up to the cursor, or text below it.
+    fn used_rows(&self) -> usize {
+        self.lines
+            .iter()
+            .rposition(|line| !line.is_blank())
+            .map_or(0, |last| last + 1)
+            .max(self.cursor_row + 1)
+            .min(self.lines.len())
+    }
+
     /// Cuts or fills up each row to `cols` and the screen to `rows`, keeping the
     /// cursor's row on screen.
     fn fit(&mut self, rows: usize, cols: usize) {
@@ -332,14 +398,9 @@ impl Grid {
     ///    from its top go into the scrollback. A taller window doesn't bring rows
     ///    back from the scrollback: empty rows at the bottom.
     fn reflow(&mut self, rows: usize, cols: usize) {
-        // The screen rows in use: up to the cursor, or text below it.
-        let used = self
-            .lines
-            .iter()
-            .rposition(|line| !line.is_blank())
-            .map_or(0, |last| last + 1)
-            .max(self.cursor_row + 1)
-            .min(self.lines.len());
+        // The scrollback is made again: `above` is counted anew at the end.
+        let showed_above = std::mem::take(&mut self.above) > 0;
+        let used = self.used_rows();
         self.lines.truncate(used);
         let mut old: Vec<Line> = self
             .scrollback
@@ -453,6 +514,11 @@ impl Grid {
         self.cursor_row = new_row - screen_top;
         self.cursor_col = new_col;
         self.scroll_offset = 0;
+        // Still some of last time's output above the screen: as much of it as
+        // fits now, in a taller window more.
+        if showed_above {
+            self.above = self.scrollback.len().min(rows - self.used_rows());
+        }
     }
 
     pub fn rows(&self) -> usize {
@@ -660,6 +726,7 @@ impl Grid {
             self.dropped += 1;
         }
         self.scroll_offset = self.scroll_offset.min(self.scrollback.len());
+        self.above = self.above.min(self.scrollback.len() - self.scroll_offset);
     }
 
     /// Writes `c` at the cursor with the pen's colors, and moves the cursor right:
@@ -739,7 +806,7 @@ impl Grid {
     /// Row 5 is line 102, which is `lines[2]`.
     fn visible_line(&self, row: usize) -> &Line {
         let sb = self.scrollback.len();
-        let index = sb - self.scroll_offset + row;
+        let index = sb - self.view_offset() + row;
         if index < sb {
             &self.scrollback[index]
         } else {
@@ -872,7 +939,8 @@ impl Grid {
         if self.saved_screen.is_some() {
             return;
         }
-        let max = self.scrollback.len() as i32;
+        // Not past the scrollback's top: `above` rows of it are in view already.
+        let max = (self.scrollback.len() - self.above) as i32;
         let new = (self.scroll_offset as i32 + lines).clamp(0, max);
         self.scroll_offset = new as usize;
     }
@@ -887,7 +955,7 @@ impl Grid {
 
     /// The lasting number (see `dropped`) of the row at the top of the view.
     pub fn first_visible_row(&self) -> usize {
-        self.dropped + self.scrollback.len() - self.scroll_offset
+        self.dropped + self.scrollback.len() - self.view_offset()
     }
 
     /// Scrolls so the lasting row `row` is in view: nothing moves if it's in view
@@ -900,13 +968,14 @@ impl Grid {
         if self.saved_screen.is_some() {
             return;
         }
-        let sb = self.scrollback.len();
-        let top = sb - self.scroll_offset;
+        // Where the view's top is with nothing scrolled.
+        let bottom = self.scrollback.len() - self.above;
+        let top = bottom - self.scroll_offset;
         if (top..top + self.rows).contains(&index) {
             return;
         }
         let new_top = index.saturating_sub(self.rows / 3);
-        self.scroll_offset = sb.saturating_sub(new_top);
+        self.scroll_offset = bottom.saturating_sub(new_top);
     }
 
     /// Every place `query` is in the scrollback and on the screen, top to
@@ -975,7 +1044,7 @@ impl Grid {
                 &self.lines[i - sb]
             }
         };
-        let index = sb - self.scroll_offset + row;
+        let index = sb - self.view_offset() + row;
         // The line's rows: up and down while they go on. On the other screen
         // (nvim's), only its own rows: the scrollback isn't shown there.
         let top = if self.saved_screen.is_some() { sb } else { 0 };
@@ -1122,12 +1191,21 @@ impl Grid {
                 self.erase_in_line(1);
                 self.lines[..self.cursor_row].fill(blank);
             }
-            2 => self.lines.fill(blank),
+            2 => {
+                self.lines.fill(blank);
+                // `clear`: what was above the prompt goes out of view too, up
+                // where the scrollback is, as the screen's own text would.
+                // Not nvim's first clear of its own screen.
+                if self.saved_screen.is_none() {
+                    self.above = 0;
+                }
+            }
             3 => {
                 self.dropped += self.scrollback.len();
                 self.scrollback.clear();
                 self.scrollback_lines = 0;
                 self.scroll_offset = 0;
+                self.above = 0;
             }
             _ => {}
         }
@@ -1168,6 +1246,78 @@ impl Grid {
         line.cells[start..].rotate_right(n);
         line.cells[start..start + n].fill(blank);
         mend_wide(&mut line.cells);
+    }
+
+    /// The scrollback and the normal screen the way a program would print
+    /// them: the letters, `ESC[...m` where the colors change, `ESC]8` round a
+    /// link, `\r\n` after each line. Printed into another grid, of any width,
+    /// they look the same: it's how a tab's output is kept for the next time
+    /// (see `session`). e.g. a red `no` then `yes`: `ESC[0;38;5;1mnoESC[0myes\r\n`.
+    ///
+    /// A line cut at the window's edge has no `\r\n` inside: it's one line
+    /// again, cut where the other grid's edge is. Not the alternate screen:
+    /// nvim draws itself when it starts.
+    pub fn output(&self) -> String {
+        let screen = match &self.saved_screen {
+            Some((normal, ..)) => normal,
+            None => &self.lines,
+        };
+        let used = screen
+            .iter()
+            .rposition(|line| !line.is_blank())
+            .map_or(0, |last| last + 1);
+        let rows: Vec<&Line> = self.scrollback.iter().chain(&screen[..used]).collect();
+        let mut out = String::new();
+        // What the reader's pen is like now: only a change is written.
+        let mut pen = Cell::default();
+        for (i, line) in rows.iter().enumerate() {
+            let mut cells = &line.cells[..];
+            if line.wrapped {
+                // A wide letter that didn't fit in the last cell went on, and
+                // left that cell empty: not a space in the text (see `reflow`).
+                let next_wide = rows
+                    .get(i + 1)
+                    .and_then(|next| next.cells.first())
+                    .is_some_and(|cell| cell.width == Width::Wide);
+                if next_wide && cells.last() == Some(&Cell::default()) {
+                    cells = &cells[..cells.len() - 1];
+                }
+            } else {
+                // The empty cells at a line's end aren't text.
+                let end = cells.iter().rposition(|cell| *cell != Cell::default());
+                cells = &cells[..end.map_or(0, |last| last + 1)];
+            }
+            for cell in cells.iter().filter(|cell| cell.width != Width::Spacer) {
+                self.write_pen(&mut out, &mut pen, cell);
+                out.push(cell.ch);
+            }
+            if !line.wrapped {
+                // A plain pen first: a new line in a color would fill with it.
+                self.write_pen(&mut out, &mut pen, &Cell::default());
+                out.push_str("\r\n");
+            }
+        }
+        out
+    }
+
+    /// Adds to `out` what makes a pen like `pen` one like `cell`'s: nothing,
+    /// if they're the same.
+    fn write_pen(&self, out: &mut String, pen: &mut Cell, cell: &Cell) {
+        use std::fmt::Write;
+        let look = |c: &Cell| {
+            let colors = (c.fg, c.bg, c.underline_color);
+            (colors, c.bold, c.dim, c.italic, c.underline, c.inverse)
+        };
+        if look(pen) != look(cell) {
+            out.push_str(&sgr(cell));
+        }
+        if pen.link != cell.link {
+            // Its address, by its number from 1; none (0): the link ends.
+            let url = (cell.link as usize).checked_sub(1);
+            let url = url.and_then(|i| self.links.get(i)).map_or("", |url| url);
+            let _ = write!(out, "\x1b]8;;{url}\x1b\\");
+        }
+        *pen = *cell;
     }
 
     /// The live screen as plain text, for tests. Trailing spaces and empty
@@ -1258,6 +1408,44 @@ fn find_in(text: &[char], cells: &[(usize, usize, usize)], query: &[char], found
             i += 1;
         }
     }
+}
+
+/// `ESC[...m` that gives the pen `cell`'s look, whatever it was: `0` (plain)
+/// first, then what the cell has. e.g. bold red on blue: `ESC[0;1;38;5;1;48;5;4m`.
+fn sgr(cell: &Cell) -> String {
+    use std::fmt::Write;
+    let mut out = String::from("\x1b[0");
+    for (on, code) in [
+        (cell.bold, ";1"),
+        (cell.dim, ";2"),
+        (cell.italic, ";3"),
+        (cell.inverse, ";7"),
+    ] {
+        if on {
+            out.push_str(code);
+        }
+    }
+    out.push_str(match cell.underline {
+        Underline::None => "",
+        Underline::Single => ";4",
+        Underline::Double => ";4:2",
+        Underline::Curly => ";4:3",
+        Underline::Dotted => ";4:4",
+        Underline::Dashed => ";4:5",
+    });
+    // 38: the text's color, 48: the background's, 58: the underline's.
+    for (code, color) in [(38, cell.fg), (48, cell.bg), (58, cell.underline_color)] {
+        let _ = match color {
+            Color::Default => Ok(()),
+            Color::Indexed(n) => write!(out, ";{code};5;{n}"),
+            Color::Rgb(rgb) => {
+                let (r, g, b) = (rgb >> 16 & 0xff, rgb >> 8 & 0xff, rgb & 0xff);
+                write!(out, ";{code};2;{r};{g};{b}")
+            }
+        };
+    }
+    out.push('m');
+    out
 }
 
 /// A row's text, for tests: trailing spaces removed.

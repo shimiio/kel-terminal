@@ -250,6 +250,8 @@ impl App {
         };
         let ask = question.is_some();
         if self.confirm_close(Closing::Window, ask, question.unwrap_or_default()) {
+            // What the projects' tabs show, for the next time (see `session`).
+            self.keep_all_output();
             self.quit = true;
         }
     }

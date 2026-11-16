@@ -48,6 +48,7 @@ one doesn't.
 | `src/icons.rs` | The tab icons (8 x 8 pixel grids, a pixel 2 x 2 on screen, like the logo) and which tab gets which |
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
 | `src/project.rs` | Reads and writes a project file: the tabs, their folders and commands |
+| `src/session.rs` | A project's tabs keep what they showed, a file per tab, for the next time the project opens |
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |
 | `src/shell_integration.rs` | Makes the shell tell Kel its folder, and when a command starts and ends |
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |

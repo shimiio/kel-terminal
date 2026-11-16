@@ -4,6 +4,7 @@
 use super::{App, COLS, Closing, OpenProject, ROWS, Workspace};
 use crate::history;
 use crate::project::{self, Project, TabRecipe, When};
+use crate::session;
 use crate::sidebar::Live;
 use crate::start::{self, Start};
 use crate::tab::{Tab, TabId};
@@ -111,7 +112,42 @@ impl App {
         };
         let ask = saved.is_err() || running > 0;
         if self.confirm_close(Closing::Project(id), ask, message) {
+            self.keep_output(name);
             self.end_project(name);
+        }
+    }
+
+    /// Keeps what the tabs of the open project `name` show, for the next time
+    /// it opens (see `session`), as its shells are about to end. With
+    /// `restore_output = false`: nothing, and what was kept before goes.
+    fn keep_output(&self, name: &str) {
+        if !self.config.restore_output {
+            session::delete_project(name);
+            return;
+        }
+        let here = self.project.as_ref().is_some_and(|p| p.name == name);
+        let tabs = if here {
+            &self.tabs
+        } else {
+            match self.parked.iter().find(|w| w.name() == Some(name)) {
+                Some(w) => &w.tabs,
+                None => return, // not open
+            }
+        };
+        let output = |tab: &Tab| session::Output {
+            name: tab.name.clone(),
+            text: tab.terminal.lock().unwrap().grid.output(),
+        };
+        let tabs: Vec<_> = tabs.iter().map(output).collect();
+        session::save(name, &tabs);
+    }
+
+    /// `keep_output` for every project open in the window, as it closes.
+    pub(super) fn keep_all_output(&self) {
+        let parked = self.parked.iter().filter_map(|w| w.name());
+        let here = self.project.as_ref().map(|p| p.name.as_str());
+        for name in here.into_iter().chain(parked) {
+            self.keep_output(name);
         }
     }
 
@@ -171,8 +207,11 @@ impl App {
             return;
         }
         match project::delete(name) {
-            // The commands typed in it go with it.
-            Ok(()) => history::delete_project(name),
+            // The commands typed in it go with it, and what its tabs showed.
+            Ok(()) => {
+                history::delete_project(name);
+                session::delete_project(name);
+            }
             Err(e) => self.set_status(Some(format!("{e:#}"))),
         }
         // Home's start screen was made before the file went: again, without it.
@@ -305,7 +344,7 @@ impl App {
         };
         let mut tabs = Vec::new();
         let mut failed = None;
-        for recipe in &recipes {
+        for (place, recipe) in (1..).zip(&recipes) {
             let folder = project.as_ref().map(|p| p.folder_of(recipe));
             let shell = match &project {
                 Some(project) => project.shell_of(recipe, || self.config.shell()),
@@ -313,7 +352,14 @@ impl App {
             };
             let id = self.next_id;
             self.next_id += 1;
-            let screen = self.screen(rows, cols);
+            let mut screen = self.screen(rows, cols);
+            // A project's tab: its output from last time, the prompt below it.
+            let keeps = self.config.restore_output;
+            let last = name.filter(|_| keeps && project.is_some());
+            let last = last.and_then(|name| session::load(name, recipe.name.as_deref(), place));
+            if let Some(last) = last {
+                screen.show_last_time(&last);
+            }
             let history = name.and_then(|name| history::file(name, recipe.name.as_deref()));
             let (folder, history) = (folder.as_deref(), history.as_deref());
             let suggest = self.config.suggestions;
@@ -403,6 +449,7 @@ impl App {
         if new != old {
             project::rename(old, new)?;
             history::rename_project(old, new);
+            session::rename_project(old, new);
             let parked = self.parked.iter_mut().filter_map(|w| w.project.as_mut());
             for open in self.project.iter_mut().chain(parked) {
                 if open.name == old {

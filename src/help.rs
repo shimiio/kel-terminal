@@ -253,6 +253,11 @@ fn settings_lines(config: &Config) -> Vec<Line> {
             &config.scrollback.to_string(),
             "lines per tab",
         ),
+        row(
+            "restore_output",
+            &config.restore_output.to_string(),
+            "a project's tabs, from last time",
+        ),
         row("bell", &text(config.bell.name()), "a program's \"done\""),
         row(
             "start_screen",

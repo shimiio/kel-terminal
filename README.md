@@ -122,6 +122,10 @@ type in the palette: `Save the tabs as project: myapp`. Then:
   it, Ctrl+→ a word of it. It takes PSReadLine 2.1 or newer; Windows' own PowerShell
   comes with 2.0 (`Install-Module PSReadLine -Scope CurrentUser -Force` gets the newest).
   `suggestions = false` in the config: none.
+- a project's tabs come back with what they showed last time, above the new prompt: the
+  text, not the programs (a command of a tab starts again). It's kept when the project or
+  the window closes, as plain text in `%APPDATA%\kel\sessions`, with all a tab showed.
+  `restore_output = false` in the config: none is kept.
 
 A project is a file in `%APPDATA%\kel\projects`, `myapp.toml`. You can write one by hand:
 

@@ -543,6 +543,8 @@ impl Renderer {
         let (cursor_row, cursor_col) = grid.cursor();
         // On a wide letter, the cursor covers both its cells.
         let cursor_wide = grid.cell(cursor_row, cursor_col).width == Width::Wide;
+        // Its row in the view: lower, under output from last time (`Grid::above`).
+        let cursor_row = cursor_row + grid.above();
         let (cell_w, cell_h) = (self.cell_w, self.cell_h);
         // The program's cursor, or Kel's. With the keys elsewhere: a hollow box,
         // whatever the shape, shown all the time (no blinking where you don't type).

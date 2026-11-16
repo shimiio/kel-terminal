@@ -444,6 +444,8 @@ fn pump(
                 for chunk in waiting.try_iter().take(WAITING_CHUNKS) {
                     parser.advance(&mut *terminal, &chunk);
                 }
+                // Output from last time above the screen: less of it now.
+                terminal.grid.settle();
                 // Take the answers out, leaving the list empty for the next batch.
                 std::mem::take(&mut terminal.replies)
             };

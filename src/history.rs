@@ -76,7 +76,7 @@ fn file_in(dir: &Path, project: &str, tab: Option<&str>) -> PathBuf {
 /// A tab's name as a part of a file's name: what Windows won't have in one
 /// (`\ / : * ? " < > |`) is `_`. Never a name by itself (`tab-con.txt`), so a
 /// tab named `con` or ending in a dot is fine.
-fn file_name(tab: &str) -> String {
+pub(crate) fn file_name(tab: &str) -> String {
     let clean = |c: char| {
         if c.is_control() || "\\/:*?\"<>|".contains(c) {
             '_'

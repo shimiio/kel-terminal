@@ -354,7 +354,16 @@ Settled:
 
 ## After the release
 
-- [ ] Sessions that come back: a tab's output from last time, above its new prompt
+- [x] Sessions that come back: a tab's output from last time, above its new prompt. A
+      project's tabs, kept when it closes: a file per tab in Kel's folder
+      (`sessions\myapp\tab-server.txt`), what a program would print (the letters, `ESC[...m`
+      for the colors), read into the grid before the shell starts. It's put in the
+      scrollback and shown above the screen until the screen fills up: left on the screen,
+      ConPTY drew over it after a resize and `cls` left it there (measured,
+      `examples/probe_restore.rs`). No program comes back. A full scrollback: read in
+      ~20 ms, written in ~10 (measured). `restore_output = false`: none
+- [ ] The prompt a tab was left at isn't kept (it's there twice: the old one, then the
+      line, then the new one); the output is kept as the window closes, so not after a crash
 - [x] A history per tab: ↑ shows the commands typed in this tab of this project, not all
       typed anywhere. A tab with a name has its own, the project's tabs without one share
       the project's, home keeps the shell's usual one. A file per tab in Kel's folder

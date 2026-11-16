@@ -73,6 +73,11 @@ suggestions = true
 # 10 000 lines take a few MB per tab. A smaller number applies at once.
 scrollback = 10000
 
+# A project's tabs come back with their output from last time, above the new
+# prompt. It's kept when the project closes, as plain text in Kel's folder
+# (sessions), with all a tab showed. false: none is kept, and what was goes.
+restore_output = true
+
 # The bell, a program's "done" or "come here" (Claude Code can ring it):
 # "taskbar": Kel's button in the taskbar blinks while you're in another window,
 # until you come back; "flash": that, and the terminal flashes when you're here;
@@ -205,6 +210,8 @@ pub struct Config {
     pub option_as_alt: bool,
     pub suggestions: bool,
     pub scrollback: usize,
+    /// A project's tabs keep their output for the next time (see `session`).
+    pub restore_output: bool,
     pub bell: Bell,
     pub start_screen: bool,
     pub backdrop: backdrop::Choice,
@@ -228,6 +235,7 @@ impl Default for Config {
             option_as_alt: false,
             suggestions: true,
             scrollback: crate::term::SCROLLBACK_LIMIT,
+            restore_output: true,
             bell: Bell::Taskbar,
             start_screen: true,
             backdrop: backdrop::Choice::Auto,
@@ -442,6 +450,13 @@ project_colors = [\"#112233\", \"blue\"]";
         let config: Config = toml::from_str("scrollback = 50000").unwrap();
         assert_eq!(config.scrollback, 50_000);
         assert!(toml::from_str::<Config>("scrollback = -1").is_err());
+    }
+
+    #[test]
+    fn restore_output() {
+        assert!(Config::default().restore_output);
+        let config: Config = toml::from_str("restore_output = false").unwrap();
+        assert!(!config.restore_output);
     }
 
     #[test]

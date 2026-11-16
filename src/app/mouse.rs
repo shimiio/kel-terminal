@@ -338,6 +338,8 @@ impl App {
             let terminal = self.tab().terminal.lock().unwrap();
             // In the space around the text: the nearest cell.
             let row = self.mouse_cell.0.min(terminal.grid.rows() - 1);
+            // The screen's row, not the view's (see `Grid::above`).
+            let row = row.saturating_sub(terminal.grid.above());
             let col = self.mouse_cell.1.min(terminal.grid.cols() - 1);
             let (tracking, sgr) = (terminal.mouse, terminal.mouse_sgr);
             mouse::report(tracking, sgr, event, self.modifiers, (row, col))

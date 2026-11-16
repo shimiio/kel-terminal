@@ -32,6 +32,7 @@ use crate::palette::Palette;
 use crate::project::{self, Project, TabRecipe};
 use crate::renderer::Renderer;
 use crate::search::Search;
+use crate::session;
 use crate::sidebar::Sidebar;
 use crate::start::{self, Start};
 use crate::tab::{Tab, TabId};
@@ -383,9 +384,13 @@ impl App {
         });
         // A screen with the problems so far in red. The shell starts below them:
         // when ConPTY asks where the cursor is, the answer is the line after them.
-        let screen = |problems: &[String]| {
+        // Above them, the tab's output from last time (`last`), if it has some.
+        let screen = |problems: &[String], last: Option<&str>| {
             let mut terminal = Terminal::new(ROWS, COLS);
             terminal.grid.set_scrollback_limit(config.scrollback);
+            if let Some(last) = last {
+                terminal.show_last_time(last);
+            }
             for problem in problems {
                 let text = format!("\x1b[31mkel: {problem}\x1b[m\n\n").replace('\n', "\r\n");
                 Parser::new().advance(&mut terminal, text.as_bytes());
@@ -417,18 +422,26 @@ impl App {
             let name = project.as_ref().and(project_name.as_deref())?;
             history::file(name, recipe.name.as_deref())
         };
+        // Each tab's output from last time, a project's (see `session`): by the
+        // tab's name, or its place in the bar from 1.
+        let last_of = |place: usize, recipe: &TabRecipe| {
+            let name = project.as_ref().and(project_name.as_deref())?;
+            let keeps = config.restore_output;
+            keeps.then(|| session::load(name, recipe.name.as_deref(), place))?
+        };
         // The first tab shows the problems. A shell that doesn't start is one more,
         // and the tab gets the system's shell instead.
         let shell = shell_of(&recipes[0]);
         let folder = folder_of(&recipes[0]);
         let history = history_of(&recipes[0]);
+        let last = last_of(1, &recipes[0]);
         let first = match Tab::spawn(
             0,
             &shell,
             folder.as_deref(),
             history.as_deref(),
             config.suggestions,
-            screen(&problems),
+            screen(&problems, last.as_deref()),
             proxy.clone(),
         ) {
             Ok(tab) => tab,
@@ -440,7 +453,7 @@ impl App {
                     folder.as_deref(),
                     history.as_deref(),
                     config.suggestions,
-                    screen(&problems),
+                    screen(&problems, last.as_deref()),
                     proxy.clone(),
                 )?
             }
@@ -450,9 +463,13 @@ impl App {
         for (id, recipe) in (1..).zip(&recipes[1..]) {
             let (shell, folder) = (shell_of(recipe), folder_of(recipe));
             let history = history_of(recipe);
+            let last = last_of(id as usize + 1, recipe);
             let spawn = |shell: &str| {
                 let mut screen = Terminal::new(ROWS, COLS);
                 screen.grid.set_scrollback_limit(config.scrollback);
+                if let Some(last) = &last {
+                    screen.show_last_time(last);
+                }
                 let (folder, history) = (folder.as_deref(), history.as_deref());
                 Tab::spawn(
                     id,

@@ -33,6 +33,9 @@ pub enum Mark {
     Ended(bool),
 }
 
+/// The line under a tab's output from last time (see `Terminal::show_last_time`).
+const LAST_TIME: &str = "── last time ──";
+
 pub struct Terminal {
     pub grid: Grid,
     /// Answers to the program's questions (e.g. "where is the cursor?"), waiting
@@ -76,6 +79,30 @@ impl Terminal {
             bell: false,
             app_cursor: false,
         }
+    }
+
+    /// A tab's output from last time (`Grid::output`, kept by `session`), into
+    /// a terminal whose shell hasn't started: read like any output, so the
+    /// grid has its letters and colors again, cut at this grid's width. A dim
+    /// line ends it, and it stays in view above the new shell's prompt (see
+    /// `Grid::start_below`).
+    pub fn show_last_time(&mut self, output: &str) {
+        let mut parser = vte::Parser::new();
+        parser.advance(self, output.as_bytes());
+        // A plain pen and no link, whatever the text left; on a line of its own.
+        let own_line = if self.grid.cursor().1 > 0 { "\r\n" } else { "" };
+        let end = format!("\x1b[m\x1b]8;;\x1b\\{own_line}\x1b[2m{LAST_TIME}\x1b[m\r\n");
+        parser.advance(self, end.as_bytes());
+        // Only the text is kept. What else the file held (a question to answer,
+        // a title, the mouse asked for) isn't the new shell's: Kel writes none
+        // of it, but the file is anyone's to edit.
+        self.grid.leave_alt_screen();
+        let grid = std::mem::replace(&mut self.grid, Grid::new(1, 1));
+        *self = Terminal {
+            grid,
+            ..Terminal::new(1, 1)
+        };
+        self.grid.start_below();
     }
 
     /// `ESC[...m`: change the pen's colors. One sequence can hold several codes,
@@ -944,5 +971,155 @@ mod tests {
         assert!(feed("\x1b[?1h").app_cursor);
         assert!(!feed("\x1b[?1h\x1b[?1l").app_cursor);
         assert!(!feed("").app_cursor);
+    }
+
+    /// The view's rows as text, top to bottom, as the renderer reads them.
+    fn view(terminal: &Terminal) -> Vec<String> {
+        let grid = &terminal.grid;
+        let row = |row| (0..grid.cols()).map(move |col| grid.visible_cell(row, col).ch);
+        (0..grid.rows())
+            .map(|r| row(r).collect::<String>().trim_end().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn output_as_a_program_would_print_it() {
+        let t = feed("\x1b[31mno\x1b[myes\r\n\r\nplain");
+        assert_eq!(
+            t.grid.output(),
+            "\x1b[0;38;5;1mno\x1b[0myes\r\n\r\nplain\r\n"
+        );
+        // Nothing shown: nothing to keep.
+        assert_eq!(feed("").grid.output(), "");
+        assert_eq!(feed("\r\n\r\n").grid.output(), "");
+        // The normal screen, not nvim's.
+        assert_eq!(feed("ls\x1b[?1049hnvim").grid.output(), "ls\r\n");
+    }
+
+    #[test]
+    fn output_read_again_is_the_same_grid() {
+        let input = concat!(
+            "\x1b[1;2;3;7mall\x1b[m \x1b[4:3;58;2;255;0;0mcurly\x1b[m\r\n",
+            "\x1b[38;2;1;2;3;48;5;200mrgb\x1b[m 日本 x\r\n",
+            "\x1b]8;;https://kel.dev\x1b\\link\x1b]8;;\x1b\\ after\r\n",
+            "a line longer than the ten columns\r\n",
+            "\x1b[44mbar\x1b[K\x1b[m\r\n",
+            "exactly 10\r\n",
+            "123456789日 wide at the edge\r\n",
+            "end",
+        );
+        let first = feed(input);
+        assert!(first.grid.scrollback().len() > 5); // most of it scrolled off
+        let output = first.grid.output();
+        for piece in [
+            "\x1b[0;1;2;3;7mall\x1b[0m \x1b[0;4:3;58;2;255;0;0mcurly\x1b[0m\r\n",
+            "\x1b[0;38;2;1;2;3;48;5;200mrgb\x1b[0m 日本 x\r\n",
+            "\x1b]8;;https://kel.dev\x1b\\link\x1b]8;;\x1b\\ after\r\n",
+            "a line longer than the ten columns\r\n",
+            "\x1b[0;48;5;4mbar       \x1b[0m\r\n",
+            "123456789日 wide at the edge\r\n",
+        ] {
+            assert!(output.contains(piece), "{piece:?} in {output:?}");
+        }
+        // Read by a grid as wide, it's cut at the same places: every row but
+        // the last, which the output's last `\r\n` moved up a row.
+        let again = feed(&output);
+        assert_eq!(again.grid.output(), output);
+        let rows = first.grid.scrollback().len();
+        let same = again.grid.scrollback().iter().take(rows);
+        assert!(same.eq(first.grid.scrollback()));
+        // In a wider grid a long line is whole again.
+        let mut wide = Terminal::new(20, 40);
+        Parser::new().advance(&mut wide, output.as_bytes());
+        let text = wide.grid.render();
+        assert!(
+            text.contains("\na line longer than the ten columns\n"),
+            "{text}"
+        );
+        assert!(text.contains("\n123456789日 wide at the edge\n"), "{text}");
+    }
+
+    #[test]
+    fn last_time_above_the_new_prompt() {
+        let mut t = Terminal::new(6, 20);
+        t.show_last_time("\x1b[31mone\x1b[m\r\ntwo\r\n");
+        // The screen is empty, as ConPTY's is: the shell starts at its top.
+        assert_eq!(t.grid.render(), "");
+        assert_eq!(t.grid.cursor(), (0, 0));
+        Parser::new().advance(&mut t, b"\x1b[6n");
+        assert_eq!(std::mem::take(&mut t.replies), b"\x1b[1;1R");
+        // The view: the old text, the line that ends it, then the screen.
+        assert_eq!(t.grid.above(), 3);
+        Parser::new().advance(&mut t, b"PS> ");
+        t.grid.settle();
+        assert_eq!(view(&t), ["one", "two", LAST_TIME, "PS>", "", ""]);
+        assert_eq!(t.grid.visible_cell(0, 0).fg, Color::Indexed(1));
+        assert_eq!(t.grid.first_visible_row(), 0);
+        // Nothing more to scroll up to: it's all in view.
+        t.grid.scroll_view(5);
+        assert_eq!(t.grid.scroll_offset(), 0);
+        // The screen fills up: the old text goes up, a row for a row.
+        Parser::new().advance(&mut t, b"ls\r\na\r\nb\r\nPS> ");
+        t.grid.settle();
+        assert_eq!(t.grid.above(), 2);
+        assert_eq!(view(&t), ["two", LAST_TIME, "PS> ls", "a", "b", "PS>"]);
+        Parser::new().advance(&mut t, b"\r\n\r\n\r\n");
+        t.grid.settle();
+        assert_eq!(t.grid.above(), 0);
+        assert_eq!(t.grid.scrollback().len(), 4); // and one of the shell's rows
+    }
+
+    #[test]
+    fn last_time_goes_with_a_clear() {
+        let mut t = Terminal::new(6, 20);
+        t.show_last_time("one\r\n");
+        // `clear`: out of view, still there to scroll up to.
+        Parser::new().advance(&mut t, b"\x1b[H\x1b[2JPS> ");
+        assert_eq!(t.grid.above(), 0);
+        assert_eq!(view(&t)[0], "PS>");
+        assert_eq!(t.grid.scrollback().len(), 2);
+        // `cls` (ConPTY's `ESC[3J`): gone.
+        let mut t = Terminal::new(6, 20);
+        t.show_last_time("one\r\n");
+        Parser::new().advance(&mut t, b"\x1b[3JPS> ");
+        assert_eq!(t.grid.above(), 0);
+        assert_eq!(view(&t)[0], "PS>");
+        assert!(t.grid.scrollback().is_empty());
+    }
+
+    #[test]
+    fn last_time_in_a_window_of_another_size() {
+        let mut t = Terminal::new(6, 20);
+        let old: String = (1..=10).map(|i| format!("line {i}\r\n")).collect();
+        t.show_last_time(&old);
+        assert_eq!(t.grid.above(), 5); // a row is the prompt's
+        Parser::new().advance(&mut t, b"PS> ");
+        // Taller: more of it. The screen's top stays the prompt, as ConPTY's.
+        t.grid.resize(9, 20);
+        assert_eq!(t.grid.above(), 8);
+        assert_eq!(view(&t)[7..], [LAST_TIME, "PS>"]);
+        assert_eq!(t.grid.render(), "PS>");
+        // Narrower: the old lines are cut again, up in the scrollback.
+        t.grid.resize(4, 5);
+        assert_eq!(view(&t), ["── la", "st ti", "me ──", "PS>"]);
+        assert_eq!(t.grid.render(), "PS>");
+        // nvim's screen is all its own; the old text is back after it.
+        Parser::new().advance(&mut t, b"\x1b[?1049h\x1b[2J\x1b[Hnvim");
+        assert_eq!(t.grid.above(), 0);
+        assert_eq!(view(&t)[0], "nvim");
+        Parser::new().advance(&mut t, b"\x1b[?1049l");
+        assert_eq!(view(&t)[2..], ["me ──", "PS>"]);
+    }
+
+    #[test]
+    fn last_time_is_only_text() {
+        let mut t = Terminal::new(6, 20);
+        // A file someone else wrote: a question, a title, the mouse, nvim's screen.
+        t.show_last_time("\x1b[6n\x1b]0;title\x07\x1b[?1002h\x07\x1b[?1049hhi");
+        assert!(t.replies.is_empty());
+        assert_eq!(t.title, None);
+        assert_eq!(t.mouse, Tracking::Off);
+        assert!(!t.bell);
+        assert!(!t.grid.alternate());
     }
 }
