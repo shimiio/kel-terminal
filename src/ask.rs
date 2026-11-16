@@ -396,9 +396,12 @@ mod tests {
         let rules = |shell| in_shell(shell).remove(0).1;
         let example = |shell| in_shell(shell).remove(2).1;
         assert!(rules("powershell.exe").contains("Windows PowerShell 5.1 (it has no &&"));
-        assert!(
-            rules(r#""C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo"#).contains("PowerShell 7.")
-        );
+        assert!(rules("pwsh -NoLogo").contains("PowerShell 7."));
+        // By its whole path, as Windows writes one (`\` is no folder's end elsewhere).
+        if cfg!(windows) {
+            let pwsh = r#""C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo"#;
+            assert!(rules(pwsh).contains("PowerShell 7."));
+        }
         assert_eq!(example("pwsh.exe"), "(Get-ChildItem -Recurse -File).Count");
         assert!(rules("cmd.exe").contains("cmd.exe, the Windows Command Prompt"));
         assert!(example("cmd.exe").starts_with("dir /s"));
