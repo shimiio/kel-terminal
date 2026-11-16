@@ -41,7 +41,8 @@ use bar::{
     project_name_shown, project_name_width,
 };
 use overlays::{
-    draw_ask, draw_card, draw_palette, draw_search, draw_sidebar, draw_switcher, switcher_place,
+    draw_ask, draw_card, draw_copied, draw_palette, draw_search, draw_sidebar, draw_switcher,
+    switcher_place,
 };
 use screens::{draw_help, draw_start};
 use shapes::{blend, fill_rect, fill_round, invisible, outline, solid};
@@ -185,6 +186,9 @@ pub struct Chrome<'a> {
     pub bar_up: bool,
     /// The bell just rang (`bell = "flash"`): the terminal a bit lighter.
     pub flash: bool,
+    /// A selection was just copied, this many letters of it: said in the
+    /// panel's bottom right corner.
+    pub copied: Option<usize>,
     /// The help, if it's open: over everything.
     pub help: Option<&'a Help>,
 }
@@ -768,6 +772,10 @@ impl Renderer {
                 font,
                 &mut self.ui,
             );
+        }
+        // Under the boxes that open: the ask box, wide, covers it.
+        if let Some(chars) = chrome.copied {
+            draw_copied(&mut buffer, width, theme, body, chars, font, &mut self.ui);
         }
         if let Some(search) = chrome.search {
             draw_search(&mut buffer, width, theme, body, search, font, &mut self.ui);

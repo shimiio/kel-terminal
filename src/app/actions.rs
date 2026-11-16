@@ -1,7 +1,7 @@
 //! Kel's actions (a shortcut, a line of the palette), the clipboard, and the
 //! settings: the config read again, the fonts, the zoom.
 
-use super::{App, Closing};
+use super::{App, COPIED_TIME, Closing};
 use crate::config;
 use crate::font::{self, Fonts};
 use crate::help::Help;
@@ -11,6 +11,7 @@ use crate::project;
 use crate::search::Search;
 use crate::sidebar::Sidebar;
 use crate::{open, setup};
+use std::time::Instant;
 
 impl App {
     /// Shows a problem in the tab bar, or (`None`) clears it.
@@ -369,8 +370,8 @@ impl App {
         self.request_redraw();
     }
 
-    /// Puts the mouse selection's text in the clipboard, if there is one. It
-    /// stays selected: `copy` takes it away, a selection copied as the mouse
+    /// Puts the mouse selection's text in the clipboard, if there is one, and
+    /// says how many letters that was (`copied`). It stays selected: `copy` takes it away, a selection copied as the mouse
     /// lets go (`copy_on_select`) stays to be seen.
     pub(super) fn copy_selection(&mut self) -> bool {
         let Some(selection) = self.selection else {
@@ -384,8 +385,14 @@ impl App {
             .unwrap()
             .grid
             .text_between(start, end);
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            let _ = clipboard.set_text(text);
+        // How much went, said in the panel's corner for a moment: only if it
+        // did go (another program can hold the clipboard).
+        let chars = text.chars().count();
+        if let Ok(mut clipboard) = arboard::Clipboard::new()
+            && clipboard.set_text(text).is_ok()
+        {
+            self.copied = Some((chars, Instant::now() + COPIED_TIME));
+            self.request_redraw();
         }
         true
     }

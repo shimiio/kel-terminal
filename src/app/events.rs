@@ -240,12 +240,21 @@ impl ApplicationHandler<UserEvent> for App {
             self.flash_until = None;
             self.request_redraw();
         }
+        // "copied 124 chars" has been read.
+        if self
+            .copied
+            .is_some_and(|(_, until)| Instant::now() >= until)
+        {
+            self.copied = None;
+            self.request_redraw();
+        }
         // Sleep until the next event, or until it's time to blink (or to open the
-        // sidebar, the mouse resting on the sidebar button, or to end a flash),
-        // whichever comes first.
+        // sidebar, the mouse resting on the sidebar button, to end a flash, or to
+        // take "copied" away), whichever comes first.
         let wake = [
             self.burger_since.map(|since| since + PEEK_DELAY),
             self.flash_until,
+            self.copied.map(|(_, until)| until),
             self.bar_until,
             self.switcher.filter(|s| !s.shown).map(|s| s.at),
         ]
@@ -384,6 +393,7 @@ impl App {
             keys_here: self.keys_here(),
             solid: self.solid_under(),
             flash: self.flash_until.is_some(),
+            copied: self.copied.map(|(chars, _)| chars),
         };
         if let Some(renderer) = &mut self.renderer {
             let started = Instant::now();

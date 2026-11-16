@@ -150,6 +150,8 @@ pub enum UserEvent {
 
 /// How long the terminal flashes when the bell rings (`bell = "flash"`).
 const FLASH_TIME: Duration = Duration::from_millis(120);
+/// How long the panel's corner says that a selection was copied.
+const COPIED_TIME: Duration = Duration::from_secs(2);
 
 /// How long "close?" waits for the second press.
 const CONFIRM_TIME: Duration = Duration::from_secs(3);
@@ -351,6 +353,9 @@ pub struct App {
     burger_since: Option<Instant>,
     /// The bell's flash, until then (see `ring`).
     flash_until: Option<Instant>,
+    /// A selection was copied, this many letters of it: said in the panel's
+    /// corner until then (see `copy_selection`).
+    copied: Option<(usize, Instant)>,
     /// The open sidebar came from resting on the sidebar button, a peek: it closes when the
     /// mouse leaves it. A click or a key in it keeps it, as if opened by hand.
     sidebar_peek: bool,
@@ -585,6 +590,7 @@ impl App {
             window_title: String::new(),
             burger_since: None,
             flash_until: None,
+            copied: None,
             sidebar_peek: false,
             icon: None,
         })

@@ -106,6 +106,7 @@ Option types its letters, as on any Mac; `option_as_alt = true` makes it Alt.
 
 The mouse: drag to select, double-click for a word (a path or a link whole), Ctrl+click
 opens a link. In a program that takes the mouse (nvim, lazygit), hold Shift to select.
+A copy says how much it took, in the bottom right corner: `copied 124 chars`.
 
 ## Ask for a command
 

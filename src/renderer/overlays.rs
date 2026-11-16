@@ -807,6 +807,67 @@ pub(super) fn draw_ask(
     }
 }
 
+/// What a copy says: `copied 124 chars`, `copied 1 char`.
+pub(super) fn copied_text(chars: usize) -> String {
+    match chars {
+        1 => "copied 1 char".to_string(),
+        _ => format!("copied {chars} chars"),
+    }
+}
+
+/// That a selection was copied, and how much of it, in the terminal panel's
+/// bottom right corner: a box as wide as its text, for a moment.
+///
+/// ```text
+///                         ┌──────────────────┐
+///                         │ copied 124 chars │
+///                         └──────────────────┘
+/// ```
+pub(super) fn draw_copied(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    chars: usize,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    let area = layout.inside;
+    let pad = ui.px(PALETTE_PADDING);
+    let b = layout.border;
+    let text = copied_text(chars);
+    let text_w = text.chars().count() * ui.advance;
+    let box_w = text_w + 2 * (pad + b);
+    let box_h = ui.line_h + 2 * (pad + b);
+    if area.w < box_w + 4 * pad || area.h < box_h + 4 * pad {
+        return; // a window too small for it
+    }
+    let x = area.x + area.w - box_w - 2 * pad;
+    let y = area.y + area.h - box_h - 2 * pad;
+    let r = Rect {
+        x,
+        y,
+        w: box_w,
+        h: box_h,
+    };
+    draw_box(pixels, width, theme, layout, r, pane(theme, layout));
+    let color = blend(theme.frame, theme.foreground, 170);
+    let at = (x + b + pad, y + b + pad);
+    draw_ui_text(pixels, width, font, ui, &text, at, text_w, color);
+}
+
+#[cfg(test)]
+mod copied_tests {
+    use super::copied_text;
+
+    #[test]
+    fn one_char_is_not_chars() {
+        assert_eq!(copied_text(1), "copied 1 char");
+        assert_eq!(copied_text(0), "copied 0 chars");
+        assert_eq!(copied_text(124), "copied 124 chars");
+    }
+}
+
 #[cfg(test)]
 mod switcher_tests {
     use super::*;
