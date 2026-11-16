@@ -4,9 +4,12 @@
 //! is yours. A small model is right about four times in five (measured,
 //! `examples/probe_ai.rs`), and a wrong command looks as sure as a right one.
 //!
-//! The model is told what the terminal knows by itself: the tab's shell, the
-//! system, the folder. So the answer is in that shell's words, which a chat in
-//! a browser has to be told each time.
+//! The model is told what the terminal knows by itself (see `Around`): the
+//! tab's shell, the system, the folder and its files' names, the last commands
+//! run there and which failed. So the answer is in that shell's words, "build
+//! this project" is `cargo build` here, and "the same for the branch dev"
+//! means something: what a chat in a browser has to be told each time. Each
+//! question is on its own: the one before isn't remembered.
 //!
 //! Here: the box's state, the question as the model gets it, and the command
 //! taken out of its answer. `App` sends the keys and asks on a thread of its
@@ -14,7 +17,7 @@
 
 use crate::ollama;
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// `[ai]` in the config.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -103,16 +106,54 @@ impl Ask {
     }
 }
 
+/// What's around the question, which the terminal knows and a chat in a browser
+/// has to be told: the tab it's asked in.
+#[derive(Clone, Debug, Default)]
+pub struct Around {
+    /// The tab's shell, as the config has it: `pwsh.exe -NoLogo`.
+    pub shell: String,
+    /// The shell's folder, if it said one. Its files are told too, by name:
+    /// `Cargo.toml` or `package.json` say what kind of project this is.
+    pub folder: Option<PathBuf>,
+    /// The last commands run in the tab, oldest first, each with how it ended
+    /// if the shell said (`false`: it failed). So "the same for the branch dev"
+    /// is a question, and "why" has something to be about.
+    pub commands: Vec<(String, Option<bool>)>,
+}
+
+/// At most this many of a folder's files are named: a few lines of the
+/// question, and a home folder has hundreds.
+const FILES: usize = 40;
+
+/// The names in `folder`, folders with a `/` after them, in the alphabet's
+/// order: the first `FILES`, and how many more there are. A folder that can't
+/// be read (WSL's, as Windows sees its path) has none.
+fn files_in(folder: &Path) -> (Vec<String>, usize) {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return (Vec::new(), 0);
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => format!("{name}/"),
+                _ => name,
+            }
+        })
+        .collect();
+    names.sort_by_key(|name| name.to_lowercase());
+    let more = names.len().saturating_sub(FILES);
+    names.truncate(FILES);
+    (names, more)
+}
+
 /// The command for `question`, from the model: asked, and taken out of what it
-/// said. `shell` as the config has it (`pwsh.exe -NoLogo`), `folder` the tab's.
-/// It waits for the answer: seconds, so not on the main thread.
-pub fn answer(
-    ai: &Ai,
-    shell: &str,
-    folder: Option<&Path>,
-    question: &str,
-) -> Result<String, String> {
-    let messages = messages(shell, folder, question);
+/// said. It reads the folder and waits for the answer: seconds, so not on the
+/// main thread.
+pub fn answer(ai: &Ai, around: &Around, question: &str) -> Result<String, String> {
+    let files = around.folder.as_deref().map(files_in).unwrap_or_default();
+    let messages = messages(around, &files, question);
     let messages: Vec<(&str, &str)> = messages
         .iter()
         .map(|(role, text)| (*role, text.as_str()))
@@ -170,15 +211,47 @@ fn told(shell: &str) -> Told {
 }
 
 /// The question as the model gets it, each part a role and its text: what it's
-/// for and where it is, an example with its answer, the question.
-fn messages(shell: &str, folder: Option<&Path>, question: &str) -> Vec<(&'static str, String)> {
-    let told = told(shell);
-    let folder = match folder {
-        Some(folder) => format!(" Current folder: {}.", folder.display()),
-        None => String::new(),
-    };
+/// for and where it is, an example with its answer, the question. `files`: the
+/// folder's (see `files_in`).
+fn messages(
+    around: &Around,
+    (files, more): &(Vec<String>, usize),
+    question: &str,
+) -> Vec<(&'static str, String)> {
+    let told = told(&around.shell);
+    let mut place = String::new();
+    if let Some(folder) = &around.folder {
+        place += &format!(" Current folder: {}.", folder.display());
+    }
+    if !files.is_empty() {
+        place += &format!(" Files in it: {}", files.join(", "));
+        place += &match more {
+            0 => ".".to_string(),
+            more => format!(", and {more} more."),
+        };
+        // What it costs: in a folder with `.git`, "files changed in the last 2
+        // days" becomes a question about git (measured; telling the model that
+        // most questions aren't about the files changed nothing).
+    }
+    // The commands go with the question, after the example: said before it,
+    // "the same for the branch dev" was taken to mean the example's command
+    // (measured), the last thing the model had seen.
+    let mut asked = String::new();
+    if !around.commands.is_empty() {
+        let commands: Vec<String> = around
+            .commands
+            .iter()
+            .map(|(line, ok)| match ok {
+                Some(false) => format!("`{line}` (it failed)"),
+                _ => format!("`{line}`"),
+            })
+            .collect();
+        asked += "The last commands run in this terminal, oldest first: ";
+        asked += &format!("{}.\n\n", commands.join(", "));
+    }
+    asked += question;
     let rules = format!(
-        "You are a helper inside a terminal. Shell: {}. System: {}.{folder} Answer \
+        "You are a helper inside a terminal. Shell: {}. System: {}.{place} Answer \
          with one command for this shell that does what is asked, on a single line. \
          Only the command: no explanation, no markdown, no backticks. Paths relative \
          to the current folder, not full ones.",
@@ -188,7 +261,7 @@ fn messages(shell: &str, folder: Option<&Path>, question: &str) -> Vec<(&'static
         ("system", rules),
         ("user", EXAMPLE.to_string()),
         ("assistant", told.example.to_string()),
-        ("user", question.to_string()),
+        ("user", asked),
     ]
 }
 
@@ -234,10 +307,19 @@ mod tests {
         assert_eq!(command("```\n```"), None);
     }
 
+    /// The question in a tab with this shell, nothing else known.
+    fn in_shell(shell: &str) -> Vec<(&'static str, String)> {
+        let around = Around {
+            shell: shell.to_string(),
+            ..Around::default()
+        };
+        messages(&around, &(Vec::new(), 0), "q")
+    }
+
     #[test]
     fn each_shell_in_its_own_words() {
-        let rules = |shell| messages(shell, None, "q").remove(0).1;
-        let example = |shell| messages(shell, None, "q").remove(2).1;
+        let rules = |shell| in_shell(shell).remove(0).1;
+        let example = |shell| in_shell(shell).remove(2).1;
         assert!(rules("powershell.exe").contains("Windows PowerShell 5.1 (it has no &&"));
         assert!(
             rules(r#""C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo"#).contains("PowerShell 7.")
@@ -253,16 +335,64 @@ mod tests {
     #[test]
     fn the_question_as_the_model_gets_it() {
         let folder = Path::new("projects").join("kel");
-        let messages = messages("bash", Some(&folder), "unpack a.tar.gz");
+        let around = Around {
+            shell: "bash".to_string(),
+            folder: Some(folder.clone()),
+            commands: vec![
+                ("git status".to_string(), Some(true)),
+                ("cargo biuld".to_string(), Some(false)),
+                ("nvim .".to_string(), None),
+            ],
+        };
+        let files = (vec!["Cargo.toml".to_string(), "src/".to_string()], 0);
+        let messages = messages(&around, &files, "unpack a.tar.gz");
         let roles: Vec<&str> = messages.iter().map(|(role, _)| *role).collect();
         assert_eq!(roles, ["system", "user", "assistant", "user"]);
-        let folder = format!("Current folder: {}.", folder.display());
-        assert!(messages[0].1.contains(&folder), "{}", messages[0].1);
+        let rules = &messages[0].1;
+        let place = format!(
+            "Current folder: {}. Files in it: Cargo.toml, src/. Answer",
+            folder.display()
+        );
+        assert!(rules.contains(&place), "{rules}");
         assert_eq!(messages[1].1, EXAMPLE);
-        assert_eq!(messages[3].1, "unpack a.tar.gz");
-        // A shell that says no folder: none named.
-        let rules = &super::messages("bash", None, "q")[0].1;
+        // The commands with the question, after the example.
+        assert_eq!(
+            messages[3].1,
+            "The last commands run in this terminal, oldest first: `git status`, \
+             `cargo biuld` (it failed), `nvim .`.\n\nunpack a.tar.gz"
+        );
+        // More files than are named.
+        let files = (vec!["a".to_string()], 7);
+        let rules = &super::messages(&around, &files, "q")[0].1;
+        assert!(rules.contains("Files in it: a, and 7 more."), "{rules}");
+        // A shell that says no folder, a tab where nothing ran: neither named.
+        let rules = &in_shell("bash")[0].1;
         assert!(!rules.contains("Current folder"), "{rules}");
+        assert!(!rules.contains("Files in it"), "{rules}");
+        assert_eq!(in_shell("bash")[3].1, "q");
+    }
+
+    #[test]
+    fn a_folder_s_files() {
+        let dir = std::env::temp_dir().join(format!("kel-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        for name in ["b.txt", "Cargo.toml", ".gitignore"] {
+            std::fs::write(dir.join(name), "").unwrap();
+        }
+        let (names, more) = files_in(&dir);
+        assert_eq!(names, [".gitignore", "b.txt", "Cargo.toml", "src/"]);
+        assert_eq!(more, 0);
+        // More than are named: the first ones, and how many are left.
+        for n in 0..FILES {
+            std::fs::write(dir.join(format!("z{n:02}")), "").unwrap();
+        }
+        let (names, more) = files_in(&dir);
+        assert_eq!((names.len(), more), (FILES, 4));
+        assert_eq!(names[3], "src/");
+        std::fs::remove_dir_all(&dir).unwrap();
+        // A folder that isn't there: none.
+        assert_eq!(files_in(&dir), (Vec::new(), 0));
     }
 
     #[test]

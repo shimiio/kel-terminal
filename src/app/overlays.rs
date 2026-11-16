@@ -2,7 +2,7 @@
 //! the search, the ask box, the palette, the start screen, the help.
 
 use super::{App, CONFIRM_TIME, UserEvent, actions::clipboard_text};
-use crate::ask::{self, Ask};
+use crate::ask::{self, Around, Ask};
 use crate::card::{self, Card, Target};
 use crate::history;
 use crate::keys::{self, Action};
@@ -463,8 +463,8 @@ impl App {
         self.request_redraw();
     }
 
-    /// Enter in the ask box: the question goes to the model, with the shell and
-    /// the folder of the tab on screen. On a thread of its own: the answer takes
+    /// Enter in the ask box: the question goes to the model, with what's around
+    /// it in the tab on screen (its shell, folder, last commands). On a thread of its own: the answer takes
     /// a second or more, and comes back as `UserEvent::Answer`.
     fn send_ask(&mut self) {
         let Some(ask) = &mut self.ask else {
@@ -478,11 +478,15 @@ impl App {
         let number = self.asked;
         ask.sent(number);
         let ai = self.config.ai.clone();
-        let shell = self.tab().shell().to_string();
-        let folder = self.tab().cwd();
+        let tab = self.tab();
+        let around = Around {
+            shell: tab.shell().to_string(),
+            folder: tab.cwd(),
+            commands: tab.command.recent.iter().cloned().collect(),
+        };
         let proxy = self.proxy.clone();
         thread::spawn(move || {
-            let answer = ask::answer(&ai, &shell, folder.as_deref(), &question);
+            let answer = ask::answer(&ai, &around, &question);
             // Err: Kel closed meanwhile.
             let _ = proxy.send_event(UserEvent::Answer(number, answer));
         });

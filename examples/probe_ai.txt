@@ -25,3 +25,17 @@ wsl: who is listening on port 8080
 wsl: replace foo with bar in all .toml files in this folder
 wsl: ssh: copy my public key to the server user@host
 wsl: show the 10 biggest folders here
+# What the terminal knows by itself: this folder's files (Kel's: Cargo.toml, src),
+# and the commands that ran before the question (`ran:`, `failed:`).
+powershell: build this project
+powershell: run this project's tests
+powershell: format the code of this project
+powershell: start this project
+ran: git log --oneline -5 main
+powershell: the same for the branch dev
+failed: cargo biuld --release
+powershell: the last command again, with its typo fixed
+ran: docker compose up -d
+wsl: stop what I just started
+ran: git add src/ask.rs
+wsl: undo that

@@ -112,8 +112,14 @@ opens a link. In a program that takes the mouse (nvim, lazygit), hold Shift to s
 Forgot how `tar` unpacks, or what PowerShell calls `tail -f`? Ctrl+Shift+A, type what
 the command should do (`unpack archive.tar.gz into out`), Enter. A language model on
 your own computer writes the command into the shell's line, for the shell of that tab
-(PowerShell, cmd, bash in WSL...) and its folder. It isn't run: read it, change it,
-then Enter is yours. Nothing leaves the computer.
+(PowerShell, cmd, bash in WSL...). It isn't run: read it, change it, then Enter is
+yours. Nothing leaves the computer.
+
+The model is told what the terminal knows and a chat in a browser doesn't: the tab's
+shell, its folder and the names of the files there, the last five commands run in the
+tab and which of them failed. So `build this project` is `cargo build` where there's
+a `Cargo.toml`, and after `git log --oneline -5 main`, `the same for the branch dev`
+works. Each question is on its own: it doesn't remember the one before.
 
 Read it every time. A small model is right about four times in five (20 of 24 in
 `examples/probe_ai.rs`, which you can run on your own questions), and a wrong command

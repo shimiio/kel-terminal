@@ -20,6 +20,7 @@ use crate::pty;
 use crate::shell_integration;
 use crate::term::{Mark, Terminal};
 use portable_pty::{Child, ChildKiller, MasterPty, PtySize};
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
@@ -54,7 +55,16 @@ pub struct CommandState {
     /// and no command started since: the last line on its screen is the
     /// prompt. Never, in a shell that says nothing (cmd).
     pub at_prompt: bool,
+    /// The last commands run, oldest first, at most `RECENT`: each one's first
+    /// line, and how it ended once it did (`false`: it failed). Since the tab
+    /// opened, in a shell that sends its commands. For `ask`.
+    pub recent: VecDeque<(String, Option<bool>)>,
 }
+
+/// How many commands a tab remembers (see `CommandState::recent`).
+const RECENT: usize = 5;
+/// And how much of each: a line pasted into the shell can be pages long.
+const RECENT_CHARS: usize = 200;
 
 impl CommandState {
     fn apply(&mut self, mark: Mark, on_screen: bool) {
@@ -64,14 +74,28 @@ impl CommandState {
                 self.running_since = Some(Instant::now());
                 self.done = None;
                 self.at_prompt = false;
+                let line = self.line.as_deref().unwrap_or_default();
+                if let Some(line) = line.lines().map(str::trim).find(|line| !line.is_empty()) {
+                    self.recent
+                        .push_back((line.chars().take(RECENT_CHARS).collect(), None));
+                    if self.recent.len() > RECENT {
+                        self.recent.pop_front();
+                    }
+                }
             }
             // Only after a start: the first prompt, or Enter on an empty line,
             // send "ended" too.
             Mark::Ended(ok) => {
-                self.line = None;
+                // The command that ran had a text: it's the last one kept.
+                let kept = self.line.take().is_some();
                 self.at_prompt = true;
-                if self.running_since.take().is_some() && !on_screen {
-                    self.done = Some(ok);
+                if self.running_since.take().is_some() {
+                    if !on_screen {
+                        self.done = Some(ok);
+                    }
+                    if let Some(last) = self.recent.back_mut().filter(|_| kept) {
+                        last.1 = Some(ok);
+                    }
                 }
             }
         }
@@ -569,6 +593,41 @@ mod tests {
         assert_eq!(command.line.as_deref(), Some("python app.py\n"));
         command.apply(Mark::Ended(true), true);
         assert_eq!(command.line, None);
+    }
+
+    #[test]
+    fn the_last_commands() {
+        let mut command = CommandState::default();
+        let mut run = |line: &str, ok: bool| {
+            command.apply(Mark::Command(line.into()), true);
+            command.apply(Mark::Started, true);
+            command.apply(Mark::Ended(ok), true);
+        };
+        run("git status\n", true);
+        run("  cargo biuld  ", false);
+        let recent: Vec<_> = command.recent.iter().cloned().collect();
+        assert_eq!(
+            recent,
+            [
+                ("git status".to_string(), Some(true)),
+                ("cargo biuld".to_string(), Some(false))
+            ]
+        );
+        // Enter on an empty line, a prompt drawn again: no command, and the
+        // last one's end stays what it was.
+        command.apply(Mark::Ended(true), true);
+        command.apply(Mark::Started, true);
+        command.apply(Mark::Ended(true), true);
+        assert_eq!(command.recent.len(), 2);
+        assert_eq!(command.recent[1].1, Some(false));
+        // One that still runs: no end yet. And only the last few are kept.
+        for n in 0..RECENT {
+            command.apply(Mark::Command(format!("echo {n}")), true);
+            command.apply(Mark::Started, true);
+        }
+        assert_eq!(command.recent.len(), RECENT);
+        assert_eq!(command.recent[0].0, "echo 0");
+        assert_eq!(command.recent[RECENT - 1], ("echo 4".to_string(), None));
     }
 
     #[test]

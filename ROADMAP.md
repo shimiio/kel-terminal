@@ -388,6 +388,14 @@ Settled:
       nobody asked for, qwen3.5:9b 15-17 and too big for the card. A better prompt moved
       the mistakes around, it didn't make them fewer; Russian or English: the same.
       Plain HTTP on a socket, no crate. `[ai]` in the config: `model`, `address`
+- [x] Ask knows what's around: the folder's files by name (the first 40) and the tab's
+      last five commands, each with whether it failed (the shell's marks). Measured: 8
+      questions about them ("build this project", "the same for the branch dev") 8 right,
+      0 without; one of the 24 before went wrong for it. The commands go with the
+      question, after the example: before it, "the same" meant the example's command
+- [ ] Ask: more of what a terminal knows, each measured first: a project's scripts by
+      name (`package.json`, a Makefile's targets), git's branch and whether there are
+      changes, which programs are there (not `ss` where there's none)
 - [ ] Ask about the output: "what went wrong here?", with the tab's last lines told to the
       model; the answer is text, so it needs a place to show. Measure first, as above
 - [ ] A model in the cloud by an API key, for those who want better answers: needs HTTPS
