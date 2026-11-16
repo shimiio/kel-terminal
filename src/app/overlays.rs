@@ -1,13 +1,17 @@
 //! What opens over the terminal and takes the keys: the sidebar, the cards,
-//! the search, the palette, the start screen, the help.
+//! the search, the ask box, the palette, the start screen, the help.
 
-use super::{App, actions::clipboard_text};
+use super::{App, CONFIRM_TIME, UserEvent, actions::clipboard_text};
+use crate::ask::{self, Ask};
 use crate::card::{self, Card, Target};
 use crate::history;
 use crate::keys::{self, Action};
 use crate::layout::Rect;
+use crate::ollama;
 use crate::project;
 use crate::sidebar::{Row, Sidebar};
+use std::thread;
+use std::time::Instant;
 use winit::event::KeyEvent;
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 
@@ -47,6 +51,7 @@ impl App {
         self.card = Some(Card::tab(tab.id, name, command, tab.start, in_project));
         self.palette = None;
         self.search = None;
+        self.ask = None;
         self.sidebar = None;
         self.request_redraw();
     }
@@ -400,6 +405,109 @@ impl App {
                 }
             }
             _ => {}
+        }
+        self.request_redraw();
+    }
+
+    /// Ctrl+Shift+A: the box that asks a model for a command opens (see `ask`),
+    /// or closes. Not while a program has the keys (nvim, a running command):
+    /// the answer goes into the shell's line, and there's none.
+    pub(super) fn toggle_ask(&mut self) {
+        if self.ask.take().is_some() {
+            return self.request_redraw();
+        }
+        let tab = self.tab();
+        if tab.command.running() || tab.terminal.lock().unwrap().grid.alternate() {
+            let why = "A program runs here: no line to put a command in";
+            self.notice = Some((why.to_string(), Instant::now() + CONFIRM_TIME));
+            return self.request_redraw();
+        }
+        self.ask = Some(Ask::new());
+        self.palette = None;
+        self.search = None;
+        self.sidebar = None;
+        // The model into memory while the question is typed: read from the
+        // disk it takes ~15 s, which the first answer would wait for.
+        let ai = self.config.ai.clone();
+        thread::spawn(move || ollama::load(&ai.address, &ai.model));
+        self.request_redraw();
+    }
+
+    /// A key while the ask box is open: it's for the box, never the shell.
+    /// Letters go into it, Enter asks, Esc closes (an answer on its way is
+    /// dropped). While the model is asked, only Esc. Ctrl+Shift+V pastes.
+    pub(super) fn ask_key(&mut self, event: &KeyEvent, shortcut: Option<Action>) {
+        let Some(ask) = &mut self.ask else {
+            return;
+        };
+        match &event.logical_key {
+            Key::Named(NamedKey::Escape) => self.ask = None,
+            _ if ask.waiting() => {}
+            _ if shortcut == Some(Action::Paste) => {
+                if let Some(text) = clipboard_text() {
+                    // A question is one line: the first of what's copied.
+                    ask.type_text(text.lines().next().unwrap_or(""));
+                }
+            }
+            Key::Named(NamedKey::Enter) => self.send_ask(),
+            Key::Named(NamedKey::Backspace) => ask.backspace(),
+            // Typed letters, not Ctrl+letter (see `palette_key`).
+            _ if !self.modifiers.control_key() && !self.modifiers.super_key() => {
+                if let Some(text) = event.text.as_deref() {
+                    let text: String = text.chars().filter(|c| !c.is_control()).collect();
+                    ask.type_text(&text);
+                }
+            }
+            _ => {}
+        }
+        self.request_redraw();
+    }
+
+    /// Enter in the ask box: the question goes to the model, with the shell and
+    /// the folder of the tab on screen. On a thread of its own: the answer takes
+    /// a second or more, and comes back as `UserEvent::Answer`.
+    fn send_ask(&mut self) {
+        let Some(ask) = &mut self.ask else {
+            return;
+        };
+        let question = ask.query().trim().to_string();
+        if question.is_empty() {
+            return;
+        }
+        self.asked += 1;
+        let number = self.asked;
+        ask.sent(number);
+        let ai = self.config.ai.clone();
+        let shell = self.tab().shell().to_string();
+        let folder = self.tab().cwd();
+        let proxy = self.proxy.clone();
+        thread::spawn(move || {
+            let answer = ask::answer(&ai, &shell, folder.as_deref(), &question);
+            // Err: Kel closed meanwhile.
+            let _ = proxy.send_event(UserEvent::Answer(number, answer));
+        });
+    }
+
+    /// The model's answer to question `number`. A command: the box closes, and
+    /// it's in the shell's line as if pasted, not run: Enter is yours. None:
+    /// the box says why. An answer nobody waits for anymore (Esc, another tab)
+    /// is dropped.
+    pub(super) fn on_answer(&mut self, number: u64, answer: Result<String, String>) {
+        let Some(ask) = self.ask.as_mut().filter(|ask| ask.waits_for(number)) else {
+            return;
+        };
+        match answer {
+            Ok(command) => {
+                self.ask = None;
+                let bracketed = {
+                    let mut terminal = self.tab().terminal.lock().unwrap();
+                    terminal.grid.scroll_to_bottom(); // where the line is
+                    terminal.bracketed_paste
+                };
+                // One line (see `ask::command`): nothing in it runs it.
+                self.send_to_shell(&keys::paste_bytes(&command, bracketed));
+            }
+            Err(why) => ask.failed(why),
         }
         self.request_redraw();
     }

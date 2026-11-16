@@ -12,6 +12,9 @@
 //! - `app`: the window and all events. Owns everything else. Its parts are in
 //!   `app/` (events, mouse, tabs, workspaces, overlays, actions).
 //! - `keys`: Kel's shortcuts, and the bytes other keys send to the shell.
+//! - `ask`: ask for a command (Ctrl+Shift+A): the box, and the question as a
+//!   language model on this computer gets it.
+//! - `ollama`: the program that runs that model, asked over HTTP.
 //! - `clock`: the day and the time here, for a moment in the past.
 //! - `config`: the settings file, `%APPDATA%\kel\config.toml` (Linux, macOS: `~/.config/kel`).
 //! - `fallback`: fonts for the letters the terminal's font lacks (emoji, Chinese).
@@ -44,6 +47,7 @@
 //! - `theme`: colors as programs ask for them, and the theme that turns them into pixels.
 
 pub mod app;
+pub mod ask;
 pub mod backdrop;
 pub mod card;
 pub mod clock;
@@ -60,6 +64,7 @@ pub mod layout;
 pub mod links;
 pub mod logo;
 pub mod mouse;
+pub mod ollama;
 pub mod open;
 pub mod palette;
 pub mod project;

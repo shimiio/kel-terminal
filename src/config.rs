@@ -3,6 +3,7 @@
 //! On the first start Kel writes the default file, with a comment for every setting.
 //! A setting missing from the file keeps its default value.
 
+use crate::ask::Ai;
 use crate::backdrop;
 use crate::glass::Glass;
 use crate::layout::Spacing;
@@ -167,6 +168,15 @@ palette = [
     "#5c5c5c", "#ff4d5e", "#6dff5c", "#ffe14d", "#4dabff", "#d47dff", "#2df5dc", "#f0f0f0",
     "#a6a6a6", "#ff7a86", "#9dff91", "#fff08a", "#8cc8ff", "#e6adff", "#7ff9ea", "#ffffff",
 ]
+
+# Ask for a command (Ctrl+Shift+A): type what it should do, and a language model
+# on this computer writes the command into the shell's line. It isn't run: read
+# it first, a small model is wrong about one time in five. Nothing leaves the
+# computer. It takes Ollama (https://ollama.com) running, and the model pulled:
+# `ollama pull qwen2.5-coder:7b` (4.7 GB, for a graphics card with 6 GB).
+[ai]
+model = "qwen2.5-coder:7b"    # any of `ollama list`
+address = "127.0.0.1:11434"   # where Ollama answers
 "##;
 
 /// What the bell does: `bell` in the config.
@@ -218,6 +228,8 @@ pub struct Config {
     pub layout: Spacing,
     pub glass: Glass,
     pub colors: Theme,
+    /// The model asked for a command (see `ask`).
+    pub ai: Ai,
 }
 
 impl Default for Config {
@@ -242,6 +254,7 @@ impl Default for Config {
             layout: Spacing::default(),
             glass: Glass::default(),
             colors: Theme::default(),
+            ai: Ai::default(),
         }
     }
 }

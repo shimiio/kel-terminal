@@ -1,0 +1,27 @@
+# Questions for examples/probe_ai.rs, one per line: `shell: question`. The shell
+# as the config's `shell` has it: powershell, pwsh, cmd, wsl (bash in Linux), zsh.
+# Replace them with the ones you really forget.
+powershell: find all files bigger than 100 MB in this folder and its subfolders
+powershell: which process is using port 3000
+powershell: kill the process named node
+powershell: show the last 20 lines of app.log and keep following new ones
+powershell: how much space does the folder target take
+powershell: find the word TODO in all .rs files recursively
+powershell: add the folder C:\tools to PATH for the current user permanently
+powershell: unpack archive.zip into the folder out
+powershell: show the environment variables that have RUST in their name
+powershell: rename all .txt files to .md in this folder
+powershell: git: undo the last commit but keep the changes
+powershell: git: show which files changed in the last commit
+powershell: git: delete the local branch clear and the same branch on origin
+powershell: cargo: run only the tests that have grid in their name
+powershell: download the file at https://example.com/a.zip
+powershell: ffmpeg: cut the part from 0:30 to 1:00 out of video.mp4 without re-encoding
+wsl: find files changed in the last 2 days
+wsl: unpack archive.tar.gz into the folder out
+wsl: how many lines are there in all .rs files in src
+wsl: docker: remove all stopped containers
+wsl: who is listening on port 8080
+wsl: replace foo with bar in all .toml files in this folder
+wsl: ssh: copy my public key to the server user@host
+wsl: show the 10 biggest folders here

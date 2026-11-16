@@ -187,8 +187,10 @@ impl App {
                 };
                 self.palette = None;
                 self.sidebar = None;
+                self.ask = None;
                 self.request_redraw();
             }
+            Action::Ask => self.toggle_ask(),
             Action::Sidebar => {
                 self.sidebar_peek = false;
                 self.sidebar = match self.sidebar {
@@ -200,11 +202,13 @@ impl App {
                 };
                 self.palette = None;
                 self.search = None;
+                self.ask = None;
                 self.update_link(); // none under the sidebar: the hand goes too
                 self.request_redraw();
             }
             Action::Palette => {
                 self.search = None;
+                self.ask = None;
                 self.sidebar = None;
                 self.palette = match self.palette {
                     Some(_) => None,
@@ -262,6 +266,7 @@ impl App {
                 };
                 self.palette = None;
                 self.search = None;
+                self.ask = None;
                 self.sidebar = None;
                 self.card = None;
                 self.request_redraw();

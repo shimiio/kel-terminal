@@ -381,8 +381,17 @@ Settled:
       one. Windows' own PowerShell 5 has PSReadLine 2.0: `Install-Module PSReadLine` first
 - [ ] Ghost suggestions drawn by Kel, where the shell has none (cmd, bash, an old
       PSReadLine): needs where the prompt ends (OSC 133;B) and the line read off the grid
-- [ ] A small local AI (Ollama): reads the tab's output, suggests a command into the input
-      line, never runs it. Try first whether a small model is good enough
+- [x] Ask for a command (Ctrl+Shift+A): a small local model (Ollama) writes it into the
+      shell's line, never runs it. Told the tab's shell, the system and the folder. Tried
+      first whether a small model is good enough (`examples/probe_ai.rs`, 24 questions, a
+      6 GB card): qwen2.5-coder:7b 19-20 right in ~1 s each, llama3.1:8b 16-19 with things
+      nobody asked for, qwen3.5:9b 15-17 and too big for the card. A better prompt moved
+      the mistakes around, it didn't make them fewer; Russian or English: the same.
+      Plain HTTP on a socket, no crate. `[ai]` in the config: `model`, `address`
+- [ ] Ask about the output: "what went wrong here?", with the tab's last lines told to the
+      model; the answer is text, so it needs a place to show. Measure first, as above
+- [ ] A model in the cloud by an API key, for those who want better answers: needs HTTPS
+      (a crate), and says plainly that the question and the output leave the computer
 - [ ] Split panes, like tmux inside Kel (tabs and nvim's own windows do for now)
 - [ ] Emoji in color (Segoe UI Emoji's COLR layers; now in the text's color)
 

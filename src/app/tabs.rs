@@ -134,6 +134,7 @@ impl App {
         // other tab.
         self.selection = None;
         self.search = None;
+        self.ask = None; // its answer was for that tab's line
         self.scroll_rest = 0.0;
         // Another tab (a new one, a click on one): the shell, not the start screen,
         // and not a card of the tab before.
@@ -329,6 +330,7 @@ impl App {
         };
         self.palette = None;
         self.search = None;
+        self.ask = None;
         self.sidebar = None;
         self.request_redraw();
     }

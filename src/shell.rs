@@ -61,6 +61,14 @@ pub fn split(shell: &str) -> (String, Vec<String>) {
     (words.next().unwrap_or_default(), words.collect())
 }
 
+/// The shell's name in lowercase: `C:\...\PowerShell.exe` → `powershell`,
+/// `pwsh.exe -NoLogo` → `pwsh`.
+pub fn name(shell: &str) -> Option<String> {
+    std::path::Path::new(&split(shell).0)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_ascii_lowercase())
+}
+
 /// `text` in words: split at spaces, a part in `"` one word (`""` an empty one).
 fn words(text: &str) -> Vec<String> {
     let mut words = Vec::new();

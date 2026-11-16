@@ -120,6 +120,7 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             UserEvent::PtyExited(id) => self.remove_tab(id, event_loop),
+            UserEvent::Answer(number, answer) => self.on_answer(number, answer),
         }
     }
 
@@ -368,6 +369,7 @@ impl App {
                 .or(self.notice.as_ref().map(|(text, _)| text.as_str())),
             palette: self.palette.as_ref(),
             search: self.search.as_ref(),
+            ask: self.ask.as_ref(),
             project: self.project.as_ref().map(|p| (p.name.as_str(), p.color)),
             link: self.link.as_ref().map(|link| link.found),
             link_url: self
@@ -403,6 +405,7 @@ impl App {
             && self.sidebar.is_none()
             && self.palette.is_none()
             && self.search.is_none()
+            && self.ask.is_none()
             && self.card.is_none()
             && self.help.is_none()
     }
@@ -507,11 +510,11 @@ impl App {
             self.help_key(&event, shortcut);
             return;
         }
-        // Ctrl+Shift+P and Ctrl+Shift+F still work in the palette and the search:
-        // they close one, or swap one for the other.
+        // Ctrl+Shift+P, Ctrl+Shift+F and Ctrl+Shift+A still work in the palette,
+        // the search and the ask box: they close one, or swap one for another.
         let switch = matches!(
             shortcut,
-            Some(Action::Palette | Action::Find | Action::Sidebar)
+            Some(Action::Palette | Action::Find | Action::Sidebar | Action::Ask)
         );
         if self.sidebar.is_some() && !switch {
             self.sidebar_key(&event);
@@ -523,6 +526,10 @@ impl App {
         }
         if self.search.is_some() && !switch {
             self.search_key(&event, shortcut);
+            return;
+        }
+        if self.ask.is_some() && !switch {
+            self.ask_key(&event, shortcut);
             return;
         }
         if self.start.is_some() && self.start_key(&event, shortcut.as_ref()) {

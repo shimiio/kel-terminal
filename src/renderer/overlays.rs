@@ -1,12 +1,14 @@
-//! What opens over the terminal: the palette, the sidebar, a card, the search.
+//! What opens over the terminal: the palette, the sidebar, a card, the search,
+//! the ask box.
 
 use super::screens::draw_logo;
 use super::shapes::{blend, draw_box, draw_icon, fill_circle, fill_rect, fill_round, pane};
 use super::text::{draw_ui_hint, draw_ui_text, keep_end};
 use super::{
-    Chrome, DOT_RADIUS, ICON_GAP, PALETTE_CHARS, PALETTE_LINES, PALETTE_PADDING, RING_WIDTH,
-    SEARCH_CHARS, SIDEBAR_DIM, SWITCHER_CHARS, SWITCHER_LINES, Ui,
+    ASK_CHARS, Chrome, DOT_RADIUS, ICON_GAP, PALETTE_CHARS, PALETTE_LINES, PALETTE_PADDING,
+    RING_WIDTH, SEARCH_CHARS, SIDEBAR_DIM, SWITCHER_CHARS, SWITCHER_LINES, Ui,
 };
+use crate::ask::Ask;
 use crate::card::{self, Card};
 use crate::font::Font;
 use crate::layout::{Layout, Rect};
@@ -723,6 +725,86 @@ pub(super) fn draw_search(
         ui.line_h,
         theme.cursor,
     );
+}
+
+/// The ask box, over the terminal's bottom, where the answer will go:
+///
+/// ```text
+/// ┌──────────────────────────────────────────────────────────┐
+/// │ ? undo the last commit|                          asking… │
+/// └──────────────────────────────────────────────────────────┘
+/// ```
+///
+/// At its right end: that the model is asked, or in red why no answer came.
+/// Empty, it says what to type, dim.
+pub(super) fn draw_ask(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    ask: &Ask,
+    font: &Font,
+    ui: &mut Ui,
+) {
+    let area = layout.inside;
+    let pad = ui.px(PALETTE_PADDING);
+    let b = layout.border;
+    let box_w = (ASK_CHARS * ui.advance + 2 * (pad + b)).min(area.w.saturating_sub(4 * pad));
+    let box_h = ui.line_h + 2 * (pad + b);
+    if box_w < 12 * ui.advance || area.h < box_h + 4 * pad {
+        return; // a window too small for it
+    }
+    let x = area.x + (area.w - box_w) / 2;
+    let y = area.y + area.h - box_h - 2 * pad;
+    let r = Rect {
+        x,
+        y,
+        w: box_w,
+        h: box_h,
+    };
+    draw_box(pixels, width, theme, layout, r, pane(theme, layout));
+    let text_w = box_w - 2 * (b + pad);
+    let (text_x, text_y) = (x + b + pad, y + b + pad);
+    let dim = blend(theme.frame, theme.foreground, 128);
+
+    // An error can be a sentence: up to two thirds of the box.
+    let (status, color) = match ask.error() {
+        Some(why) => (why, theme.failed),
+        None if ask.waiting() => ("asking…", dim),
+        None => ("", dim),
+    };
+    let status_w = (status.chars().count() * ui.advance).min(text_w * 2 / 3);
+    let at = (text_x + text_w - status_w, text_y);
+    draw_ui_text(pixels, width, font, ui, status, at, status_w, color);
+
+    // What's typed: its end, when it's longer than the box. Room for the
+    // cursor after it.
+    let room = text_w.saturating_sub(status_w + ui.advance);
+    let at = (text_x, text_y);
+    let typed = if ask.query().is_empty() {
+        let mark = draw_ui_text(pixels, width, font, ui, "? ", at, room, theme.foreground);
+        let hint = "what should the command do?";
+        let at = (text_x + mark + ui.advance, text_y);
+        let room = room.saturating_sub(mark + ui.advance);
+        draw_ui_hint(pixels, width, ui, hint, at, room, dim);
+        mark
+    } else {
+        let chars = (room / ui.advance).saturating_sub(1);
+        let query = keep_end(&format!("? {}", ask.query()), chars);
+        draw_ui_text(pixels, width, font, ui, &query, at, room, theme.foreground)
+    };
+    // No cursor while the model is asked: the box takes no typing then.
+    if !ask.waiting() {
+        fill_rect(
+            pixels,
+            width,
+            text_x + typed,
+            text_y,
+            ui.px(2),
+            ui.line_h,
+            theme.cursor,
+        );
+    }
 }
 
 #[cfg(test)]

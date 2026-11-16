@@ -100,11 +100,29 @@ Option types its letters, as on any Mac; `option_as_alt = true` makes it Alt.
 | Ctrl+Shift+P | The command palette: all Kel does, found by a few letters (`ntb`: New tab) |
 | Ctrl+Shift+C / Ctrl+Shift+V | Copy / paste. Ctrl+C and Ctrl+V go to the program, as nvim wants them |
 | Ctrl+Shift+F | Find in the output |
+| Ctrl+Shift+A | Ask for a command: a model on your computer writes it into the line (see below) |
 | Ctrl+, | The config file |
 | **Ctrl+Shift+/** | **Help: all the keys, and every setting with its value now** |
 
 The mouse: drag to select, double-click for a word (a path or a link whole), Ctrl+click
 opens a link. In a program that takes the mouse (nvim, lazygit), hold Shift to select.
+
+## Ask for a command
+
+Forgot how `tar` unpacks, or what PowerShell calls `tail -f`? Ctrl+Shift+A, type what
+the command should do (`unpack archive.tar.gz into out`), Enter. A language model on
+your own computer writes the command into the shell's line, for the shell of that tab
+(PowerShell, cmd, bash in WSL...) and its folder. It isn't run: read it, change it,
+then Enter is yours. Nothing leaves the computer.
+
+Read it every time. A small model is right about four times in five (20 of 24 in
+`examples/probe_ai.rs`, which you can run on your own questions), and a wrong command
+looks as sure as a right one: a flag that doesn't exist, 1 GB where you said 100 MB.
+
+It takes [Ollama](https://ollama.com) running, and a model: `ollama pull
+qwen2.5-coder:7b` (4.7 GB; it fits a graphics card with 6 GB and answers in about a
+second). Another one: `model` under `[ai]` in the config. Without Ollama the box says
+so, and nothing else in Kel changes.
 
 ## Projects
 

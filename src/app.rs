@@ -12,7 +12,7 @@
 //! - `tabs`: a new tab, closing, showing, moving one; closing the window.
 //! - `workspaces`: home and the open projects: switching, saving, closing, deleting.
 //! - `overlays`: what opens over the terminal and takes the keys (the sidebar,
-//!   the cards, the search, the palette, the start screen, the help).
+//!   the cards, the search, the ask box, the palette, the start screen, the help).
 //! - `actions`: what each shortcut does, the clipboard, the config read again.
 
 mod actions;
@@ -22,6 +22,7 @@ mod overlays;
 mod tabs;
 mod workspaces;
 
+use crate::ask::Ask;
 use crate::card::Card;
 use crate::config::{self, Config};
 use crate::font::{self, Fonts};
@@ -142,6 +143,9 @@ pub enum UserEvent {
     Reply(TabId, Vec<u8>),
     /// The shell ended.
     PtyExited(TabId),
+    /// The model answered the question of this number (see `ask`): a command,
+    /// or why there's none.
+    Answer(u64, Result<String, String>),
 }
 
 /// How long the terminal flashes when the bell rings (`bell = "flash"`).
@@ -319,6 +323,10 @@ pub struct App {
     palette: Option<Palette>,
     /// The search in the output, while it's open. It gets the keys then too.
     search: Option<Search>,
+    /// The box that asks a model for a command, while it's open. It gets the keys.
+    ask: Option<Ask>,
+    /// How many questions went to the model: each one's number (see `Ask::sent`).
+    asked: u64,
     /// The link under the mouse while Ctrl is held (see `update_link`): where it
     /// is and its text. Underlined, and Ctrl+click opens it.
     link: Option<Link>,
@@ -564,6 +572,8 @@ impl App {
             parked: Vec::new(),
             palette: None,
             search: None,
+            ask: None,
+            asked: 0,
             link: None,
             tab_drag: None,
             sidebar: None,

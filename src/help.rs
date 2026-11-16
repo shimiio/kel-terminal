@@ -134,6 +134,10 @@ fn keys_lines() -> Vec<Line> {
         row("Enter  ↑↓", "Next, previous", ""),
         row("Shift+Enter", "Previous", ""),
         Line::Gap,
+        title("ASK FOR A COMMAND"),
+        row("Enter", "Ask: it goes into the line", ""),
+        row("Enter again", "Yours: read it first", ""),
+        Line::Gap,
         title("CARD"),
         row("Tab  ↑↓", "Next field", ""),
         row("←→", "A color", ""),
@@ -337,6 +341,10 @@ fn settings_lines(config: &Config) -> Vec<Line> {
         color("done", colors.done, "a command ended well"),
         color("failed", colors.failed, "it failed; errors"),
         row("palette", "16 colors", "the programs' colors"),
+        Line::Gap,
+        title("[AI]"),
+        row("model", &text(&config.ai.model), "Ollama's: ollama pull"),
+        row("address", &text(&config.ai.address), "where Ollama answers"),
     ]
 }
 

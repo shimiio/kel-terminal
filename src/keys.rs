@@ -42,6 +42,9 @@ pub enum Action {
     Help,
     /// Opens the search in the output, or closes it.
     Find,
+    /// Opens the box that asks a language model for a command (see `ask`), or
+    /// closes it.
+    Ask,
     /// Runs the install script of this name (see `setup`) in a new tab.
     Install(&'static str),
     /// Goes to the project of this name in this window (see `project`); the one
@@ -170,6 +173,8 @@ fn pc_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
         (KeyCode::Comma, _) => Action::OpenConfig,
         (KeyCode::KeyP, true) => Action::Palette,
         (KeyCode::KeyF, true) => Action::Find,
+        // Not Ctrl+Space: PowerShell's list of completions, nvim's too.
+        (KeyCode::KeyA, true) => Action::Ask,
         (KeyCode::KeyB, true) => Action::Sidebar, // like VS Code's Ctrl+B
         (KeyCode::KeyH, true) => Action::OpenHome,
         (KeyCode::KeyR, true) => Action::RunTabCommand,
@@ -232,6 +237,8 @@ fn mac_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
         (KeyCode::Comma, false) => Action::OpenConfig,
         (KeyCode::KeyP, true) => Action::Palette,
         (KeyCode::KeyF, false) => Action::Find,
+        // With Shift: Cmd+A is "select all" in Mac apps.
+        (KeyCode::KeyA, true) => Action::Ask,
         (KeyCode::KeyB, false) => Action::Sidebar,
         // Cmd+H alone hides, on every Mac.
         (KeyCode::KeyH, true) => Action::OpenHome,
@@ -305,6 +312,12 @@ fn palette_items_on(mac: bool) -> Vec<Item> {
         item("Paste", "Ctrl+Shift+V", "Cmd+V", Action::Paste),
         item("Copy the selection", "Ctrl+Shift+C", "Cmd+C", Action::Copy),
         item("Find in the output", "Ctrl+Shift+F", "Cmd+F", Action::Find),
+        item(
+            "Ask for a command: a local AI",
+            "Ctrl+Shift+A",
+            "Cmd+Shift+A",
+            Action::Ask,
+        ),
         item(
             "Projects: the sidebar",
             "Ctrl+Shift+B",
@@ -813,6 +826,7 @@ mod tests {
             "9" => KeyCode::Digit9,
             "[" => KeyCode::BracketLeft,
             "]" => KeyCode::BracketRight,
+            "A" => KeyCode::KeyA,
             "B" => KeyCode::KeyB,
             "C" => KeyCode::KeyC,
             "E" => KeyCode::KeyE,

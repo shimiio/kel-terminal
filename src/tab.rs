@@ -186,6 +186,11 @@ impl Tab {
         })
     }
 
+    /// What started it, as `shell` in the config: `pwsh.exe -NoLogo`.
+    pub fn shell(&self) -> &str {
+        &self.shell
+    }
+
     /// Sends bytes to the shell, as if they were typed.
     pub fn write(&mut self, bytes: &[u8]) {
         // If the shell is gone, the waiter thread reports PtyExited.

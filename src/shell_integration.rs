@@ -39,6 +39,7 @@
 //!   hooks; zsh reads the rest of your files from your folder, as always.
 //! - Other shells: nothing; Kel just doesn't know their folder.
 
+use crate::shell::name;
 use portable_pty::CommandBuilder;
 use std::path::{Path, PathBuf};
 
@@ -334,14 +335,6 @@ pub fn reports_folder(shell: &str) -> bool {
     let name = name(shell);
     let unix = cfg!(unix) && matches!(name.as_deref(), Some("bash" | "zsh"));
     unix || matches!(name.as_deref(), Some("powershell" | "pwsh" | "cmd"))
-}
-
-/// The shell's name in lowercase: `C:\...\PowerShell.exe` → `powershell`,
-/// `pwsh.exe -NoLogo` → `pwsh`.
-fn name(shell: &str) -> Option<String> {
-    Path::new(&crate::shell::split(shell).0)
-        .file_stem()
-        .map(|stem| stem.to_string_lossy().to_ascii_lowercase())
 }
 
 /// cmd's prompt: the folder's code, then the prompt it had (`$P$G`, "C:\Windows>",

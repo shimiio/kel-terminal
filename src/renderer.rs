@@ -10,7 +10,7 @@
 //! terminal's cells, then what's over them. The parts are in `renderer/`:
 //!
 //! - `bar`: the tab bar, its buttons, the project's name, the status line.
-//! - `overlays`: the palette, the sidebar, a card, the search.
+//! - `overlays`: the palette, the sidebar, a card, the search, the ask box.
 //! - `screens`: the start screen (its backdrop, the logo) and the help.
 //! - `text`: glyphs, the UI's text, underlines, the size of a cell.
 //! - `shapes`: rectangles, round corners, circles, icons, mixing colors.
@@ -22,6 +22,7 @@ mod shapes;
 mod text;
 
 use crate::app::Selection;
+use crate::ask::Ask;
 use crate::card::Card;
 use crate::fallback::Fallbacks;
 use crate::font::{self, Font, Fonts, Metrics};
@@ -39,7 +40,9 @@ use bar::{
     draw_bar_buttons, draw_status, draw_tab_bar, draw_title, draw_window_buttons,
     project_name_shown, project_name_width,
 };
-use overlays::{draw_card, draw_palette, draw_search, draw_sidebar, draw_switcher, switcher_place};
+use overlays::{
+    draw_ask, draw_card, draw_palette, draw_search, draw_sidebar, draw_switcher, switcher_place,
+};
 use screens::{draw_help, draw_start};
 use shapes::{blend, fill_rect, fill_round, invisible, outline, solid};
 use std::collections::HashMap;
@@ -86,6 +89,8 @@ const PANE_BLACK: u32 = 130;
 
 /// The search box: this wide, in letters (less in a narrow window).
 const SEARCH_CHARS: usize = 36;
+/// The ask box: a question is a sentence, so wider.
+const ASK_CHARS: usize = 76;
 /// How much of the dim yellow the other matches get over their background (of 255).
 const MATCH_TINT: u32 = 100;
 /// How much of its color text from last time keeps (of 255), the rest is its
@@ -148,6 +153,8 @@ pub struct Chrome<'a> {
     pub palette: Option<&'a Palette>,
     /// The search in the output, if it's open: its box, and its matches marked.
     pub search: Option<&'a Search>,
+    /// The box that asks a model for a command, if it's open.
+    pub ask: Option<&'a Ask>,
     /// The open project: its name, before the tabs, and its own color, if it has
     /// one. That color is the window's accent then (see `Theme::accent_for`).
     pub project: Option<(&'a str, Option<u32>)>,
@@ -744,6 +751,7 @@ impl Renderer {
         let over_start = chrome.sidebar.is_some()
             || chrome.palette.is_some()
             || chrome.search.is_some()
+            || chrome.ask.is_some()
             || chrome.card.is_some()
             || chrome.help.is_some();
         let over_sidebar =
@@ -763,6 +771,9 @@ impl Renderer {
         }
         if let Some(search) = chrome.search {
             draw_search(&mut buffer, width, theme, body, search, font, &mut self.ui);
+        }
+        if let Some(ask) = chrome.ask {
+            draw_ask(&mut buffer, width, theme, body, ask, font, &mut self.ui);
         }
         if let Some(sidebar) = chrome.sidebar {
             draw_sidebar(
