@@ -90,7 +90,7 @@ fn probe(shell: &str, old: usize) -> anyhow::Result<()> {
     // `Grid::start_below`); else as Kel does it, above the screen.
     match std::env::var_os("KEL_PROBE_SCREEN") {
         Some(_) => parser.advance(&mut terminal, last.as_bytes()),
-        None => terminal.show_last_time(&last),
+        None => terminal.show_last_time(&last, "14 Nov 18:32"),
     }
 
     let history = std::env::temp_dir().join("kel-probe-history.txt");
@@ -174,10 +174,10 @@ fn time() {
     let last = line.repeat(10_000);
     let mut terminal = Terminal::new(50, 170);
     let start = Instant::now();
-    terminal.show_last_time(&last);
+    terminal.show_last_time(&last, "14 Nov 18:32");
     let read = start.elapsed();
     let start = Instant::now();
-    let output = terminal.grid.output();
+    let output = terminal.grid.output(false);
     println!(
         "read {} KB in {read:?}, written {} KB in {:?}",
         last.len() / 1024,

@@ -33,7 +33,7 @@ use crate::palette::Palette;
 use crate::search::{self, Search};
 use crate::sidebar::Sidebar;
 use crate::start::Start;
-use crate::term::{CursorShape, Found, Grid, Underline, Width};
+use crate::term::{Cell, CursorShape, Found, Grid, Past, Underline, Width};
 use crate::theme::{Color, Theme};
 use bar::{
     draw_bar_buttons, draw_status, draw_tab_bar, draw_title, draw_window_buttons,
@@ -88,6 +88,11 @@ const PANE_BLACK: u32 = 130;
 const SEARCH_CHARS: usize = 36;
 /// How much of the dim yellow the other matches get over their background (of 255).
 const MATCH_TINT: u32 = 100;
+/// How much of its color text from last time keeps (of 255), the rest is its
+/// background's: a quarter fainter than today's, its colors still told apart.
+const OLD_TEXT: u32 = 192;
+/// And the line that ends it, with its day and time: less, it's not to be read.
+const RULE: u32 = 110;
 /// How much of the text's color lights the panel when the bell flashes, out of 255.
 const FLASH: u32 = 40;
 
@@ -572,11 +577,24 @@ impl Renderer {
                 if y < inside.y {
                     continue;
                 }
+                // The row that ends a last time: a line across, and its text
+                // (`14 Nov 18:32`, kept at the row's start) near the right end,
+                // a cell of space on each side: `───── 14 Nov 18:32 ─`.
+                let rule = grid.visible_rule(row).map(|len| {
+                    let start = grid.cols().saturating_sub(len + 2);
+                    (start, start + len)
+                });
                 for col in 0..grid.cols() {
                     let x = text.x + col * cell_w;
 
                     let selected = selection.is_some_and(|s| s.contains(top + row, col));
-                    let cell = grid.visible_cell(row, col);
+                    let cell = match rule {
+                        None => grid.visible_cell(row, col),
+                        Some((start, end)) if (start..end).contains(&col) => {
+                            grid.visible_cell(row, col - start)
+                        }
+                        Some(_) => Cell::default(),
+                    };
                     // Is the cursor drawn on this cell right now?
                     let is_cursor = grid.cursor_visible
                         && cursor_shown
@@ -601,6 +619,12 @@ impl Renderer {
                     // Dim text (`ESC[2m`, a shell's ghost suggestion): half way
                     // to its background.
                     let fg = if cell.dim { blend(bg, fg, 128) } else { fg };
+                    // Text from last time, a little fainter; its rule, more.
+                    let fg = match (cell.past, rule) {
+                        (_, Some(_)) => blend(bg, fg, RULE),
+                        (Past::Text, None) => blend(bg, fg, OLD_TEXT),
+                        _ => fg,
+                    };
                     // The chosen match: dark letters on bright yellow; the others,
                     // a yellow tint over their background. Both from the theme.
                     let (fg, bg) = match search::mark_at(&marks, top + row, col) {
@@ -614,6 +638,16 @@ impl Renderer {
                     if backgrounds {
                         fill_rect(&mut buffer, width, x, y, cell_w, cell_h, bg);
                         continue;
+                    }
+
+                    // The rule's line: in the row's middle, not through its
+                    // text or the cell on each side of it.
+                    if let Some((start, end)) = rule
+                        && (col + 1 < start || col > end)
+                    {
+                        let line = text_px(1).max(1);
+                        let y = y + (cell_h - line) / 2;
+                        fill_rect(&mut buffer, width, x, y, cell_w, line, fg);
                     }
 
                     if cell.ch != ' ' && !invisible(cell.ch) {

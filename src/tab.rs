@@ -50,6 +50,10 @@ pub struct CommandState {
     /// The text of the command that runs, as the shell sent it (`633;E`), e.g.
     /// `docker compose up`: picks the tab's icon.
     pub line: Option<String>,
+    /// The shell said it's at its prompt (it says "ended" before each one),
+    /// and no command started since: the last line on its screen is the
+    /// prompt. Never, in a shell that says nothing (cmd).
+    pub at_prompt: bool,
 }
 
 impl CommandState {
@@ -59,11 +63,13 @@ impl CommandState {
             Mark::Started => {
                 self.running_since = Some(Instant::now());
                 self.done = None;
+                self.at_prompt = false;
             }
             // Only after a start: the first prompt, or Enter on an empty line,
             // send "ended" too.
             Mark::Ended(ok) => {
                 self.line = None;
+                self.at_prompt = true;
                 if self.running_since.take().is_some() && !on_screen {
                     self.done = Some(ok);
                 }

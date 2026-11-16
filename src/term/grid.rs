@@ -40,6 +40,23 @@ pub struct Cell {
     /// The link a program put on it (OSC 8, see `Grid::set_link`): its number in
     /// `Grid::links`, from 1. 0: none.
     pub link: u32,
+    /// It's from the tab's last time: Kel's own word, no program's (see `Past`).
+    pub past: Past,
+}
+
+/// Whether a cell is from the tab's last time (see `Terminal::show_last_time`),
+/// not from the shell that runs now.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Past {
+    /// Today's.
+    #[default]
+    None,
+    /// Text from last time: drawn a little fainter than today's.
+    Text,
+    /// The row that ends a last time: its text is when that was (`14 Nov
+    /// 18:32`), kept at the row's start. Drawn as a line across the window
+    /// with the text at its right end, at any width (see `Grid::visible_rule`).
+    Rule,
 }
 
 /// One row of cells.
@@ -143,6 +160,7 @@ impl Default for Cell {
             inverse: false,
             width: Width::Narrow,
             link: 0,
+            past: Past::None,
         }
     }
 }
@@ -200,6 +218,8 @@ pub struct Grid {
     pub inverse: bool,
     /// The link the next printed chars get (see `set_link`): 0, none.
     pub link: u32,
+    /// What the next printed chars get as theirs: `Rule` while `rule` writes one.
+    past: Past,
     /// The links programs put on text (OSC 8), each once: a cell has its number.
     links: Vec<String>,
     /// Hidden by `ESC[?25l`, shown again by `ESC[?25h`.
@@ -272,6 +292,7 @@ impl Grid {
             underline_color: Color::Default,
             inverse: false,
             link: 0,
+            past: Past::None,
             links: Vec::new(),
             cursor_visible: true,
             cursor_shape: None,
@@ -333,6 +354,83 @@ impl Grid {
             .resize(self.rows, Line::blank(self.cols, Cell::default()));
         (self.cursor_row, self.cursor_col) = (0, 0);
         self.above = self.scrollback.len().min(self.rows - 1);
+    }
+
+    /// All the text so far is from last time (`Past::Text`): drawn fainter. Not
+    /// the empty cells, which stay like any other, nor a rule.
+    pub fn make_past(&mut self) {
+        let rows = self.scrollback.iter_mut().chain(&mut self.lines);
+        for cell in rows.flat_map(|line| &mut line.cells) {
+            if cell.past == Past::None && *cell != Cell::default() {
+                cell.past = Past::Text;
+            }
+        }
+    }
+
+    /// A row that ends a last time (see `Past::Rule`), with `text` (when it
+    /// was, or nothing), on a row of its own; the cursor goes below it.
+    pub fn rule(&mut self, text: &str) {
+        if self.cursor_col > 0 {
+            self.carriage_return();
+            self.newline();
+        }
+        // A plain pen, marked, for its letters. An empty one is still a row
+        // that says it's one: a space carries it.
+        let pen = Cell {
+            past: Past::Rule,
+            ..Cell::default()
+        };
+        let before = self.replace_pen(pen);
+        let text = text.trim();
+        for c in if text.is_empty() { " " } else { text }.chars() {
+            self.put_char(c);
+        }
+        self.replace_pen(before);
+        self.carriage_return();
+        self.newline();
+    }
+
+    /// The pen becomes like `cell`; the one it was is returned, as a cell.
+    fn replace_pen(&mut self, cell: Cell) -> Cell {
+        let before = Cell {
+            fg: self.fg,
+            bg: self.bg,
+            bold: self.bold,
+            dim: self.dim,
+            italic: self.italic,
+            underline: self.underline,
+            underline_color: self.underline_color,
+            inverse: self.inverse,
+            link: self.link,
+            past: self.past,
+            ..Cell::default()
+        };
+        self.fg = cell.fg;
+        self.bg = cell.bg;
+        self.bold = cell.bold;
+        self.dim = cell.dim;
+        self.italic = cell.italic;
+        self.underline = cell.underline;
+        self.underline_color = cell.underline_color;
+        self.inverse = cell.inverse;
+        self.link = cell.link;
+        self.past = cell.past;
+        before
+    }
+
+    /// The last row with anything in it is a rule: nothing came after it.
+    pub fn ends_with_rule(&self) -> bool {
+        let rows = self.scrollback.iter().chain(&self.lines);
+        let last = rows.rev().find(|line| !line.is_blank());
+        last.is_some_and(is_rule)
+    }
+
+    /// The view's row `row` is a rule: how many cells its text takes, from
+    /// the row's start. The renderer draws it at the row's right end.
+    pub fn visible_rule(&self, row: usize) -> Option<usize> {
+        let line = self.visible_line(row);
+        let text = line.cells.iter().rposition(|cell| cell.ch != ' ');
+        is_rule(line).then(|| text.map_or(0, |last| last + 1))
     }
 
     /// After new output: `above` gives way to the rows the screen uses now.
@@ -764,6 +862,7 @@ impl Grid {
             inverse: self.inverse,
             width: if wide { Width::Wide } else { Width::Narrow },
             link: self.link,
+            past: self.past,
         };
         let line = &mut self.lines[row];
         line.cells[col] = cell;
@@ -1257,20 +1356,38 @@ impl Grid {
     /// A line cut at the window's edge has no `\r\n` inside: it's one line
     /// again, cut where the other grid's edge is. Not the alternate screen:
     /// nvim draws itself when it starts.
-    pub fn output(&self) -> String {
+    ///
+    /// `at_prompt`: the shell waits at its prompt, the last line. It's left
+    /// out: the next time has a prompt of its own, right below.
+    ///
+    /// A rule from a time before (see `Past::Rule`) is `ESC]kel;rule;<its text>`,
+    /// which only `Terminal::show_last_time` reads.
+    pub fn output(&self, at_prompt: bool) -> String {
         let screen = match &self.saved_screen {
             Some((normal, ..)) => normal,
             None => &self.lines,
         };
-        let used = screen
+        let mut used = screen
             .iter()
             .rposition(|line| !line.is_blank())
             .map_or(0, |last| last + 1);
+        if at_prompt && self.saved_screen.is_none() && used == self.cursor_row + 1 {
+            // The cursor's line, all its rows: up while the row above goes on.
+            used = self.cursor_row;
+            while used > 0 && screen[used - 1].wrapped {
+                used -= 1;
+            }
+        }
         let rows: Vec<&Line> = self.scrollback.iter().chain(&screen[..used]).collect();
+        use std::fmt::Write;
         let mut out = String::new();
         // What the reader's pen is like now: only a change is written.
         let mut pen = Cell::default();
         for (i, line) in rows.iter().enumerate() {
+            if is_rule(line) {
+                let _ = write!(out, "\x1b]kel;rule;{}\x1b\\", line_text(line));
+                continue;
+            }
             let mut cells = &line.cells[..];
             if line.wrapped {
                 // A wide letter that didn't fit in the last cell went on, and
@@ -1408,6 +1525,13 @@ fn find_in(text: &[char], cells: &[(usize, usize, usize)], query: &[char], found
             i += 1;
         }
     }
+}
+
+/// The row ends a last time (see `Past::Rule`): its first cell says so.
+fn is_rule(line: &Line) -> bool {
+    line.cells
+        .first()
+        .is_some_and(|cell| cell.past == Past::Rule)
 }
 
 /// `ESC[...m` that gives the pen `cell`'s look, whatever it was: `0` (plain)

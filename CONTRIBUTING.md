@@ -49,6 +49,7 @@ one doesn't.
 | `src/tab.rs` | One tab: a shell, its screen, and the threads that read its output and wait for it to end |
 | `src/project.rs` | Reads and writes a project file: the tabs, their folders and commands |
 | `src/session.rs` | A project's tabs keep what they showed, a file per tab, for the next time the project opens |
+| `src/clock.rs` | The day and the time here for a moment in the past: `14 Nov 18:32`, under a tab's output from last time |
 | `src/pty.rs` | Starts the shell inside a pseudo-terminal |
 | `src/shell_integration.rs` | Makes the shell tell Kel its folder, and when a command starts and ends |
 | `src/term/terminal.rs` | Understands the escape codes the shell sends |

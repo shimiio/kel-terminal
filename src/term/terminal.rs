@@ -33,9 +33,6 @@ pub enum Mark {
     Ended(bool),
 }
 
-/// The line under a tab's output from last time (see `Terminal::show_last_time`).
-const LAST_TIME: &str = "── last time ──";
-
 pub struct Terminal {
     pub grid: Grid,
     /// Answers to the program's questions (e.g. "where is the cursor?"), waiting
@@ -62,6 +59,9 @@ pub struct Terminal {
     /// (`ESC[?1h`, "application cursor keys"; see `keys::app_cursor`). less
     /// and htop read the keys by the terminfo's names, which are these.
     pub app_cursor: bool,
+    /// What's read is a tab's output from last time (`show_last_time`), not a
+    /// program's: only there, `ESC]kel;rule` is a rule.
+    last_time: bool,
 }
 
 impl Terminal {
@@ -78,21 +78,29 @@ impl Terminal {
             marks: Vec::new(),
             bell: false,
             app_cursor: false,
+            last_time: false,
         }
     }
 
     /// A tab's output from last time (`Grid::output`, kept by `session`), into
     /// a terminal whose shell hasn't started: read like any output, so the
-    /// grid has its letters and colors again, cut at this grid's width. A dim
-    /// line ends it, and it stays in view above the new shell's prompt (see
-    /// `Grid::start_below`).
-    pub fn show_last_time(&mut self, output: &str) {
+    /// grid has its letters and colors again, cut at this grid's width, and
+    /// marked as old (drawn fainter). A rule ends it, a line across the window
+    /// with `when` (`14 Nov 18:32`) at its right end, and it all stays in view
+    /// above the new shell's prompt (see `Grid::start_below`).
+    pub fn show_last_time(&mut self, output: &str, when: &str) {
         let mut parser = vte::Parser::new();
+        self.last_time = true;
         parser.advance(self, output.as_bytes());
-        // A plain pen and no link, whatever the text left; on a line of its own.
-        let own_line = if self.grid.cursor().1 > 0 { "\r\n" } else { "" };
-        let end = format!("\x1b[m\x1b]8;;\x1b\\{own_line}\x1b[2m{LAST_TIME}\x1b[m\r\n");
-        parser.advance(self, end.as_bytes());
+        // Its end may be cut off: a code left open is closed (CAN, then ST).
+        // And a plain pen and no link, whatever the text left.
+        parser.advance(self, b"\x18\x1b\\\x1b[m\x1b]8;;\x1b\\");
+        // Nothing since the rule of a time before (the tab was only opened
+        // and closed): that one will do, with its own time.
+        if !self.grid.ends_with_rule() {
+            self.grid.rule(when);
+        }
+        self.grid.make_past();
         // Only the text is kept. What else the file held (a question to answer,
         // a title, the mouse asked for) isn't the new shell's: Kel writes none
         // of it, but the file is anyone's to edit.
@@ -388,6 +396,9 @@ impl Perform for Terminal {
                 let folder = folder.trim_matches('"');
                 self.cwd = Some(folder.to_string());
             }
+            // Kel's own, in what it kept of a last time: the rule that ended
+            // a time before it, with its text (see `Grid::output`).
+            [b"kel", b"rule", when @ ..] if self.last_time => self.grid.rule(&text(when)),
             [b"8", rest @ ..] => {
                 let url = text(rest.get(1..).unwrap_or_default());
                 self.grid.set_link(&url);
@@ -973,6 +984,9 @@ mod tests {
         assert!(!feed("").app_cursor);
     }
 
+    /// When a last time ended, as its rule has it.
+    const WHEN: &str = "14 Nov 18:32";
+
     /// The view's rows as text, top to bottom, as the renderer reads them.
     fn view(terminal: &Terminal) -> Vec<String> {
         let grid = &terminal.grid;
@@ -986,14 +1000,14 @@ mod tests {
     fn output_as_a_program_would_print_it() {
         let t = feed("\x1b[31mno\x1b[myes\r\n\r\nplain");
         assert_eq!(
-            t.grid.output(),
+            t.grid.output(false),
             "\x1b[0;38;5;1mno\x1b[0myes\r\n\r\nplain\r\n"
         );
         // Nothing shown: nothing to keep.
-        assert_eq!(feed("").grid.output(), "");
-        assert_eq!(feed("\r\n\r\n").grid.output(), "");
+        assert_eq!(feed("").grid.output(false), "");
+        assert_eq!(feed("\r\n\r\n").grid.output(false), "");
         // The normal screen, not nvim's.
-        assert_eq!(feed("ls\x1b[?1049hnvim").grid.output(), "ls\r\n");
+        assert_eq!(feed("ls\x1b[?1049hnvim").grid.output(false), "ls\r\n");
     }
 
     #[test]
@@ -1010,7 +1024,7 @@ mod tests {
         );
         let first = feed(input);
         assert!(first.grid.scrollback().len() > 5); // most of it scrolled off
-        let output = first.grid.output();
+        let output = first.grid.output(false);
         for piece in [
             "\x1b[0;1;2;3;7mall\x1b[0m \x1b[0;4:3;58;2;255;0;0mcurly\x1b[0m\r\n",
             "\x1b[0;38;2;1;2;3;48;5;200mrgb\x1b[0m 日本 x\r\n",
@@ -1024,7 +1038,7 @@ mod tests {
         // Read by a grid as wide, it's cut at the same places: every row but
         // the last, which the output's last `\r\n` moved up a row.
         let again = feed(&output);
-        assert_eq!(again.grid.output(), output);
+        assert_eq!(again.grid.output(false), output);
         let rows = first.grid.scrollback().len();
         let same = again.grid.scrollback().iter().take(rows);
         assert!(same.eq(first.grid.scrollback()));
@@ -1042,7 +1056,7 @@ mod tests {
     #[test]
     fn last_time_above_the_new_prompt() {
         let mut t = Terminal::new(6, 20);
-        t.show_last_time("\x1b[31mone\x1b[m\r\ntwo\r\n");
+        t.show_last_time("\x1b[31mone\x1b[m\r\ntwo\r\n", WHEN);
         // The screen is empty, as ConPTY's is: the shell starts at its top.
         assert_eq!(t.grid.render(), "");
         assert_eq!(t.grid.cursor(), (0, 0));
@@ -1052,7 +1066,7 @@ mod tests {
         assert_eq!(t.grid.above(), 3);
         Parser::new().advance(&mut t, b"PS> ");
         t.grid.settle();
-        assert_eq!(view(&t), ["one", "two", LAST_TIME, "PS>", "", ""]);
+        assert_eq!(view(&t), ["one", "two", WHEN, "PS>", "", ""]);
         assert_eq!(t.grid.visible_cell(0, 0).fg, Color::Indexed(1));
         assert_eq!(t.grid.first_visible_row(), 0);
         // Nothing more to scroll up to: it's all in view.
@@ -1062,7 +1076,7 @@ mod tests {
         Parser::new().advance(&mut t, b"ls\r\na\r\nb\r\nPS> ");
         t.grid.settle();
         assert_eq!(t.grid.above(), 2);
-        assert_eq!(view(&t), ["two", LAST_TIME, "PS> ls", "a", "b", "PS>"]);
+        assert_eq!(view(&t), ["two", WHEN, "PS> ls", "a", "b", "PS>"]);
         Parser::new().advance(&mut t, b"\r\n\r\n\r\n");
         t.grid.settle();
         assert_eq!(t.grid.above(), 0);
@@ -1072,7 +1086,7 @@ mod tests {
     #[test]
     fn last_time_goes_with_a_clear() {
         let mut t = Terminal::new(6, 20);
-        t.show_last_time("one\r\n");
+        t.show_last_time("one\r\n", WHEN);
         // `clear`: out of view, still there to scroll up to.
         Parser::new().advance(&mut t, b"\x1b[H\x1b[2JPS> ");
         assert_eq!(t.grid.above(), 0);
@@ -1080,7 +1094,7 @@ mod tests {
         assert_eq!(t.grid.scrollback().len(), 2);
         // `cls` (ConPTY's `ESC[3J`): gone.
         let mut t = Terminal::new(6, 20);
-        t.show_last_time("one\r\n");
+        t.show_last_time("one\r\n", WHEN);
         Parser::new().advance(&mut t, b"\x1b[3JPS> ");
         assert_eq!(t.grid.above(), 0);
         assert_eq!(view(&t)[0], "PS>");
@@ -1091,31 +1105,108 @@ mod tests {
     fn last_time_in_a_window_of_another_size() {
         let mut t = Terminal::new(6, 20);
         let old: String = (1..=10).map(|i| format!("line {i}\r\n")).collect();
-        t.show_last_time(&old);
+        t.show_last_time(&old, WHEN);
         assert_eq!(t.grid.above(), 5); // a row is the prompt's
         Parser::new().advance(&mut t, b"PS> ");
         // Taller: more of it. The screen's top stays the prompt, as ConPTY's.
         t.grid.resize(9, 20);
         assert_eq!(t.grid.above(), 8);
-        assert_eq!(view(&t)[7..], [LAST_TIME, "PS>"]);
+        assert_eq!(view(&t)[7..], [WHEN, "PS>"]);
         assert_eq!(t.grid.render(), "PS>");
         // Narrower: the old lines are cut again, up in the scrollback.
         t.grid.resize(4, 5);
-        assert_eq!(view(&t), ["── la", "st ti", "me ──", "PS>"]);
+        assert_eq!(view(&t), ["14 No", "v 18:", "32", "PS>"]);
         assert_eq!(t.grid.render(), "PS>");
         // nvim's screen is all its own; the old text is back after it.
         Parser::new().advance(&mut t, b"\x1b[?1049h\x1b[2J\x1b[Hnvim");
         assert_eq!(t.grid.above(), 0);
         assert_eq!(view(&t)[0], "nvim");
         Parser::new().advance(&mut t, b"\x1b[?1049l");
-        assert_eq!(view(&t)[2..], ["me ──", "PS>"]);
+        assert_eq!(view(&t)[2..], ["32", "PS>"]);
+    }
+
+    #[test]
+    fn last_time_is_fainter_and_ends_with_a_rule() {
+        use crate::term::Past;
+        let mut t = Terminal::new(6, 20);
+        t.show_last_time("one  two\r\n", WHEN);
+        // Its letters are the past's; the space between them is any space.
+        assert_eq!(t.grid.visible_cell(0, 0).past, Past::Text);
+        assert_eq!(t.grid.visible_cell(0, 3), Cell::default());
+        // The rule: its text takes 12 cells, the renderer puts it at the right.
+        assert_eq!(t.grid.visible_rule(0), None);
+        assert_eq!(t.grid.visible_rule(1), Some(WHEN.len()));
+        assert_eq!(t.grid.visible_cell(1, 0).past, Past::Rule);
+        // What the new shell prints is today's.
+        Parser::new().advance(&mut t, b"PS> ");
+        assert_eq!(t.grid.cell(0, 0).past, Past::None);
+        // No time to show (the system couldn't say): a rule all the same.
+        let mut t = Terminal::new(6, 20);
+        t.show_last_time("one\r\n", "");
+        assert_eq!(t.grid.visible_rule(1), Some(0));
+        // The file was cut off in the middle of a code: the rule isn't lost.
+        let mut t = Terminal::new(6, 20);
+        t.show_last_time("one\r\n\x1b]8;;https://kel", WHEN);
+        assert_eq!(t.grid.visible_rule(1), Some(WHEN.len()));
+    }
+
+    #[test]
+    fn the_rules_of_times_before_are_kept() {
+        let mut t = Terminal::new(8, 20);
+        t.show_last_time("monday\r\n", "10 Nov 09:00");
+        Parser::new().advance(&mut t, b"PS> ls\r\ntuesday\r\nPS> ");
+        // Kept as the shell waits at its prompt: without that line.
+        let kept = t.grid.output(true);
+        assert_eq!(
+            kept,
+            "monday\r\n\x1b]kel;rule;10 Nov 09:00\x1b\\PS> ls\r\ntuesday\r\n"
+        );
+        assert!(t.grid.output(false).ends_with("tuesday\r\nPS>\r\n"));
+        let mut t = Terminal::new(8, 20);
+        t.show_last_time(&kept, "11 Nov 18:00");
+        Parser::new().advance(&mut t, b"PS> ");
+        t.grid.settle();
+        let rows = [
+            "monday",
+            "10 Nov 09:00",
+            "PS> ls",
+            "tuesday",
+            "11 Nov 18:00",
+        ];
+        assert_eq!(view(&t)[..5], rows);
+        assert_eq!(t.grid.visible_rule(1), Some(12));
+        assert_eq!(t.grid.visible_rule(4), Some(12));
+        assert_eq!(view(&t)[5], "PS>");
+        // Opened and closed, nothing typed: no second rule, the time stays.
+        let kept = t.grid.output(true);
+        let mut t = Terminal::new(8, 20);
+        t.show_last_time(&kept, "12 Nov 08:00");
+        assert_eq!(view(&t)[..5], rows);
+        assert_eq!(t.grid.above(), 5);
+        // A program's own `ESC]kel;rule` is nothing: only Kel's file has rules.
+        let t = feed("\x1b]kel;rule;now\x1b\\hi");
+        assert_eq!(t.grid.render(), "hi");
+        assert_eq!(t.grid.visible_rule(0), None);
+    }
+
+    #[test]
+    fn a_prompt_of_two_rows_isnt_kept() {
+        // 10 columns: the prompt and what's typed at it go on in the next row.
+        let t = feed("out\r\nPS C:\\code> git st");
+        assert_eq!(t.grid.cursor().0, 2);
+        assert_eq!(t.grid.output(true), "out\r\n");
+        // A command runs, its output below the cursor's line or not: all kept.
+        assert_eq!(feed("out\r\nmore").grid.output(false), "out\r\nmore\r\n");
+        // Text below the cursor (a menu the shell drew): not a prompt's last line.
+        let t = feed("out\r\nPS> \r\nmenu\x1b[A");
+        assert_eq!(t.grid.output(true), "out\r\nPS>\r\nmenu\r\n");
     }
 
     #[test]
     fn last_time_is_only_text() {
         let mut t = Terminal::new(6, 20);
         // A file someone else wrote: a question, a title, the mouse, nvim's screen.
-        t.show_last_time("\x1b[6n\x1b]0;title\x07\x1b[?1002h\x07\x1b[?1049hhi");
+        t.show_last_time("\x1b[6n\x1b]0;title\x07\x1b[?1002h\x07\x1b[?1049hhi", WHEN);
         assert!(t.replies.is_empty());
         assert_eq!(t.title, None);
         assert_eq!(t.mouse, Tracking::Off);

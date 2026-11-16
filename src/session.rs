@@ -14,6 +14,9 @@
 //!   shell starts (see `Terminal::show_last_time`), and the prompt comes below.
 //! - A file is what a program would print (`Grid::output`): the letters and
 //!   `ESC[...m` for their colors. No program comes back, only what it wrote.
+//! - It comes back a little fainter than what's new, and a line across the
+//!   window ends it, with the day and the time the file was written. The
+//!   prompt the shell waited at isn't kept: a new one comes below the line.
 //! - A tab with a name is found by it, as its history of commands is; one
 //!   without, by its place in the bar, which the project's file keeps.
 //! - Home's tabs have none: home starts empty, each time.
@@ -24,6 +27,7 @@
 //! Nothing here is an error to show: a tab whose output can't be kept or read
 //! starts empty, as it always did.
 
+use crate::clock;
 use crate::config;
 use crate::history::file_name;
 use std::path::{Path, PathBuf};
@@ -42,11 +46,24 @@ pub fn save(project: &str, tabs: &[Output]) {
     }
 }
 
+/// What was kept for a tab: its output, and when (`14 Nov 18:32`, the file's
+/// time; empty if the system can't say).
+pub struct Last {
+    pub text: String,
+    pub when: String,
+}
+
 /// The output kept for a tab of `project`: by its name, or by `place`, its
 /// place in the bar from 1. `None`: none kept, the tab starts empty.
-pub fn load(project: &str, name: Option<&str>, place: usize) -> Option<String> {
-    let text = std::fs::read_to_string(file_in(&dir()?, project, name, place)).ok()?;
-    (!text.is_empty()).then_some(text)
+pub fn load(project: &str, name: Option<&str>, place: usize) -> Option<Last> {
+    let file = file_in(&dir()?, project, name, place);
+    let text = std::fs::read_to_string(&file).ok()?;
+    let written = std::fs::metadata(&file).and_then(|file| file.modified());
+    let when = written.ok().and_then(clock::day_and_time);
+    (!text.is_empty()).then_some(Last {
+        text,
+        when: when.unwrap_or_default(),
+    })
 }
 
 /// The project `old` is named `new` now: its tabs' output goes with it.

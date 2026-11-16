@@ -136,7 +136,7 @@ impl App {
         };
         let output = |tab: &Tab| session::Output {
             name: tab.name.clone(),
-            text: tab.terminal.lock().unwrap().grid.output(),
+            text: (tab.terminal.lock().unwrap().grid).output(tab.command.at_prompt),
         };
         let tabs: Vec<_> = tabs.iter().map(output).collect();
         session::save(name, &tabs);
@@ -358,7 +358,7 @@ impl App {
             let last = name.filter(|_| keeps && project.is_some());
             let last = last.and_then(|name| session::load(name, recipe.name.as_deref(), place));
             if let Some(last) = last {
-                screen.show_last_time(&last);
+                screen.show_last_time(&last.text, &last.when);
             }
             let history = name.and_then(|name| history::file(name, recipe.name.as_deref()));
             let (folder, history) = (folder.as_deref(), history.as_deref());

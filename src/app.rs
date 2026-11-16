@@ -385,11 +385,11 @@ impl App {
         // A screen with the problems so far in red. The shell starts below them:
         // when ConPTY asks where the cursor is, the answer is the line after them.
         // Above them, the tab's output from last time (`last`), if it has some.
-        let screen = |problems: &[String], last: Option<&str>| {
+        let screen = |problems: &[String], last: Option<&session::Last>| {
             let mut terminal = Terminal::new(ROWS, COLS);
             terminal.grid.set_scrollback_limit(config.scrollback);
             if let Some(last) = last {
-                terminal.show_last_time(last);
+                terminal.show_last_time(&last.text, &last.when);
             }
             for problem in problems {
                 let text = format!("\x1b[31mkel: {problem}\x1b[m\n\n").replace('\n', "\r\n");
@@ -441,7 +441,7 @@ impl App {
             folder.as_deref(),
             history.as_deref(),
             config.suggestions,
-            screen(&problems, last.as_deref()),
+            screen(&problems, last.as_ref()),
             proxy.clone(),
         ) {
             Ok(tab) => tab,
@@ -453,7 +453,7 @@ impl App {
                     folder.as_deref(),
                     history.as_deref(),
                     config.suggestions,
-                    screen(&problems, last.as_deref()),
+                    screen(&problems, last.as_ref()),
                     proxy.clone(),
                 )?
             }
@@ -468,7 +468,7 @@ impl App {
                 let mut screen = Terminal::new(ROWS, COLS);
                 screen.grid.set_scrollback_limit(config.scrollback);
                 if let Some(last) = &last {
-                    screen.show_last_time(last);
+                    screen.show_last_time(&last.text, &last.when);
                 }
                 let (folder, history) = (folder.as_deref(), history.as_deref());
                 Tab::spawn(

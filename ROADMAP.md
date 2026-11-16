@@ -362,8 +362,14 @@ Settled:
       ConPTY drew over it after a resize and `cls` left it there (measured,
       `examples/probe_restore.rs`). No program comes back. A full scrollback: read in
       ~20 ms, written in ~10 (measured). `restore_output = false`: none
-- [ ] The prompt a tab was left at isn't kept (it's there twice: the old one, then the
-      line, then the new one); the output is kept as the window closes, so not after a crash
+- [x] Last time's output has a look of its own: a quarter fainter than today's (a cell
+      knows it's from the past, `Past`), and a line across the window ends it, with the day
+      and the time it was kept at its right end (`───── 14 Nov 18:32 ─`). The line is drawn,
+      not letters: it's as wide as the window is now. The prompt the shell waited at isn't
+      kept (PowerShell, bash, zsh, which say when they're at one), so there aren't two
+      prompts in a row; a tab opened and closed with nothing typed gets no second line
+- [ ] The output is kept as the window closes, so not after a crash; cmd's last prompt
+      is kept (cmd doesn't say when it's at one)
 - [x] A history per tab: ↑ shows the commands typed in this tab of this project, not all
       typed anywhere. A tab with a name has its own, the project's tabs without one share
       the project's, home keeps the shell's usual one. A file per tab in Kel's folder

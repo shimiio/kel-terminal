@@ -12,6 +12,7 @@
 //! - `app`: the window and all events. Owns everything else. Its parts are in
 //!   `app/` (events, mouse, tabs, workspaces, overlays, actions).
 //! - `keys`: Kel's shortcuts, and the bytes other keys send to the shell.
+//! - `clock`: the day and the time here, for a moment in the past.
 //! - `config`: the settings file, `%APPDATA%\kel\config.toml` (Linux, macOS: `~/.config/kel`).
 //! - `fallback`: fonts for the letters the terminal's font lacks (emoji, Chinese).
 //! - `font`: finds a font, and turns its letters into pixels.
@@ -45,6 +46,7 @@
 pub mod app;
 pub mod backdrop;
 pub mod card;
+pub mod clock;
 pub mod config;
 pub mod fallback;
 pub mod font;
