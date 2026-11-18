@@ -1,19 +1,21 @@
-//! What opens over the terminal: the palette, the sidebar, a card, the search,
-//! the ask box.
+//! What opens over the terminal: the palette, the settings, the sidebar, a
+//! card, the search, the ask box.
 
 use super::screens::draw_logo;
 use super::shapes::{blend, draw_box, draw_icon, fill_circle, fill_rect, fill_round, pane};
 use super::text::{draw_ui_hint, draw_ui_text, keep_end};
 use super::{
     ASK_CHARS, Chrome, DOT_RADIUS, ICON_GAP, PALETTE_CHARS, PALETTE_LINES, PALETTE_PADDING,
-    RING_WIDTH, SEARCH_CHARS, SIDEBAR_DIM, SWITCHER_CHARS, SWITCHER_LINES, Ui,
+    RING_WIDTH, SEARCH_CHARS, SETTINGS_CHARS, SIDEBAR_DIM, SWITCHER_CHARS, SWITCHER_LINES, Ui,
 };
 use crate::ask::Ask;
 use crate::card::{self, Card};
 use crate::font::Font;
+use crate::keys;
 use crate::layout::{Layout, Rect};
 use crate::palette::Palette;
 use crate::search::Search;
+use crate::settings::{self, Settings};
 use crate::sidebar::{self, Entry, Live, Row, Sidebar};
 use crate::theme::Theme;
 
@@ -317,6 +319,172 @@ pub(super) fn draw_palette(
             theme.foreground,
         );
     }
+}
+
+/// The settings panel (see `settings`), where the palette is: "Settings" and
+/// how many are changed, the lines, the keys. The chosen line has a tint of
+/// the project's color, as the palette's; a changed value is in the text's
+/// color, one as the file has it dim.
+///
+/// ```text
+/// ┌──────────────────────────────────────────┐
+/// │ Settings                       1 changed │
+/// ├──────────────────────────────────────────┤
+/// │ LOOK                                     │
+/// │ Glass opacity  1 solid, 0 glass ‹ 0.65 › │
+/// │ Grain                               0.10 │
+/// ├──────────────────────────────────────────┤
+/// │ ↑↓ choose  ←→ change  Enter keep  Esc    │
+/// └──────────────────────────────────────────┘
+/// ```
+pub(super) fn draw_settings(
+    pixels: &mut [u32],
+    width: usize,
+    theme: &Theme,
+    layout: &Layout,
+    (settings, color): (&Settings, Option<u32>),
+    font: &Font,
+    ui: &mut Ui,
+) {
+    let area = layout.inside;
+    let pad = ui.px(PALETTE_PADDING);
+    let b = layout.border;
+    // Lines a bit closer than the palette's: there are more.
+    let line_h = ui.line_h + pad;
+    let head_h = ui.line_h + 2 * pad;
+    let box_w = (SETTINGS_CHARS * ui.advance + 2 * pad).min(area.w.saturating_sub(4 * pad));
+    if box_w < 24 * ui.advance {
+        return; // a window too narrow for it
+    }
+    // As many lines as fit under the title, over the keys. The chosen one is
+    // always among them: with 10 fitting and line 12 chosen, lines 3 to 12.
+    let lines = settings.lines();
+    let around = 4 * pad + 2 * head_h + pad + 4 * b;
+    let fit = (area.h.saturating_sub(around) / line_h).min(lines.len());
+    if fit == 0 {
+        return;
+    }
+    let first = (settings.selected() + 1).saturating_sub(fit);
+
+    let x = area.x + (area.w - box_w) / 2;
+    let y = area.y + 2 * pad;
+    let box_h = b + head_h + b + pad + fit * line_h + b + head_h + b;
+    let back = pane(theme, layout);
+    let dim = blend(back, theme.foreground, 128);
+    let r = Rect {
+        x,
+        y,
+        w: box_w,
+        h: box_h,
+    };
+    draw_box(pixels, width, theme, layout, r, back);
+    let text_w = box_w - 2 * (b + pad);
+    let text_x = x + b + pad;
+
+    // The title, and at its right how many are changed.
+    let head_y = y + b + pad;
+    let changed = match settings.changes().len() {
+        0 => String::new(),
+        n => format!("{n} changed"),
+    };
+    let changed_w = changed.chars().count() * ui.advance;
+    let at = (text_x + text_w - changed_w, head_y);
+    draw_ui_text(pixels, width, font, ui, &changed, at, changed_w, dim);
+    let title_w = text_w.saturating_sub(changed_w + ui.advance);
+    let at = (text_x, head_y);
+    let title_color = theme.foreground;
+    draw_ui_text(
+        pixels,
+        width,
+        font,
+        ui,
+        "Settings",
+        at,
+        title_w,
+        title_color,
+    );
+    let sep_y = y + b + head_h;
+    fill_rect(pixels, width, x, sep_y, box_w, b, theme.border);
+
+    let list_y = sep_y + b + pad / 2;
+    let shown = lines.iter().enumerate().skip(first).take(fit);
+    for (row, (i, line)) in shown.enumerate() {
+        let line_y = list_y + row * line_h;
+        let text_y = line_y + pad / 2;
+        let chosen = i == settings.selected();
+        if chosen {
+            let fill = match color {
+                Some(color) => blend(back, color, 60),
+                None => theme.selection,
+            };
+            let inset = if layout.radius > 0 { ui.px(2) } else { 0 };
+            let line = Rect {
+                x: x + b + inset,
+                y: line_y,
+                w: box_w - 2 * (b + inset),
+                h: line_h,
+            };
+            fill_round(pixels, width, line, [layout.small_radius(); 4], fill);
+        }
+        // The name, the chosen one's note, and at the right end a value or a key.
+        let (label, note, right, right_color) = match line {
+            settings::Line::Title(title) => {
+                let at = (text_x, text_y);
+                draw_ui_text(pixels, width, font, ui, title, at, text_w, dim);
+                continue;
+            }
+            settings::Line::Setting(setting) => {
+                let value = settings::show(setting.kind, &settings.value(setting));
+                let value = if chosen {
+                    format!("‹ {value} ›")
+                } else {
+                    value
+                };
+                let value_color = if settings.is_changed(setting) {
+                    theme.foreground
+                } else {
+                    dim
+                };
+                let note = if chosen { setting.note } else { "" };
+                (setting.label, note, value, value_color)
+            }
+            settings::Line::OpenFile => {
+                let key = keys::hint(&keys::Action::Settings);
+                let note = if chosen {
+                    "the rest of the settings"
+                } else {
+                    ""
+                };
+                ("Open config.toml", note, key, dim)
+            }
+        };
+        let right_w = (right.chars().count() * ui.advance).min(text_w / 2);
+        let at = (text_x + text_w - right_w, text_y);
+        draw_ui_text(pixels, width, font, ui, &right, at, right_w, right_color);
+        let room = text_w.saturating_sub(right_w + ui.advance);
+        let at = (text_x, text_y);
+        let drawn = draw_ui_text(pixels, width, font, ui, label, at, room, theme.foreground);
+        if !note.is_empty() {
+            let gap = 2 * ui.advance;
+            let at = (text_x + drawn + gap, text_y);
+            let room = room.saturating_sub(drawn + gap);
+            draw_ui_text(pixels, width, font, ui, note, at, room, dim);
+        }
+    }
+
+    let sep_y = list_y + fit * line_h + pad / 2;
+    fill_rect(pixels, width, x, sep_y, box_w, b, theme.border);
+    // "← →" apart: together the font draws them as one arrow, ↔.
+    let hint = "↑↓ choose  ← → change  Enter keep  Esc back";
+    draw_ui_hint(
+        pixels,
+        width,
+        ui,
+        hint,
+        (text_x, sep_y + b + pad),
+        text_w,
+        dim,
+    );
 }
 
 /// The sidebar (see `sidebar`): the window dimmed, the panel over its left, and

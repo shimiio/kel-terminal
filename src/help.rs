@@ -3,7 +3,7 @@
 //!
 //! ```text
 //!  KEYS                                     SETTINGS
-//!  Ctrl+Shift+T    New tab                  Ctrl+,          opens config.toml
+//!  Ctrl+Shift+T    New tab                  Ctrl+,          the panel
 //!  Ctrl+Shift+W    Close tab                font            "JetBrains Mono"
 //!  ...                                      font_size       18   Ctrl+= Ctrl+-
 //!  SIDEBAR                                  [glass]
@@ -205,9 +205,9 @@ fn settings_lines(config: &Config) -> Vec<Line> {
     vec![
         title("SETTINGS"),
         row(
-            &keys::hint(&keys::Action::OpenConfig),
-            "config.toml",
-            "saved: applies at once",
+            &keys::hint(&keys::Action::Settings),
+            "the panel",
+            "config.toml from it: saved, applies at once",
         ),
         Line::Gap,
         row("font", &text(&config.font), "the terminal's"),

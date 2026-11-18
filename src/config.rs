@@ -2,7 +2,7 @@
 //!
 //! On the first start Kel writes the default file, with a comment for every setting.
 //! A setting missing from the file keeps its default value. Kel writes one
-//! setting into it with `save_setting` (see `edit`), keeping the rest as it was.
+//! setting into it with `save_settings` (see `edit`), keeping the rest as it was.
 
 use crate::ask::Ai;
 use crate::backdrop;
@@ -18,14 +18,15 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 mod edit;
-pub use edit::save_setting;
+pub use edit::{Change, save_settings, text, with_settings};
 
 /// The file Kel writes on the first start. Its values must match `Config::default()`
 /// (a test checks it).
 // `r##"..."##`: a raw string, ending at `"##`. The colors hold `"#`, which would
 // end a plain `r#"..."#` string early.
-const DEFAULT_CONFIG: &str = r##"# Kel config. Lines starting with # are comments.
-# Ctrl+, opens this file. Saved changes apply right away, unless a setting says otherwise.
+pub const DEFAULT_CONFIG: &str = r##"# Kel config. Lines starting with # are comments.
+# Ctrl+, opens the settings panel, and this file from it. Saved changes apply right
+# away, unless a setting says otherwise.
 # Delete a setting to go back to its default value.
 
 # The terminal's font. "JetBrains Mono" is built into Kel: it works on any computer.
@@ -212,7 +213,7 @@ impl Bell {
 }
 
 /// `#[serde(default)]`: a setting missing from the file is taken from `Config::default()`.
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
     pub font: String,

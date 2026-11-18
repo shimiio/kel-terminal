@@ -4,11 +4,13 @@
 use super::{App, CONFIRM_TIME, UserEvent, actions::clipboard_text};
 use crate::ask::{self, Answer, Around, Ask};
 use crate::card::{self, Card, Target};
+use crate::config;
 use crate::history;
 use crate::keys::{self, Action};
 use crate::layout::Rect;
 use crate::ollama;
 use crate::project;
+use crate::settings::{self, Settings};
 use crate::sidebar::{Row, Sidebar};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -582,6 +584,97 @@ impl App {
             }
             _ => {}
         }
+        self.request_redraw();
+    }
+
+    /// Ctrl+,: the settings panel opens (see `settings`), over the config file as
+    /// it is now. A file Kel can't read has no panel: the file opens, to be fixed,
+    /// and the tab bar says what's wrong with it.
+    pub(super) fn open_settings(&mut self) {
+        match config::text().and_then(|text| Settings::new(text, &self.config)) {
+            Ok(settings) => {
+                self.settings = Some(settings);
+                self.palette = None;
+                self.search = None;
+                self.ask = None;
+                self.sidebar = None;
+                self.card = None;
+                self.help = None;
+            }
+            Err(e) => {
+                self.set_status(Some(format!("{e:#}")));
+                self.run(Action::OpenConfig);
+            }
+        }
+        self.request_redraw();
+    }
+
+    /// A key while the settings panel is open: it's for the panel, never the
+    /// shell. ↑↓ choose, ←→ change the chosen one (Kel shows it at once), Enter
+    /// keeps the changes, Esc takes them back. Ctrl+, again, or Enter on the
+    /// last line: the file opens, with the changes in it.
+    pub(super) fn settings_key(&mut self, event: &KeyEvent, shortcut: Option<Action>) {
+        let Some(settings) = &mut self.settings else {
+            return;
+        };
+        match (&event.logical_key, shortcut) {
+            (Key::Named(NamedKey::Escape), _) => self.close_settings(false),
+            (_, Some(Action::Settings)) => {
+                self.close_settings(true);
+                self.run(Action::OpenConfig);
+            }
+            (Key::Named(NamedKey::Enter), _) => {
+                let open_file = settings.chosen() == settings::Line::OpenFile;
+                self.close_settings(true);
+                if open_file {
+                    self.run(Action::OpenConfig);
+                }
+            }
+            (Key::Named(NamedKey::ArrowUp), _) => settings.move_selection(-1),
+            (Key::Named(NamedKey::ArrowDown), _) => settings.move_selection(1),
+            (Key::Named(NamedKey::ArrowLeft), _) => self.change_setting(-1),
+            (Key::Named(NamedKey::ArrowRight), _) => self.change_setting(1),
+            _ => {}
+        }
+        self.request_redraw();
+    }
+
+    /// ← (-1) or → (1): the chosen setting's next value, and Kel shows it, as
+    /// if the file were saved with it.
+    fn change_setting(&mut self, step: isize) {
+        let Some(settings) = &mut self.settings else {
+            return;
+        };
+        if !settings.change(step) {
+            return;
+        }
+        let error = match settings.preview() {
+            Ok(config) => self.apply_config(config),
+            Err(e) => Some(format!("{e:#}")),
+        };
+        self.set_status(error);
+    }
+
+    /// The panel closes. `keep`: its changes go into the file, which Kel then
+    /// finds as it has them (nothing more to apply). Else, or if the file can't
+    /// be written, Kel goes back to the config it had: what's on screen is
+    /// always what's in the file.
+    fn close_settings(&mut self, keep: bool) {
+        let Some(settings) = self.settings.take() else {
+            return;
+        };
+        let saved = match keep {
+            true => config::save_settings(settings.changes()),
+            false => Ok(()),
+        };
+        let mut error = None;
+        if !keep || saved.is_err() {
+            error = self.apply_config(settings.before().clone());
+        }
+        if let Err(e) = saved {
+            error = Some(format!("The settings weren't saved: {e:#}"));
+        }
+        self.set_status(error);
         self.request_redraw();
     }
 

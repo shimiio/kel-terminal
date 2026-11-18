@@ -390,6 +390,7 @@ impl App {
             start: self.start.as_ref(),
             card: self.card.as_ref().zip(self.card_rect()),
             help: self.help.as_ref(),
+            settings: self.settings.as_ref(),
             keys_here: self.keys_here(),
             solid: self.solid_under(),
             flash: self.flash_until.is_some(),
@@ -418,6 +419,7 @@ impl App {
             && self.ask.is_none()
             && self.card.is_none()
             && self.help.is_none()
+            && self.settings.is_none()
     }
 
     /// The window's icon (`k▌`, see `logo::icon`), its cursor the color of the
@@ -516,6 +518,10 @@ impl App {
             return;
         }
         let shortcut = keys::shortcut(event.physical_key, self.modifiers);
+        if self.settings.is_some() {
+            self.settings_key(&event, shortcut);
+            return;
+        }
         if self.help.is_some() {
             self.help_key(&event, shortcut);
             return;

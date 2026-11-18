@@ -2,7 +2,7 @@
 //! settings: the config read again, the fonts, the zoom.
 
 use super::{App, COPIED_TIME, Closing};
-use crate::config;
+use crate::config::{self, Config};
 use crate::font::{self, Fonts};
 use crate::help::Help;
 use crate::keys::{self, Action};
@@ -69,87 +69,92 @@ impl App {
 
         // `Some`: something went wrong, and the tab bar says what.
         let error = match config::load() {
-            Ok(mut new) => {
-                let mut error = None;
-                // Only what changed, so saving another setting doesn't undo your zoom.
-                if new.font != self.config.font {
-                    match font::load_family(&new.font) {
-                        Ok(fonts) => self.set_fonts(fonts),
-                        Err(e) => error = Some(format!("{e:#}")), // keeps the old font
-                    }
-                }
-                if new.font_size != self.config.font_size {
-                    self.set_font_size(new.font_size);
-                }
-                if new.line_height != self.config.line_height
-                    && let Some(renderer) = &mut self.renderer
-                {
-                    renderer.set_line_height(new.line_height);
-                    self.cell_size_changed();
-                }
-                if new.layout != self.config.layout || new.ui_scale != self.config.ui_scale {
-                    self.config.layout = new.layout.clone();
-                    self.config.ui_scale = new.ui_scale;
-                    self.cell_size_changed(); // not the cell, but the room for cells
-                }
-                if new.pixel_name != self.config.pixel_name
-                    && let Some(renderer) = &mut self.renderer
-                {
-                    renderer.set_pixel_name(new.pixel_name);
-                    self.on_resize(); // the name's width: the tabs move
-                    self.request_redraw();
-                }
-                if new.cursor != self.config.cursor
-                    && let Some(renderer) = &mut self.renderer
-                {
-                    renderer.set_cursor(new.cursor);
-                    self.request_redraw();
-                }
-                if new.colors != self.config.colors
-                    && let Some(renderer) = &mut self.renderer
-                {
-                    renderer.set_theme(new.colors.clone());
-                    self.request_redraw();
-                }
-                // The effect only after a restart: Windows' glass needs the window
-                // see-through from its start. Its opacity and grain right away.
-                new.glass.effect = self.config.glass.effect;
-                if new.glass != self.config.glass {
-                    if let Some(renderer) = &mut self.renderer {
-                        renderer.set_glass(new.glass.clone());
-                    }
-                    self.request_redraw();
-                }
-                #[cfg(target_os = "macos")]
-                if new.option_as_alt != self.config.option_as_alt
-                    && let Some(window) = &self.window
-                {
-                    use winit::platform::macos::WindowExtMacOS;
-                    window.set_option_as_alt(super::option_as_alt(new.option_as_alt));
-                }
-                // Every tab keeps the new number of lines, the ones behind too.
-                if new.scrollback != self.config.scrollback {
-                    for tab in self.all_tabs() {
-                        let mut terminal = tab.terminal.lock().unwrap();
-                        terminal.grid.set_scrollback_limit(new.scrollback);
-                    }
-                    self.request_redraw();
-                }
-                // Another picture: shown at once, if the start screen is up.
-                // Turned off: it goes now.
-                let backdrop = new.backdrop != self.config.backdrop;
-                let start = new.start_screen != self.config.start_screen;
-                self.config = new;
-                if (backdrop || start) && self.start.is_some() {
-                    self.start = self.start_screen();
-                    self.request_redraw();
-                }
-                error
-            }
+            Ok(new) => self.apply_config(new),
             // e.g. "config.toml, line 3: invalid type: string "big", expected f32"
             Err(e) => Some(format!("{e:#}")),
         };
         self.set_status(error);
+    }
+
+    /// Kel takes `new` as its config: what's changed in it is applied, the rest
+    /// stays (a saved file; the settings panel's changes, shown as they're made).
+    /// `Some`: what went wrong (a font that isn't there: the old one stays).
+    pub(super) fn apply_config(&mut self, mut new: Config) -> Option<String> {
+        let mut error = None;
+        // Only what changed, so saving another setting doesn't undo your zoom.
+        if new.font != self.config.font {
+            match font::load_family(&new.font) {
+                Ok(fonts) => self.set_fonts(fonts),
+                Err(e) => error = Some(format!("{e:#}")), // keeps the old font
+            }
+        }
+        if new.font_size != self.config.font_size {
+            self.set_font_size(new.font_size);
+        }
+        if new.line_height != self.config.line_height
+            && let Some(renderer) = &mut self.renderer
+        {
+            renderer.set_line_height(new.line_height);
+            self.cell_size_changed();
+        }
+        if new.layout != self.config.layout || new.ui_scale != self.config.ui_scale {
+            self.config.layout = new.layout.clone();
+            self.config.ui_scale = new.ui_scale;
+            self.cell_size_changed(); // not the cell, but the room for cells
+        }
+        if new.pixel_name != self.config.pixel_name
+            && let Some(renderer) = &mut self.renderer
+        {
+            renderer.set_pixel_name(new.pixel_name);
+            self.on_resize(); // the name's width: the tabs move
+            self.request_redraw();
+        }
+        if new.cursor != self.config.cursor
+            && let Some(renderer) = &mut self.renderer
+        {
+            renderer.set_cursor(new.cursor);
+            self.request_redraw();
+        }
+        if new.colors != self.config.colors
+            && let Some(renderer) = &mut self.renderer
+        {
+            renderer.set_theme(new.colors.clone());
+            self.request_redraw();
+        }
+        // The effect only after a restart: Windows' glass needs the window
+        // see-through from its start. Its opacity and grain right away.
+        new.glass.effect = self.config.glass.effect;
+        if new.glass != self.config.glass {
+            if let Some(renderer) = &mut self.renderer {
+                renderer.set_glass(new.glass.clone());
+            }
+            self.request_redraw();
+        }
+        #[cfg(target_os = "macos")]
+        if new.option_as_alt != self.config.option_as_alt
+            && let Some(window) = &self.window
+        {
+            use winit::platform::macos::WindowExtMacOS;
+            window.set_option_as_alt(super::option_as_alt(new.option_as_alt));
+        }
+        // Every tab keeps the new number of lines, the ones behind too.
+        if new.scrollback != self.config.scrollback {
+            for tab in self.all_tabs() {
+                let mut terminal = tab.terminal.lock().unwrap();
+                terminal.grid.set_scrollback_limit(new.scrollback);
+            }
+            self.request_redraw();
+        }
+        // Another picture: shown at once, if the start screen is up.
+        // Turned off: it goes now.
+        let backdrop = new.backdrop != self.config.backdrop;
+        let start = new.start_screen != self.config.start_screen;
+        self.config = new;
+        if (backdrop || start) && self.start.is_some() {
+            self.start = self.start_screen();
+            self.request_redraw();
+        }
+        error
     }
 
     /// Does what a shortcut stands for. Which key is which action: `keys::shortcut`.
@@ -181,6 +186,7 @@ impl App {
                     let _ = open::text_file(&path);
                 }
             }
+            Action::Settings => self.open_settings(),
             Action::Find => {
                 self.search = match self.search {
                     Some(_) => None,

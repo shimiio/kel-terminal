@@ -36,6 +36,8 @@
 //!   (bar, overlays, screens, text, shapes).
 //! - `search`: the search in the output (Ctrl+Shift+F): what's typed, the matches.
 //! - `session`: a project's tabs keep what they showed, for the next time it opens.
+//! - `settings`: the settings panel (Ctrl+,): its settings, what's changed, the
+//!   chosen line.
 //! - `sidebar`: the panel of projects (the sidebar button, Ctrl+Shift+B).
 //! - `card`: the small box for changing a tab's name and command.
 //! - `start`: the start screen of a new home: the recent projects.
@@ -75,6 +77,7 @@ pub mod pty;
 pub mod renderer;
 pub mod search;
 pub mod session;
+pub mod settings;
 pub mod setup;
 pub mod shell;
 pub mod shell_integration;

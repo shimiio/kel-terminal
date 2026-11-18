@@ -34,6 +34,7 @@ use crate::project::{self, Project, TabRecipe};
 use crate::renderer::Renderer;
 use crate::search::Search;
 use crate::session;
+use crate::settings::Settings;
 use crate::sidebar::Sidebar;
 use crate::start::{self, Start};
 use crate::tab::{Tab, TabId};
@@ -342,6 +343,8 @@ pub struct App {
     card: Option<Card>,
     /// The help (Ctrl+Shift+/), while it's open: over everything, it gets the keys.
     help: Option<Help>,
+    /// The settings panel (Ctrl+,), while it's open. It gets every key.
+    settings: Option<Settings>,
     /// The last click on a tab: a second one on it soon after opens its card.
     last_tab_click: Option<(TabId, Instant)>,
     /// A project held by the mouse in the sidebar.
@@ -585,6 +588,7 @@ impl App {
             start,
             card: None,
             help: None,
+            settings: None,
             last_tab_click: None,
             sidebar_drag: None,
             window_title: String::new(),

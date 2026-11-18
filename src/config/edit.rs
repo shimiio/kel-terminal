@@ -12,41 +12,54 @@
 //! Not in the file, a setting comes back from its example (`# margin = 0` →
 //! `margin = 4`), or goes after the last setting of its section.
 //!
-//! The settings panel (Ctrl+,) writes with it. Kel notices the save as it notices
-//! yours (`config::modified`), and applies it.
+//! The settings panel (Ctrl+,, see `settings`) shows its changes with
+//! `with_settings` and keeps them with `save_settings`. Kel notices the save as
+//! it notices yours (`config::modified`), and applies it.
 
 use super::{Config, DEFAULT_CONFIG, parse_toml};
 use std::io::ErrorKind;
 
-/// Writes `value` for `setting` into the config file. `setting` is its
-/// section's name and its own, with dots: `"font_size"` (no section),
-/// `"glass.opacity"`, `"layout.title.margin"`.
+/// A setting and its new value. The setting by its section's name and its own,
+/// with dots: `"font_size"` (no section), `"glass.opacity"`, `"layout.title.margin"`.
+pub type Change = (&'static str, toml::Value);
+
+/// The config file's text, as it is now. No file yet: the one Kel writes on
+/// the first start.
+pub fn text() -> anyhow::Result<String> {
+    match std::fs::read_to_string(super::path()?) {
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(DEFAULT_CONFIG.to_string()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Writes these settings into the config file, as it is now.
 ///
 /// The file is written only if Kel can read what comes out: a wrong value
 /// (`font_size = "big"`) is an error and the file stays as it was.
-pub fn save_setting(setting: &str, value: toml::Value) -> anyhow::Result<()> {
+pub fn save_settings(changes: &[Change]) -> anyhow::Result<()> {
+    if changes.is_empty() {
+        return Ok(());
+    }
+    let (new, _) = with_settings(&text()?, changes)?;
     let path = super::path()?;
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        // No file yet: the one Kel writes on the first start, with the change.
-        Err(e) if e.kind() == ErrorKind::NotFound => {
-            std::fs::create_dir_all(path.parent().unwrap())?;
-            DEFAULT_CONFIG.to_string()
-        }
-        Err(e) => return Err(e.into()),
-    };
-    std::fs::write(&path, checked(&text, setting, &value)?)?;
+    std::fs::create_dir_all(path.parent().unwrap())?;
+    std::fs::write(&path, new)?;
     Ok(())
 }
 
-/// `set`, if Kel can read what comes out.
-fn checked(text: &str, setting: &str, value: &toml::Value) -> anyhow::Result<String> {
-    let new = set(text, setting, value);
-    parse_toml::<Config>("config.toml", &new)?;
-    Ok(new)
+/// `text` with these settings set, and the config Kel reads from it; an error
+/// if it can't (`config.toml, line 3: invalid type: ...`).
+pub fn with_settings(text: &str, changes: &[Change]) -> anyhow::Result<(String, Config)> {
+    let mut new = text.to_string();
+    for (setting, value) in changes {
+        new = set(&new, setting, value);
+    }
+    let config = parse_toml("config.toml", &new)?;
+    Ok((new, config))
 }
 
-/// `text` with `setting` set to `value` (see `save_setting`).
+/// `text` with `setting` set to `value` (see `Change`).
 fn set(text: &str, setting: &str, value: &toml::Value) -> String {
     let (section, key) = setting.rsplit_once('.').unwrap_or(("", setting));
     let value = format_value(value);
@@ -419,6 +432,19 @@ mod tests {
             format_value(&string("JetBrains Mono")),
             "\"JetBrains Mono\""
         );
+    }
+
+    /// `with_settings` with one change: the text.
+    fn checked(text: &str, setting: &'static str, value: &Value) -> anyhow::Result<String> {
+        Ok(with_settings(text, &[(setting, value.clone())])?.0)
+    }
+
+    #[test]
+    fn several_at_once() {
+        let changes = [("glass.grain", float(0.3)), ("font_size", float(20.0))];
+        let (new, config) = with_settings(DEFAULT_CONFIG, &changes).unwrap();
+        assert_eq!(changed(DEFAULT_CONFIG, &new).len(), 2);
+        assert_eq!((config.glass.grain, config.font_size), (0.3, 20.0));
     }
 
     #[test]

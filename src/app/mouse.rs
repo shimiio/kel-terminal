@@ -393,6 +393,11 @@ impl App {
                 return;
             }
         }
+        // The settings panel takes no clicks: a stray one would lose its changes
+        // or keep them, and it was for neither. Nor does the terminal get them.
+        if self.settings.is_some() {
+            return;
+        }
         // A click anywhere closes the help, or the palette, and does nothing else.
         if self.help.is_some() && state == ElementState::Pressed {
             self.help = None;
@@ -567,7 +572,8 @@ impl App {
             let nothing_open = self.sidebar.is_none()
                 && self.palette.is_none()
                 && self.card.is_none()
-                && self.help.is_none();
+                && self.help.is_none()
+                && self.settings.is_none();
             self.burger_since = (hit == Some(TitleHit::Sidebar) && nothing_open).then(Instant::now);
         }
     }

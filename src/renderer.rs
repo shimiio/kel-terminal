@@ -32,6 +32,7 @@ use crate::icons::Icons;
 use crate::layout::{Bar, Layout, Rect, TitleHit, scaled};
 use crate::palette::Palette;
 use crate::search::{self, Search};
+use crate::settings::Settings;
 use crate::sidebar::Sidebar;
 use crate::start::Start;
 use crate::term::{Cell, CursorShape, Found, Grid, Past, Underline, Width};
@@ -41,8 +42,8 @@ use bar::{
     project_name_shown, project_name_width,
 };
 use overlays::{
-    draw_ask, draw_card, draw_copied, draw_palette, draw_search, draw_sidebar, draw_switcher,
-    switcher_place,
+    draw_ask, draw_card, draw_copied, draw_palette, draw_search, draw_settings, draw_sidebar,
+    draw_switcher, switcher_place,
 };
 use screens::{draw_help, draw_start};
 use shapes::{blend, fill_rect, fill_round, invisible, outline, solid};
@@ -109,6 +110,8 @@ const PALETTE_CHARS: usize = 64;
 const SWITCHER_CHARS: usize = 36;
 const SWITCHER_LINES: usize = 12;
 const PALETTE_LINES: usize = 10;
+/// The settings panel: as wide as this many letters.
+const SETTINGS_CHARS: usize = 56;
 /// Space above and below a palette line's text, and at its sides, at 100%.
 const PALETTE_PADDING: usize = 6;
 
@@ -191,6 +194,8 @@ pub struct Chrome<'a> {
     pub copied: Option<usize>,
     /// The help, if it's open: over everything.
     pub help: Option<&'a Help>,
+    /// The settings panel, if it's open: where the palette is.
+    pub settings: Option<&'a Settings>,
 }
 
 /// Kel's own UI: the tab names (one text size, its own glyph cache) and the icons.
@@ -757,9 +762,12 @@ impl Renderer {
             || chrome.search.is_some()
             || chrome.ask.is_some()
             || chrome.card.is_some()
-            || chrome.help.is_some();
-        let over_sidebar =
-            chrome.palette.is_some() || chrome.card.is_some() || chrome.help.is_some();
+            || chrome.help.is_some()
+            || chrome.settings.is_some();
+        let over_sidebar = chrome.palette.is_some()
+            || chrome.card.is_some()
+            || chrome.help.is_some()
+            || chrome.settings.is_some();
         if let Some(start) = chrome.start {
             let on = cursor_on || over_start;
             draw_start(
@@ -821,6 +829,19 @@ impl Renderer {
                 theme,
                 body,
                 (palette, color),
+                font,
+                &mut self.ui,
+            );
+        }
+        // The settings, where the palette is: the two are never open together.
+        if let Some(settings) = chrome.settings {
+            let color = chrome.project.and_then(|(_, color)| color).or(theme.accent);
+            draw_settings(
+                &mut buffer,
+                width,
+                theme,
+                body,
+                (settings, color),
                 font,
                 &mut self.ui,
             );

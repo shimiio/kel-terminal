@@ -30,6 +30,9 @@ pub enum Action {
     ZoomIn,
     ZoomOut,
     ZoomReset,
+    /// Opens the settings panel (see `settings`), or closes it as Esc does.
+    Settings,
+    /// Opens `config.toml` in the system's editor for text.
     OpenConfig,
     /// Moves the tab on screen one place left / right.
     MoveTabLeft,
@@ -170,7 +173,7 @@ fn pc_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
         (KeyCode::Equal, _) => Action::ZoomIn,
         (KeyCode::Minus, _) => Action::ZoomOut,
         (KeyCode::Digit0, _) => Action::ZoomReset,
-        (KeyCode::Comma, _) => Action::OpenConfig,
+        (KeyCode::Comma, _) => Action::Settings,
         (KeyCode::KeyP, true) => Action::Palette,
         (KeyCode::KeyF, true) => Action::Find,
         // Not Ctrl+Space: PowerShell's list of completions, nvim's too.
@@ -234,7 +237,7 @@ fn mac_shortcut(code: KeyCode, mods: ModifiersState) -> Option<Action> {
         (KeyCode::Equal, _) => Action::ZoomIn,
         (KeyCode::Minus, _) => Action::ZoomOut,
         (KeyCode::Digit0, _) => Action::ZoomReset,
-        (KeyCode::Comma, false) => Action::OpenConfig,
+        (KeyCode::Comma, false) => Action::Settings,
         (KeyCode::KeyP, true) => Action::Palette,
         (KeyCode::KeyF, false) => Action::Find,
         // With Shift: Cmd+A is "select all" in Mac apps.
@@ -357,12 +360,8 @@ fn palette_items_on(mac: bool) -> Vec<Item> {
         item("Zoom in: bigger font", "Ctrl+=", "Cmd+=", Action::ZoomIn),
         item("Zoom out: smaller font", "Ctrl+-", "Cmd+-", Action::ZoomOut),
         item("Reset zoom", "Ctrl+0", "Cmd+0", Action::ZoomReset),
-        item(
-            "Open the config file",
-            "Ctrl+,",
-            "Cmd+,",
-            Action::OpenConfig,
-        ),
+        item("Settings", "Ctrl+,", "Cmd+,", Action::Settings),
+        item("Open the config file", "", "", Action::OpenConfig),
         item(
             "Help: keys and settings",
             "Ctrl+Shift+/",
@@ -847,7 +846,11 @@ mod tests {
     #[test]
     fn palette_hints_are_the_real_shortcuts() {
         for mac in [false, true] {
-            for item in palette_items_on(mac) {
+            // Not those without a shortcut ("Open the config file").
+            for item in palette_items_on(mac)
+                .into_iter()
+                .filter(|i| !i.hint.is_empty())
+            {
                 let (key, mods) = parse_hint(&item.hint);
                 let found = shortcut_on(key, mods, mac);
                 assert_eq!(found, Some(item.action), "{} (mac: {mac})", item.label);

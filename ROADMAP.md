@@ -415,8 +415,12 @@ Settled:
         line, the comment after it in its column, the rest as it was; not there, from its
         example (`# margin = 0`) or after its section's last one. Written only if Kel can
         read the result. Kel notices the save as it notices yours
-  - [ ] The panel: numbers and choices (glass, corners, the tab bar, the backdrop, the
-        cursor, the font's size, line height, UI scale, the bell, copy on select)
+  - [x] The panel: numbers and choices (glass, corners, the tab bar, the start screen,
+        the backdrop, the font's size, line height, UI scale, the cursor, the bell, copy
+        on select). A change is shown the way a saved file is: the file's text with it,
+        read, and given to Kel (`apply_config`); Enter writes the same changes, Esc gives
+        Kel back the config it had. No clicks: a stray one would lose or keep the
+        changes. A file Kel can't read has no panel: it opens, its error in the tab bar
   - [ ] The font, from the installed monospace ones, shown as you go
   - Later: a theme, when themes are files; the shell from the ones found; the model
 - [ ] Split panes, like tmux inside Kel (tabs and nvim's own windows do for now)

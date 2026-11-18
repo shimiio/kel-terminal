@@ -101,7 +101,7 @@ Option types its letters, as on any Mac; `option_as_alt = true` makes it Alt.
 | Ctrl+Shift+C / Ctrl+Shift+V | Copy / paste. Ctrl+C and Ctrl+V go to the program, as nvim wants them |
 | Ctrl+Shift+F | Find in the output |
 | Ctrl+Shift+A | Ask for a command: a model on your computer writes it into the line (see below) |
-| Ctrl+, | The config file |
+| Ctrl+, | Settings: the look, the font's size, the cursor, shown as you change them; the config file from it |
 | **Ctrl+Shift+/** | **Help: all the keys, and every setting with its value now** |
 
 The mouse: drag to select, double-click for a word (a path or a link whole), Ctrl+click
@@ -197,7 +197,12 @@ open, or Kel writes over your changes.
 
 ## Config
 
-`%APPDATA%\kel\config.toml`, opened by **Ctrl+,**. Kel writes it on the first start,
+**Ctrl+,** opens the settings panel: ←/→ change a setting and Kel shows it at once,
+Enter keeps it, Esc takes it back. It has the ones you pick from a few values or set a
+number in (the glass, the corners, the tab bar, the font's size, the cursor); all the
+rest is in the file, which its last line opens.
+
+`%APPDATA%\kel\config.toml`. Kel writes it on the first start,
 with a comment on every setting: the font (JetBrains Mono is built in, or any
 installed one), the shell (`pwsh.exe`, `cmd.exe`, `wsl.exe -d Ubuntu`), the glass,
 the cursor, the colors. Saved changes apply at once.
