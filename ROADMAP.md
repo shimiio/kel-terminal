@@ -407,6 +407,18 @@ Settled:
       model; the answer is text, so it needs a place to show. Measure first, as above
 - [ ] A model in the cloud by an API key, for those who want better answers: needs HTTPS
       (a crate), and says plainly that the question and the output leave the computer
+- Settings panel (Ctrl+,; the file from it): the settings you choose among a few
+  values or set a number in, whose change you see. ←/→ change one and show it at once,
+  Enter keeps, Esc takes it all back. Text and lists stay in the file (the shell, colors,
+  `solid_for`, `[ai]`); a setting comes into it when it fits that rule
+  - [x] One setting written into the file as you'd change it by hand: its value in its
+        line, the comment after it in its column, the rest as it was; not there, from its
+        example (`# margin = 0`) or after its section's last one. Written only if Kel can
+        read the result. Kel notices the save as it notices yours
+  - [ ] The panel: numbers and choices (glass, corners, the tab bar, the backdrop, the
+        cursor, the font's size, line height, UI scale, the bell, copy on select)
+  - [ ] The font, from the installed monospace ones, shown as you go
+  - Later: a theme, when themes are files; the shell from the ones found; the model
 - [ ] Split panes, like tmux inside Kel (tabs and nvim's own windows do for now)
 - [ ] Emoji in color (Segoe UI Emoji's COLR layers; now in the text's color)
 

@@ -1,7 +1,8 @@
 //! The config file: `config.toml` in Kel's folder (see `dir`).
 //!
 //! On the first start Kel writes the default file, with a comment for every setting.
-//! A setting missing from the file keeps its default value.
+//! A setting missing from the file keeps its default value. Kel writes one
+//! setting into it with `save_setting` (see `edit`), keeping the rest as it was.
 
 use crate::ask::Ai;
 use crate::backdrop;
@@ -15,6 +16,9 @@ use serde::de::DeserializeOwned;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::SystemTime;
+
+mod edit;
+pub use edit::save_setting;
 
 /// The file Kel writes on the first start. Its values must match `Config::default()`
 /// (a test checks it).
