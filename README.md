@@ -3,9 +3,9 @@
 A terminal for Windows, written in Rust, built to be a daily work tool: tabs, and
 **projects**, saved sets of tabs that open a whole workspace in one go.
 
-![A project in Kel: nvim, cargo run, Claude Code and git, each in its tab](assets/screenshots/project.png)
+<img width="100%" alt="From Home's start screen into the kel project: its tabs (nvim, cargo run, claude, git) started by themselves; Ctrl+Shift+R runs the cargo tab's command" src="https://github.com/user-attachments/assets/1a16d48f-fcee-4aaf-9c60-e2652322507c" />
 
-Kel runs on Windows 10 and 11. Linux and macOS are coming. See
+Kel is made on Windows 10 and 11; Linux and macOS have preview builds. See
 [ROADMAP.md](ROADMAP.md) for what's done and what's next.
 
 ## What it does
@@ -27,10 +27,6 @@ Kel runs on Windows 10 and 11. Linux and macOS are coming. See
   lines by itself, Nerd Font icons built in for any font, and the taskbar button
   blinking when Claude Code rings.
 - **One file**, about 6 MB, with its font in it. No installer, no admin rights.
-
-![The sidebar of projects, over nvim](assets/screenshots/sidebar.png)
-
-![Home's start screen: the projects used last](assets/screenshots/home.png)
 
 ## Install
 
@@ -162,6 +158,15 @@ type in the palette: `Save the tabs as project: myapp`. Then:
   the window closes, as plain text in `%APPDATA%\kel\sessions`, with all a tab showed.
   `restore_output = false` in the config: none is kept.
 
+A tab's card: its name, its command, and when that starts. Here `cargo test`, run by
+Ctrl+Shift+R:
+
+<img width="100%" alt="The cargo tab's card: its name, its command changed to cargo test, its start set to by key; then Ctrl+Shift+R runs the tests" src="https://github.com/user-attachments/assets/d2139151-d5a7-4dec-9de9-1de952538045" />
+
+Another project from the sidebar, and what its tabs showed last time:
+
+<img width="100%" alt="The sidebar opens the pare project; its backend tab scrolls back through the output of earlier runs, each with its day and time" src="https://github.com/user-attachments/assets/8470f7ae-9912-471b-90d7-77378cf41eab" />
+
 A project is a file in `%APPDATA%\kel\projects`, `myapp.toml`. You can write one by hand:
 
 ```toml
@@ -201,6 +206,8 @@ open, or Kel writes over your changes.
 Enter keeps it, Esc takes it back. It has the ones you pick from a few values or set a
 number in (the glass, the corners, the tab bar, the font's size, the cursor); all the
 rest is in the file, which its last line opens.
+
+<img width="100%" alt="The settings panel: the glass's opacity, the grain, the corners, the tab bar, the font and its size changed with the arrows, each shown at once" src="https://github.com/user-attachments/assets/9a966fe8-a08a-429a-a58e-1323562963ac" />
 
 `%APPDATA%\kel\config.toml`. Kel writes it on the first start,
 with a comment on every setting: the font (JetBrains Mono is built in, or any
