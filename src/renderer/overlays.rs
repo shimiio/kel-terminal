@@ -445,20 +445,24 @@ pub(super) fn draw_settings(
                 } else {
                     dim
                 };
-                let note = if chosen { setting.note } else { "" };
+                let note = match chosen {
+                    true => settings.note(setting),
+                    false => String::new(),
+                };
                 (setting.label, note, value, value_color)
             }
             settings::Line::OpenFile => {
                 let key = keys::hint(&keys::Action::Settings);
-                let note = if chosen {
-                    "the rest of the settings"
-                } else {
-                    ""
+                let note = match chosen {
+                    true => "the rest of the settings".to_string(),
+                    false => String::new(),
                 };
                 ("Open config.toml", note, key, dim)
             }
         };
-        let right_w = (right.chars().count() * ui.advance).min(text_w / 2);
+        // A long font's name may take what the name and a gap leave.
+        let left_w = (label.chars().count() + 2) * ui.advance;
+        let right_w = (right.chars().count() * ui.advance).min(text_w.saturating_sub(left_w));
         let at = (text_x + text_w - right_w, text_y);
         draw_ui_text(pixels, width, font, ui, &right, at, right_w, right_color);
         let room = text_w.saturating_sub(right_w + ui.advance);
@@ -468,7 +472,7 @@ pub(super) fn draw_settings(
             let gap = 2 * ui.advance;
             let at = (text_x + drawn + gap, text_y);
             let room = room.saturating_sub(drawn + gap);
-            draw_ui_text(pixels, width, font, ui, note, at, room, dim);
+            draw_ui_text(pixels, width, font, ui, &note, at, room, dim);
         }
     }
 

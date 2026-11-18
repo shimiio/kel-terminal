@@ -36,6 +36,9 @@ pub enum Kind {
     Choice(&'static [&'static str]),
     /// true or false, shown as on and off.
     Switch,
+    /// The terminal's font: one of the installed ones a terminal can use (see
+    /// `font::monospace_families`), the list found when it's first changed.
+    Font,
 }
 
 /// A setting the panel has.
@@ -145,6 +148,12 @@ pub const PARTS: &[(&str, &[Setting])] = &[
     (
         "TEXT",
         &[
+            Setting {
+                name: "font",
+                label: "Font",
+                note: "",
+                kind: Kind::Font,
+            },
             number("font_size", "Font size", "", (8.0, 40.0, 1.0)),
             number(
                 "line_height",
@@ -201,6 +210,9 @@ pub struct Settings {
     lines: Vec<Line>,
     /// The chosen line: never a title.
     selected: usize,
+    /// The installed fonts the font goes through, once they're found (see
+    /// `needs_fonts`).
+    fonts: Option<Vec<String>>,
 }
 
 impl Settings {
@@ -223,6 +235,7 @@ impl Settings {
             changes: Vec::new(),
             lines,
             selected: 1, // the first setting, under its part's name
+            fonts: None,
         })
     }
 
@@ -283,14 +296,54 @@ impl Settings {
         lookup(&self.file, setting.name).or_else(|| lookup(&self.defaults, setting.name))
     }
 
+    /// Whether the chosen line is the font, and the installed fonts aren't
+    /// found yet: `App` finds them then (`set_fonts`), as ←/→ come for the first
+    /// time. Not as the panel opens: after a reboot it takes a second.
+    pub fn needs_fonts(&self) -> bool {
+        self.chosen() == Line::Setting(FONT) && self.fonts.is_none()
+    }
+
+    /// The installed fonts, the built-in one first. The font Kel has is among
+    /// them even if it's none of these (one that doesn't say it's monospace):
+    /// ←/→ come back to it.
+    pub fn set_fonts(&mut self, mut fonts: Vec<String>) {
+        if let Some(now) = self.value(FONT).as_str()
+            && !fonts.iter().any(|f| f.eq_ignore_ascii_case(now))
+        {
+            let lower = now.to_lowercase();
+            let at = fonts[1..].partition_point(|f| f.to_lowercase() < lower);
+            fonts.insert(at + 1, now.to_string());
+        }
+        self.fonts = Some(fonts);
+    }
+
+    /// A few words about `setting`: the font, which of how many it is.
+    pub fn note(&self, setting: &Setting) -> String {
+        if setting.kind != Kind::Font {
+            return setting.note.to_string();
+        }
+        let Some(fonts) = &self.fonts else {
+            return "← → the installed ones".into();
+        };
+        match position(fonts, &self.value(setting)) {
+            Some(at) => format!("{} of {}", at + 1, fonts.len()),
+            None => String::new(),
+        }
+    }
+
     /// ← (-1) or → (1) on the chosen setting: its next value. `false` if
-    /// nothing changed: the chosen line isn't a setting, or a number is at its end.
+    /// nothing changed: the chosen line isn't a setting, or a number is at its
+    /// end, or the fonts aren't found yet.
     pub fn change(&mut self, step: isize) -> bool {
         let Line::Setting(setting) = self.chosen() else {
             return false;
         };
         let now = self.value(setting);
-        let next = next_value(setting.kind, &now, step);
+        let next = match (setting.kind, &self.fonts) {
+            (Kind::Font, Some(fonts)) => next_word(fonts, &now, step),
+            (Kind::Font, None) => return false,
+            (kind, _) => next_value(kind, &now, step),
+        };
         if same(&next, &now) {
             return false;
         }
@@ -306,6 +359,26 @@ impl Settings {
     pub fn preview(&self) -> anyhow::Result<Config> {
         Ok(config::with_settings(&self.text, &self.changes)?.1)
     }
+}
+
+/// The font's line, as `PARTS` has it.
+const FONT: &Setting = &PARTS[1].1[0];
+
+/// Where `now` is among `words`, in any case: `"consolas"` is `"Consolas"`.
+fn position<S: AsRef<str>>(words: &[S], now: &Value) -> Option<usize> {
+    let now = now.as_str()?;
+    words
+        .iter()
+        .position(|w| w.as_ref().eq_ignore_ascii_case(now))
+}
+
+/// The word after `now` among `words` (before it, `step` -1); after the last,
+/// the first. One that isn't among them: the first.
+fn next_word<S: AsRef<str>>(words: &[S], now: &Value, step: isize) -> Value {
+    let at = position(words, now).map_or(0, |at| {
+        (at as isize + step).rem_euclid(words.len() as isize) as usize
+    });
+    Value::String(words[at].as_ref().to_string())
 }
 
 /// The value at `name` ("glass.opacity") in a config's table.
@@ -349,14 +422,9 @@ fn next_value(kind: Kind, now: &Value, step: isize) -> Value {
             let next = round((steps * by).clamp(min, max));
             Value::Float(next)
         }
-        Kind::Choice(words) => {
-            let at = words.iter().position(|w| now.as_str() == Some(*w));
-            let at = at.map_or(0, |at| {
-                (at as isize + step).rem_euclid(words.len() as isize)
-            });
-            Value::String(words[at as usize].to_string())
-        }
+        Kind::Choice(words) => next_word(words, now, step),
         Kind::Switch => Value::Boolean(!now.as_bool().unwrap_or(false)),
+        Kind::Font => now.clone(), // its words are the panel's: see `change`
     }
 }
 
@@ -369,7 +437,7 @@ pub fn show(kind: Kind, value: &Value) -> String {
             let decimals = if step.fract() == 0.0 { 0 } else { 2 };
             format!("{x:.decimals$}")
         }
-        Kind::Choice(_) => value.as_str().unwrap_or("").to_string(),
+        Kind::Choice(_) | Kind::Font => value.as_str().unwrap_or("").to_string(),
         Kind::Switch => if value.as_bool() == Some(true) {
             "on"
         } else {
@@ -385,6 +453,15 @@ mod tests {
 
     fn panel() -> Settings {
         Settings::new(config::DEFAULT_CONFIG.to_string(), &Config::default()).unwrap()
+    }
+
+    /// The panel's setting `name`.
+    fn by_name(name: &str) -> &'static Setting {
+        PARTS
+            .iter()
+            .flat_map(|(_, settings)| settings.iter())
+            .find(|setting| setting.name == name)
+            .unwrap()
     }
 
     /// Chooses the setting `name`.
@@ -413,6 +490,7 @@ mod tests {
                         assert!(words.contains(&value.as_str().unwrap()), "{}", setting.name)
                     }
                     Kind::Switch => assert!(value.is_bool(), "{}", setting.name),
+                    Kind::Font => assert_eq!(value.as_str(), Some(crate::font::BUILT_IN)),
                 }
             }
         }
@@ -422,6 +500,7 @@ mod tests {
     fn every_value_kel_can_read() {
         // Each setting through all its values, one by one: Kel reads each.
         let mut panel = panel();
+        panel.set_fonts(vec!["JetBrains Mono".into(), "Consolas".into()]);
         for (_, settings) in PARTS {
             for setting in *settings {
                 choose(&mut panel, setting.name);
@@ -483,7 +562,7 @@ mod tests {
         let mut panel = panel();
         choose(&mut panel, "cursor"); // block
         panel.change(-1);
-        assert_eq!(panel.value(&PARTS[1].1[3]), Value::String("bar".into()));
+        assert_eq!(panel.value(by_name("cursor")), Value::String("bar".into()));
         panel.change(1);
         assert!(panel.changes().is_empty());
         choose(&mut panel, "cursor_blink"); // on
@@ -521,9 +600,47 @@ mod tests {
             "0.10"
         ); // its default
         choose(&mut panel, "font_size");
-        assert_eq!(show(PARTS[1].1[0].kind, &panel.value(&PARTS[1].1[0])), "19");
+        let size = by_name("font_size");
+        assert_eq!(show(size.kind, &panel.value(size)), "19");
         panel.change(1);
         assert_eq!(panel.preview().unwrap().font_size, 20.0);
+    }
+
+    #[test]
+    fn fonts_go_round() {
+        let mut panel = panel();
+        choose(&mut panel, "font");
+        // Not found yet: nothing to go through.
+        assert!(panel.needs_fonts());
+        assert!(!panel.change(1));
+        let fonts = ["JetBrains Mono", "Consolas", "Courier New"];
+        panel.set_fonts(fonts.map(String::from).to_vec());
+        assert!(!panel.needs_fonts());
+        assert_eq!(panel.note(FONT), "1 of 3");
+        panel.change(1);
+        assert_eq!(panel.preview().unwrap().font, "Consolas");
+        assert_eq!(panel.note(FONT), "2 of 3");
+        panel.change(-1);
+        panel.change(-1); // round: the last
+        assert_eq!(panel.value(FONT), Value::String("Courier New".into()));
+    }
+
+    #[test]
+    fn the_font_kel_has_is_among_them() {
+        // In the file in its own case, and one that isn't in the list (it
+        // doesn't say it's monospace): in its place in the order.
+        let text = "font = \"consolas\"\n".to_string();
+        let mut panel = Settings::new(text, &Config::default()).unwrap();
+        let fonts = ["JetBrains Mono", "Consolas", "Courier New"];
+        panel.set_fonts(fonts.map(String::from).to_vec());
+        assert_eq!(panel.fonts.as_ref().unwrap().len(), 3);
+        assert_eq!(panel.note(FONT), "2 of 3");
+
+        let text = "font = \"Iosevka\"\n".to_string();
+        let mut panel = Settings::new(text, &Config::default()).unwrap();
+        panel.set_fonts(fonts.map(String::from).to_vec());
+        let names = ["JetBrains Mono", "Consolas", "Courier New", "Iosevka"];
+        assert_eq!(panel.fonts.unwrap(), names);
     }
 
     #[test]

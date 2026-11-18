@@ -5,6 +5,7 @@ use super::{App, CONFIRM_TIME, UserEvent, actions::clipboard_text};
 use crate::ask::{self, Answer, Around, Ask};
 use crate::card::{self, Card, Target};
 use crate::config;
+use crate::font;
 use crate::history;
 use crate::keys::{self, Action};
 use crate::layout::Rect;
@@ -645,6 +646,9 @@ impl App {
         let Some(settings) = &mut self.settings else {
             return;
         };
+        if settings.needs_fonts() {
+            settings.set_fonts(font::monospace_families());
+        }
         if !settings.change(step) {
             return;
         }

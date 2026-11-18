@@ -421,7 +421,12 @@ Settled:
         read, and given to Kel (`apply_config`); Enter writes the same changes, Esc gives
         Kel back the config it had. No clicks: a stray one would lose or keep the
         changes. A file Kel can't read has no panel: it opens, its error in the tab bar
-  - [ ] The font, from the installed monospace ones, shown as you go
+  - [x] The font, from the installed ones a terminal can use, shown as you go: those
+        that say they're monospace and have letters (not Symbols Nerd Font), the
+        built-in one first, the one Kel has among them in any case. fontdb finds them
+        on each system (Windows' Fonts, macOS' Library/Fonts, fontconfig's folders on
+        Linux): 11 here in ~11 ms, ~1 s after a reboot, so only at the first ←/→ on
+        the font. Japanese ones (MS Gothic) draw `\` as `¥`: theirs, kept
   - Later: a theme, when themes are files; the shell from the ones found; the model
 - [ ] Split panes, like tmux inside Kel (tabs and nvim's own windows do for now)
 - [ ] Emoji in color (Segoe UI Emoji's COLR layers; now in the text's color)

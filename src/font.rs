@@ -184,6 +184,43 @@ pub fn load_family(family: &str) -> anyhow::Result<Fonts> {
     ])
 }
 
+/// The installed fonts a terminal can use, by family name: each letter as wide
+/// as the others (the font says so of itself: monospaced) and letters in it at
+/// all (Symbols Nerd Font is icons only). Sorted, the built-in one first.
+///
+/// fontdb finds them where each system keeps them: Windows' Fonts folder and the
+/// user's own; macOS' Library/Fonts folders; on Linux the folders fontconfig
+/// names (`/usr/share/fonts`, `~/.local/share/fonts`). ~20 ms; after a reboot
+/// ~1 s, from the disk.
+pub fn monospace_families() -> Vec<String> {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    let mut names: Vec<String> = Vec::new();
+    for face in db.faces() {
+        // One face of each family is enough: its upright one.
+        if !face.monospaced || face.style != Style::Normal {
+            continue;
+        }
+        let Some((name, _)) = face.families.first() else {
+            continue;
+        };
+        if names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+            continue;
+        }
+        let has_letters = db.with_face_data(face.id, |data, index| {
+            ttf_parser::Face::parse(data, index)
+                .is_ok_and(|f| f.glyph_index('a').is_some() && f.glyph_index('M').is_some())
+        });
+        if has_letters == Some(true) {
+            names.push(name.clone());
+        }
+    }
+    names.retain(|name| !name.eq_ignore_ascii_case(BUILT_IN));
+    names.sort_by_key(|name| name.to_lowercase());
+    names.insert(0, BUILT_IN.to_string());
+    names
+}
+
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
@@ -250,5 +287,26 @@ mod tests {
         // Missing: the "missing" box, not nothing.
         let (_, missing) = font.rasterize('中', 18.0);
         assert!(!missing.is_empty());
+    }
+
+    #[test]
+    fn the_monospace_fonts() {
+        // Every Windows has Consolas and Courier New; Arial isn't monospace,
+        // Segoe MDL2 Assets is icons only.
+        let started = std::time::Instant::now();
+        let names = monospace_families();
+        eprintln!(
+            "{} fonts in {:?}: {names:?}",
+            names.len(),
+            started.elapsed()
+        );
+        assert_eq!(names[0], BUILT_IN);
+        assert!(names.iter().any(|n| n == "Consolas"));
+        assert!(names.iter().any(|n| n == "Courier New"));
+        assert!(!names.iter().any(|n| n == "Arial"));
+        assert!(!names.iter().any(|n| n.starts_with("Segoe MDL2")));
+        let mut sorted = names[1..].to_vec();
+        sorted.sort_by_key(|n| n.to_lowercase());
+        assert_eq!(sorted, names[1..]);
     }
 }
